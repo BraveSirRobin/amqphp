@@ -8,7 +8,8 @@ define('COMMS_SOCK', OUT_DIR . '/test-comms.sock');
 //runTest1(4);
 //runTest2(4);
 //dumbSockListener();
-demoTalkToRabbit();
+dumbInetSockListener();
+//demoTalkToRabbit();
 //demoPacking();
 
 //
@@ -203,6 +204,128 @@ function dumbSockListener() {
     echo("\nRemoved sock file at end of infinite loop\n");
 }
 
+
+
+/**
+ * Clone of dumbSockListener() which listens on a network socket for
+ * incoming Websocket Connections
+ */
+function dumbInetSockListener() {
+    printf("Starting dumb Inet socket listener\n");
+    define('READ_BYTES', 1024);
+
+    $sock = socket_create(AF_INET, SOCK_STREAM, 0) OR die("\n\nFailed to open dumb Inet socket\n\n");
+    socket_bind($sock, 'localhost', 7654);
+    socket_listen($sock);
+    $cleanup = function ($sigNo) use ($sock) {
+        // TODO: Find somewhere to run me from!
+        socket_close($sock);
+        unlink(IPC_SOCK);
+        echo("Run post cleanup from signal handler\n");
+    };
+    $j = 0;
+    $handler1 = function ($sig) use ($cs, $sock) {
+        printf(" [SIGINT] : close and exit");
+        socket_close($cs);
+        socket_close($sock);
+        exit();
+    };
+    pcntl_signal(SIGINT, $handler1);
+
+    while (true) {
+        printf("Wait for a connection\n");
+        $cs = socket_accept($sock);
+        vprintf("Socket connection accepted in loop  %s\n\n", array(++$j));
+        if ($cs === false) {
+            vprintf("Socket error for select: %s\n", array(socket_strerror(socket_last_error())));
+        } else if ($cs === 0) {
+            printf("No event for select\n");
+        } else {
+            $sMsg = $b2 = '';
+            $c = 0;
+            $in = false;
+            while ($buff = socket_read($cs, 1024)) {
+                if (! $in) {
+                    printf("Begin Handshake, input headers:\n%s\n\n", $buff);
+                    $hs = new WebSocketHandshake($buff);
+                    $resp = (string) $hs;
+                    $bw = socket_write($cs, $resp, strlen($resp));
+                    printf("Sent %d bytes of connection response:\n%s\n", $bw, $resp);
+                    // Lifetime loop, V basic
+                    $j = 0;
+                    while ($j++ < 5) {
+                        $read = array($cs);
+                        if ($ssRet = socket_recv($sock, $buff, 8, MSG_WAITALL)) {
+                            $msg = '';
+                            while ($buff = socket_read($cs, 1024)) {
+                                $msg .= $buff;
+                            }
+                            socket_write($cs, "Hi - I'm in PHP");
+                            printf("Connect socket recieved data: %s (type %s)\n", $buff, gettype($buff));
+                        } else {
+                            printf("Select didn't return, error: %s\n", socket_strerror(socket_last_error()));
+                        }
+                    }
+                }
+            }
+        }
+        socket_close($cs);
+    }
+    unlink(IPC_SOCK);
+    socket_close($sock);
+    echo("\nRemoved sock file at end of infinite loop\n");
+}
+
+// As per http://www.whatwg.org/specs/web-socket-protocol/
+function parseWebSocketHandshake($hs) {
+    $hs = new WebSocketHandshake($hs);
+    return (string) $hs;
+
+    $bits = explode("\r\n", $hs);
+    $binStr = array_pop($bits);
+    $k1 = $k2 = '';
+
+    foreach ($bits as $v) {
+        if (stripos($v, 'sec-websocket-key1') === 0) {
+            $k1 = substr($v, strpos($v, ':') + 2);
+        }
+        if (stripos($v, 'sec-websocket-key2') === 0) {
+            $k2 = substr($v, strpos($v, ':') + 2);
+        }
+    }
+    if (! $k1 || ! $k2) {
+        printf("Error: failed to find websocket keys (%s, %s)\n", $k1, $k2);
+        return false;
+    }
+    $n1 = preg_replace('/[^0-9]/', '', $k1);
+    $n2 = preg_replace('/[^0-9]/', '', $k2);
+    $giaN1 = _doStuffToObtainAnInt32($k1);
+    $giaN2 = _doStuffToObtainAnInt32($k2);
+    printf("(n1, n2), (giaN1, giaN2) = (%d, %d), (%d, %d)\n", $n1, $n2, $giaN1, $giaN2);
+    $n1 = $giaN1;
+    $n2 = $giaN2;
+    $sp1 = substr_count($k1, ' ');
+    $sp2 = substr_count($k2, ' ');
+    if ($sp1 < 1 || $sp2 < 1) {
+        printf("Error: incorrect number of spaces in keys, bailing\n");
+        return false;
+    }
+    $rn1 = ($n1 / $sp1);
+    $rn2 = ($n2 / $sp2);
+    //    printf("Key data: (num, spaces, divided) (%s, %s):\n", $k1, $k2);
+    //    printf("%d, %d, %d\n%d, %d, %d\n", $n1, $sp1, $rn1, $n2, $sp2, $rn2);
+    //    printf("Binary string: %s\n", strlen($binStr));
+    $fullResp = (string) $rn1 . (string) $rn2;
+    $fullResp = pack('N', $rn1) . pack('N', $rn2) . $binStr;
+    printf("  (RawResponse-Length=%d) : %s\n", strlen($fullResp), $fullResp);
+    $clientResp =  md5($fullResp, true);
+    //    printf("  (Response-Length=%d)\n", strlen($clientResp));
+    //    printf("Full response: %s (%d)\nMD5 Response: %s\n", $fullResp, strlen($fullResp), $clientResp);
+    return $clientResp;
+}
+
+
+
 // Get used to the pack / unpack functions
 function demoPacking() {
     $i = 99;
@@ -266,3 +389,81 @@ function msg($msg, $args = array()) {
     vprintf("[%s] $msg\n", $args);
 }
 
+
+function _doStuffToObtainAnInt32($key) {
+    return preg_match_all('#[0-9]#', $key, $number) && preg_match_all('# #', $key, $space) ?
+        implode('', $number[0]) / count($space[0]) :
+        ''
+        ;
+}
+
+
+
+
+
+
+///
+
+
+
+
+
+class WebSocketHandshake {
+
+    /*! Easy way to handshake a WebSocket via draft-ietf-hybi-thewebsocketprotocol-00
+     * @link    http://www.ietf.org/id/draft-ietf-hybi-thewebsocketprotocol-00.txt
+     * @author  Andrea Giammarchi
+     * @blog    webreflection.blogspot.com
+     * @date    4th June 2010
+     * @example
+     *          // via function call ...
+     *          $handshake = WebSocketHandshake($buffer);
+     *          // ... or via class
+     *          $handshake = (string)new WebSocketHandshake($buffer);
+     *
+     *          socket_write($socket, $handshake, strlen($handshake));
+     */
+
+    private $__value__;
+
+    public function __construct($buffer) {
+        $resource = $host = $origin = $key1 = $key2 = $protocol = $code = $handshake = null;
+        preg_match('#GET (.*?) HTTP#', $buffer, $match) && $resource = $match[1];
+        preg_match("#Host: (.*?)\r\n#", $buffer, $match) && $host = $match[1];
+        preg_match("#Sec-WebSocket-Key1: (.*?)\r\n#", $buffer, $match) && $key1 = $match[1];
+        preg_match("#Sec-WebSocket-Key2: (.*?)\r\n#", $buffer, $match) && $key2 = $match[1];
+        preg_match("#Sec-WebSocket-Protocol: (.*?)\r\n#", $buffer, $match) && $protocol = $match[1];
+        preg_match("#Origin: (.*?)\r\n#", $buffer, $match) && $origin = $match[1];
+        preg_match("#\r\n(.*?)\$#", $buffer, $match) && $code = $match[1];
+        $this->__value__ =
+            "HTTP/1.1 101 WebSocket Protocol Handshake\r\n".
+            "Upgrade: WebSocket\r\n".
+            "Connection: Upgrade\r\n".
+            "Sec-WebSocket-Origin: {$origin}\r\n".
+            "Sec-WebSocket-Location: ws://{$host}{$resource}\r\n".
+            ($protocol ? "Sec-WebSocket-Protocol: {$protocol}\r\n" : "").
+            "\r\n".
+            $this->_createHandshakeThingy($key1, $key2, $code)
+            ;
+    }
+
+    public function __toString() {
+        return $this->__value__;
+    }
+    
+    private function _doStuffToObtainAnInt32($key) {
+        return preg_match_all('#[0-9]#', $key, $number) && preg_match_all('# #', $key, $space) ?
+            implode('', $number[0]) / count($space[0]) :
+            ''
+            ;
+    }
+
+    private function _createHandshakeThingy($key1, $key2, $code) {
+        return md5(
+                   pack('N', $this->_doStuffToObtainAnInt32($key1)).
+                   pack('N', $this->_doStuffToObtainAnInt32($key2)).
+                   $code,
+                   true
+                   );
+    }
+}
