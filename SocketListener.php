@@ -30,11 +30,18 @@ function getSockOptionsDesc($sock) {
 
 class SocketListener
 {
+
+    const SELECT_TIMEOUT_SECS = 0; // Select timeout seconds for reads and writes
+    const SELECT_TIMEOUT_MILLIS = 300; // .. millis ..
+
+    private $selToSecs = self::SELECT_TIMEOUT_SECS;
+    private $selToMillis = self::SELECT_TIMEOUT_MILLIS;
+
+
     private $sock = null;
 
     private $client = null;
 
-    // localhost, 7654
     /**
      * Create the socket, bind to $host[:$port], listen, set non-blocking
      * and install a SIGINT handler
@@ -66,38 +73,47 @@ class SocketListener
         $n = 0;
         while (true) {
             pcntl_signal_dispatch();
-            $cSock = @socket_accept($this->sock);
-            if (! $cSock) {
-                usleep(500);
-            } else {
-                // TODO: Fork at this point and offload the connection to a new process.
-                printf("Socket connection accepted!\n");
-                printf("%s\n", getSockOptionsDesc($cSock));
-                $client = new SocketComms($cSock);
-                $this->client = $client;
-                if ($cBuff = $client->read()) {
-                    $hs = new WebSocketHandshake($cBuff);
-                    printf("Sent %d bytes Websocket response:\n%s\n", $client->write((string) $hs), (string) $hs);
+            $NULL = null;
+            $select = array($this->sock);
+            $selN = socket_select($select, $NULL, $NULL, $this->selToSecs, $this->selToMillis);
+            if ($selN === false) {
+                printf("[ERROR]: Main loop select failed:\n%s\n", socket_strerror(socket_last_error()));
+            } else if ($selN > 0) {
+                $cSock = @socket_accept($this->sock);
+                if (! $cSock) {
+                    printf("[ERROR] [%s] - socket is supposed to accept?!\n", $selN);
+                } else {
+                    // TODO?: Fork at this point and offload the connection to a new process.
+                    printf("Socket connection accepted!\n");
+                    printf("%s\n", getSockOptionsDesc($cSock));
+                    $client = new SocketComms($cSock);
+                    $this->client = $client;
+                    if ($cBuff = $client->read()) {
+                        $hs = new WebSocketHandshake($cBuff);
+                        printf("Sent %d bytes Websocket response:\n%s\n", $client->write((string) $hs), (string) $hs);
 
-                    // Increase the read timeout so that we're more responsive to client writes
-                    $client->setSelectTimeoutSecs(1);
-                    $m = 0;
-                    while (true) {
-                        pcntl_signal_dispatch();
-                        // Naive loop - forever!  TODO: how to detect a closure?
-                        if ($cBuff = $client->read()) {
-                            $client->setSelectTimeoutSecs(0);
-                            $client->write("You said $cBuff!!!!");
-                            printf("Echo back to client: %s\n", $cBuff);
-                            $client->setSelectTimeoutSecs(1);
-                        }
-                        if (++$m == 100) {
-                            printf("   (Client read loop tick - 100)\n");
+                        // Increase the read timeout so that we're more responsive to client writes
+                        $client->setSelectTimeoutSecs(1);
+                        $m = 0;
+                        while (true) {
+                            pcntl_signal_dispatch();
+                            // Naive loop - forever!  TODO: how to detect a closure?
+                            if ($cBuff = $client->read()) {
+                                $client->setSelectTimeoutSecs(0);
+                                $client->write("You said $cBuff!!!!");
+                                printf("Echo back to client: %s\n", $cBuff);
+                                $client->setSelectTimeoutSecs(1);
+                            }
+                            if (++$m == 100) {
+                                printf("   (Client read loop tick - 100)\n");
+                            }
                         }
                     }
+                    $client->close();
                 }
-                $client->close();
             }
+
+
             if ((++$n % 1500) == 0) {
                 printf("Listener Looped %d\n", $n);
                 $n = 0;
@@ -116,6 +132,32 @@ class SocketListener
         socket_close($this->sock);
         exit(0);
     }
+
+
+    /**
+     * Accessors for the select timeout parameters
+     */
+    function setSelectTimeoutSecs($n) {
+        if (! is_int($n)) {
+            printf("Error: invalid number of seconds: %s\n", $n);
+            return;
+        }
+        $this->selToSecs = $n;
+    }
+    function getSelectTimeoutSecs() {
+        return $this->selToSecs;
+    }
+    function setSelectTimeoutMillis($n) {
+        if (! is_int($n)) {
+            printf("Error: invalid number of millia: %s\n", $n);
+            return;
+        }
+        $this->selToMillis = $n;
+    }
+    function getSelectTimeoutMillis() {
+        return $this->selToMillis;
+    }
+
 }
 
 /**

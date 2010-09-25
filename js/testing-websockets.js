@@ -32,9 +32,12 @@ function teardownConnection() {
 	clearTimeout(MON);
 	STORAGE.close();
 	document.getElementById('status').innerHTML = '[Socket Not Active]';
+	STORAGE = null;
     } catch (e) {
-	console.log("Fault during shutdown:" + e.message);
+	console.log("Fault during connection teardown:" + e.message);
+	return;
     }
+    console.log("Teardown completed OK");
 }
 
 // Switch the status of the @id="status"
