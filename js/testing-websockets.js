@@ -19,7 +19,7 @@ function setupConnection() {
 	    STORAGE.onclose = function () {
 		console.log("Default openHandler invoked", arguments);
 	    };
-	    MON = setTimeout('setStatus()', 1000);
+	    MON = setInterval('setStatus()', 1000);
 	} catch (e) {
 	    console.log("Fault during setup: " + e.message);
 	}

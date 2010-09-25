@@ -7,8 +7,9 @@
 class WsServer2
 {
     const HEARTBEAT_MILLIS = 1500000; // Number of millis to wait between heartbeat ticks
+    const HEARTBEAT_PRECISION = 4; // bcmath precision on hearbeat timeout calculations (use microtime with millis)
     const SELECT_TIMEOUT_SECS = 0; // Select timeout seconds for reads and writes
-    const SELECT_TIMEOUT_MILLIS = 300; // .. millis ..
+    const SELECT_TIMEOUT_MILLIS = 3000; // .. millis ..
 
     private $sock = null; // Server socket, used to listen for new connections
 
@@ -49,18 +50,10 @@ class WsServer2
     private function initHeartbeat() {
         $this->hb = bcadd((string) microtime(true), 
                           (string) ($this->getHeartbeatMillis() / 1000000),
-                          6);
-        //        printf("Init hearbeat to %s\n", $this->hb);
-        //        $this->shouldHeartBeat(); // DELETE
+                          self::HEARTBEAT_PRECISION);
     }
-
     private function shouldHeartBeat() {
-        //        $this->HBDBG++;
-        $diff = (float) bcsub((string) microtime(true), $this->hb, 6);
-        /*if  ($this->HBDBG == 1500 || $this->HBDBG == 0) {
-            printf("Check hearbeat, works out at %s\n", $diff);
-            $this->HBDBG = 0;
-            }*/
+        $diff = (float) bcsub((string) microtime(true), $this->hb, self::HEARTBEAT_PRECISION);
         return ($diff > 0);
     }
 
@@ -97,10 +90,22 @@ class WsServer2
     function listen() {
         $n = 0;
         $this->initHeartbeat();
+        $LDEBUG = array();
+        $LDEBUG['dbgNExc'] = $LDEBUG['dbgNRead'] = $LDEBUG['dbgNWrite'] = 0;
+        
         while (true) {
+            $n++;
             pcntl_signal_dispatch();
             $all = array_merge($this->clients, array($this->sock));
-            $read = $written = $except = $all;
+            $read = $except = $all;
+            // Only select on write is there's something to be written
+            $written = array();
+            foreach ($this->clientObjects as $i => $co) {
+                if ($co->hasWriteBuffer()) {
+                    $written[] = $this->clients[$i];
+                }
+            }
+            //$written = array_filter($this->clientObjects, function ($co) { return $co->hasWriteBuffer(); });
 
             $selN = socket_select($read, $written, $except, $this->selToSecs, $this->selToMillis);
             if ($selN === false) {
@@ -116,6 +121,9 @@ class WsServer2
                     }
                 }
                 foreach ($except as $exSock) {
+                    if ($LDEBUG) {
+                        $LDEBUG['dbgNExc']++;
+                    }
                     printf("Socket exception?!\n");
                 }
                 foreach ($read as $rSock) {
@@ -124,19 +132,31 @@ class WsServer2
                     }
                     $client = $this->getClientForSock($rSock);
                     $client->onReadReady($n);
+                    if ($LDEBUG) {
+                        $LDEBUG['dbgNRead']++;
+                    }
                 }
                 foreach ($written as $wSock) {
                     $client = $this->getClientForSock($wSock);
                     $client->onWriteReady($n);
+                    if ($LDEBUG) {
+                        $LDEBUG['dbgNWrite']++;
+                    }
                 }
             }
 
-            if ($this->shouldHeartBeat()) {
-                printf(" [heartbeat] %d\n", $n);
+            if (($n % 10) == 0 && $this->shouldHeartBeat()) {
+                if ($LDEBUG) {
+                    printf(" [heartbeat] %s Debug: (r,w,e) = (%d,%d,%d)\n", $n, $LDEBUG['dbgNRead'], $LDEBUG['dbgNWrite'], $LDEBUG['dbgNExc']);
+                } else {
+                    printf(" [heartbeat] %d\n", $n);
+                }
                 $this->initHeartbeat();
+                if ($LDEBUG) {
+                    $LDEBUG['dbgNExc'] = $LDEBUG['dbgNRead'] = $LDEBUG['dbgNWrite'] = 0;
+                }
                 $n = 0;
             }
-            $n++;
             $this->client = null;
         }
     }
@@ -209,6 +229,8 @@ class WsClient
     private $wbLoopId = -1;
     private $handshakeWritten = false;
 
+    public $nEmptyReads = 0;
+
     function __construct($sock, $loopId) {
         $this->sock = $sock;
         printf("WsClient constructed in loop %d\n", $loopId);
@@ -217,7 +239,7 @@ class WsClient
     // Invoked when the main loop socket_select indicates this one is ready to read
     function onReadReady($loopId) {
         $buff = $tmp = '';
-        $br = $DBG = 0;
+        $br = 0;
         while ($brNow = @socket_recv($this->sock, $tmp, self::BUFF_LEN, MSG_DONTWAIT)) {
             $buff .= $tmp;
             $br += $brNow;
@@ -229,22 +251,24 @@ class WsClient
             }
         }
         if (! $buff) {
+            $this->nEmptyReads++;
             return;
         }
         printf("[read %d] read %d bytes from network\n", $loopId, $br);
         $this->wbLoopId = $loopId;
-        $this->writeBuff = $buff;
+        if (! $this->handshakeWritten) {
+            $this->writeBuff = (string) new WebSocketHandshake($buff);
+            $this->handshakeWritten = true;
+            printf("[read %d:%d] Prepare handshake\n", $loopId, $this->wbLoopId);
+        } else {
+            $this->writeBuff = $buff;
+        }
     }
 
     // Invoked when the main loop socket_select indicates this one is ready to write
     function onWriteReady($loopId) {
         if (! $this->writeBuff) {
             return;
-        }
-        if (! $this->handshakeWritten) {
-            $this->writeBuff = (string) new WebSocketHandshake($this->writeBuff);
-            $this->handshakeWritten = true;
-            printf("[write %d:%d] Prepare handshake\n", $loopId, $this->wbLoopId);
         }
         $bl = strlen($this->writeBuff);
         $nz = $bw = 0;
@@ -261,6 +285,10 @@ class WsClient
         }
         $this->writeBuff = '';
         printf("[write %d:%d] %d bytes to network\n", $loopId, $this->wbLoopId, $bw);
+    }
+
+    function hasWriteBuffer() {
+        return ($this->writeBuff !== '');
     }
 }
 
@@ -312,8 +340,6 @@ class WebSocketHandshake {
                    );
     }
 }
-
-
 
 printf("[outer] Creating listener\n");
 $l = new WsServer2('localhost', 7654);
