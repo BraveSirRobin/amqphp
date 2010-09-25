@@ -102,10 +102,11 @@ class WsServer2
             $written = array();
             foreach ($this->clientObjects as $i => $co) {
                 if ($co->hasWriteBuffer()) {
+                    // Only select clients to write if there's something to be written, otherwise
+                    // socket_select() will return immediately for lots of needless writes, destroying performance.
                     $written[] = $this->clients[$i];
                 }
             }
-            //$written = array_filter($this->clientObjects, function ($co) { return $co->hasWriteBuffer(); });
 
             $selN = socket_select($read, $written, $except, $this->selToSecs, $this->selToMillis);
             if ($selN === false) {
