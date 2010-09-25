@@ -1,0 +1,20 @@
+<html>
+  <head>
+    <title>Web Sockets</title>
+    <script type="text/javascript" src="testing-websockets.js"></script>
+  </head>
+  <body>
+    <h1>Web Sockets</h1>
+    <p>Web sockets demo stuff to talk to a demo PHP websocket server</p>
+    <input type="submit" value="Connect" onclick="javascript: setupConnection();"/>
+    <input type="submit" value="Disconnect" onclick="javascript: teardownConnection();"/>
+    <strong style="clear: both;" id="status">[Socket Not Active]</strong>
+    <div>
+      <textarea id="writeWindow" cols="80", rows="15">Default message for Socket Server</textarea><br/>
+      <input type="submit" value="Write to socket" onclick="javascript: writeToSocket();"/>
+    </div>
+
+    <div id="messagePane">
+    </div>
+  </body>
+</html>

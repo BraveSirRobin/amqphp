@@ -224,9 +224,8 @@ function dumbInetSockListener() {
         echo("Run post cleanup from signal handler\n");
     };
     $j = 0;
-    $handler1 = function ($sig) use ($cs, $sock) {
+    $handler1 = function ($sig) use ($sock) {
         printf(" [SIGINT] : close and exit");
-        socket_close($cs);
         socket_close($sock);
         exit();
     };
