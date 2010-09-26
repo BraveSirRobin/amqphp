@@ -32,15 +32,27 @@ class WsServer2
         return $this->clientObjects[$k];
     }
 
-    private function unsetClientBySock($sock) {
+    private function removeClientBySock($sock) {
         // TODO: Locate and remove client & socket, collapse both sets of arrays
         // so that keys are contigous
     }
 
-    private function unsetClientByClient(WsClient $c) {
+    private function removeClientByClient(WsClient $c) {
         // TODO: Locate and remove client & socket, collapse both sets of arrays
         // so that keys are contigous
+        foreach ($this->clientObjects as $i => $co) {
+            if ($co === $c) {
+                $co->close();
+                unset($this->clients[$i]);
+                unset($this->clientObjects[$i]);
+                $this->clients = array_merge($this->clients);
+                $this->clientObjects = array_merge($this->clientObjects);
+                return;
+            }
+        }
+        throw new Exception('Failed to remove client', 8793);
     }
+
 
 
     /**
@@ -132,7 +144,11 @@ class WsServer2
                         continue;
                     }
                     $client = $this->getClientForSock($rSock);
-                    $client->onReadReady($n);
+                    $nr = $client->onReadReady($n);
+                    if ($nr === 0) {
+                        // Client has disconnected, remove from list of watched connections.
+                        $this->removeClientByClient($client);
+                    }
                     if ($LDEBUG) {
                         $LDEBUG['dbgNRead']++;
                     }
@@ -220,6 +236,7 @@ class WsServer2
 // writes will never fail.
 class WsClient
 {
+    const CLOSE_WAIT = 100; // Millis delay for graceful shutdown
     const BUFF_LEN = 1024; // Buffer length for reads and writes
     const WRITE_LOOP_MAX = 5; // Number of 0 length writes to allow before abandoning ship
 
@@ -229,8 +246,6 @@ class WsClient
     private $writeBuff = '';
     private $wbLoopId = -1;
     private $handshakeWritten = false;
-
-    public $nEmptyReads = 0;
 
     function __construct($sock, $loopId) {
         $this->sock = $sock;
@@ -247,13 +262,13 @@ class WsClient
         }
         if ($brNow === false) {
             $errNo = socket_last_error();
-            if ($errNo != 11) {
+            if ($errNo != SOCKET_EAGAIN) {
                 printf("[read %d] Recv returned false: %d\n", $loopId, socket_strerror($errNo));
             }
         }
         if (! $buff) {
-            $this->nEmptyReads++;
-            return;
+            printf("Empty read detected: assume client has closed connection\n");
+            return 0;
         }
         printf("[read %d] read %d bytes from network\n", $loopId, $br);
         $this->wbLoopId = $loopId;
@@ -264,6 +279,7 @@ class WsClient
         } else {
             $this->writeBuff = $buff;
         }
+        return $br;
     }
 
     // Invoked when the main loop socket_select indicates this one is ready to write
@@ -290,6 +306,17 @@ class WsClient
 
     function hasWriteBuffer() {
         return ($this->writeBuff !== '');
+    }
+
+    function close() {
+        socket_shutdown($this->sock, 1); // Client connection can still read
+        usleep(self::CLOSE_WAIT);
+        @socket_shutdown($this->sock, 0); // Full disconnect
+        $err = socket_last_error();
+        if ($err && $err != SOCKET_ENOTCONN) {
+            printf("[client] Error during socket close: %s\n", socket_strerror($err));
+        }
+        socket_close($this->sock);
     }
 }
 

@@ -1,65 +1,65 @@
-var STORAGE = null;
-var MON = null;
+var STORAGE = [null, null, null, null];
+var MON = [null, null, null, null];
 
 // Initialise the WS
-function setupConnection() {
-    if (STORAGE === null) {
-	console.log("Begin Connection Setup....");
+function setupConnection(n) {
+    if (STORAGE[n-1] === null) {
+	console.log("Begin Connection Setup for socket " + n.toString());
 	try {
-	    STORAGE = new WebSocket('ws://localhost:7654/', 'sample');
-	    STORAGE.onopen = function () {
-		console.log("Default openHandler invoked", arguments);
+	    STORAGE[n-1] = new WebSocket('ws://localhost:7654/', 'sample');
+	    STORAGE[n-1].onopen = function (e) {
+		console.log('[' + n.toString() + "] Default openHandler invoked", e);
 	    };
-	    STORAGE.onmessage = function () {
-		console.log("Default openHandler invoked", arguments);
+	    STORAGE[n-1].onmessage = function (e) {
+		console.log('[' + n.toString() + "-Sock-input] ", e.data);
 	    };
-	    STORAGE.onerror = function () {
-		console.log("Default openHandler invoked", arguments);
+	    STORAGE[n-1].onerror = function (e) {
+		console.log('[' + n.toString() + "] Default openHandler invoked", e);
 	    };
-	    STORAGE.onclose = function () {
-		console.log("Default openHandler invoked", arguments);
+	    STORAGE[n-1].onclose = function (e) {
+		console.log('[' + n.toString() + "] Default openHandler invoked", e);
 	    };
-	    MON = setInterval('setStatus()', 1000);
+	    MON[n-1] = setInterval('setStatus(' + n.toString() + ')', 1000);
 	} catch (e) {
-	    console.log("Fault during setup: " + e.message);
+	    console.log('[' + n.toString() + "] Fault during setup: " + e.message);
 	}
 	console.log("...Done.");
     }
 }
 
-function teardownConnection() {
+function teardownConnection(n) {
     try {
-	clearTimeout(MON);
-	STORAGE.close();
-	document.getElementById('status').innerHTML = '[Socket Not Active]';
-	STORAGE = null;
+	clearTimeout(MON[n-1]);
+	STORAGE[n-1].close();
+	document.getElementById('status' + n.toString()).innerHTML = '[Socket Not Active]';
+	STORAGE[n-1] = null;
     } catch (e) {
-	console.log("Fault during connection teardown:" + e.message);
+	console.log('[' + n.toString() + "] Fault during connection teardown:" + e.message);
 	return;
     }
-    console.log("Teardown completed OK");
+    console.log('[' + n.toString() + "]Teardown completed OK");
 }
 
 // Switch the status of the @id="status"
-function setStatus() {
-    console.log("MON TICK");
-    document.getElementById('status').innerHTML = readyState();
+function setStatus(n) {
+//    console.log("MON TICK");
+    document.getElementById('status' + n.toString()).innerHTML = readyState(n);
 }
 
 // Invoked to send the @id="writeWindow" content to the websocket
-function writeToSocket() {
-    var buff = document.getElementById('writeWindow').value;
+function writeToSocket(n) {
+    var buff = document.getElementById('writeWindow' + n.toString()).value;
     try {
-	STORAGE.send(buff);
+	STORAGE[n-1].send(buff);
     } catch (e) {
-	console.log("[Sock>] ERROR: " + e.message);
+	console.log('[' + n.toString() + "-Sock-write] ERROR: " + e.message);
 	return;
     }
-    console.log("[Sock>] " + buff);
+    console.log('[' + n.toString() + "-Sock-write] " + buff);
 }
 
-function readyState () {
-    switch (STORAGE.readyState) {
+function readyState (n) {
+    switch (STORAGE[n-1].readyState) {
     case WebSocket.CONNECTING:
 	return 'CONNECTING'
     case WebSocket.OPEN:

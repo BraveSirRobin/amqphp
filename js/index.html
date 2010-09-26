@@ -6,15 +6,53 @@
   <body>
     <h1>Web Sockets</h1>
     <p>Web sockets demo stuff to talk to a demo PHP websocket server</p>
-    <input type="submit" value="Connect" onclick="javascript: setupConnection();"/>
-    <input type="submit" value="Disconnect" onclick="javascript: teardownConnection();"/>
-    <strong style="clear: both;" id="status">[Socket Not Active]</strong>
-    <div>
-      <textarea id="writeWindow" cols="80", rows="15">Default message for Socket Server</textarea><br/>
-      <input type="submit" value="Write to socket" onclick="javascript: writeToSocket();"/>
-    </div>
 
-    <div id="messagePane">
-    </div>
+
+    <table width="99%" border="0">
+      <tbody>
+	<tr>
+	  <td>
+	    <input type="submit" value="Connect" onclick="javascript: setupConnection(1);"/>
+	    <input type="submit" value="Disconnect" onclick="javascript: teardownConnection(1);"/>
+	    <strong style="clear: both;" id="status1">[Socket Not Active]</strong>
+	    <div>
+	      <textarea id="writeWindow1" cols="80", rows="15">Default test message 1</textarea><br/>
+	      <input type="submit" value="Write to socket" onclick="javascript: writeToSocket(1);"/>
+	    </div>
+	  </td>
+	  <td>
+	    <input type="submit" value="Connect" onclick="javascript: setupConnection(2);"/>
+	    <input type="submit" value="Disconnect" onclick="javascript: teardownConnection(2);"/>
+	    <strong style="clear: both;" id="status2">[Socket Not Active]</strong>
+	    <div>
+	      <textarea id="writeWindow2" cols="80", rows="15">Default test message 2</textarea><br/>
+	      <input type="submit" value="Write to socket" onclick="javascript: writeToSocket(2);"/>
+	    </div>
+	  </td>
+	</tr>
+	<tr>
+	  <td>
+	    <input type="submit" value="Connect" onclick="javascript: setupConnection(3);"/>
+	    <input type="submit" value="Disconnect" onclick="javascript: teardownConnection(3);"/>
+	    <strong style="clear: both;" id="status3">[Socket Not Active]</strong>
+	    <div>
+	      <textarea id="writeWindow3" cols="80", rows="15">Default test message 3</textarea><br/>
+	      <input type="submit" value="Write to socket" onclick="javascript: writeToSocket(3);"/>
+	    </div>
+	  </td>
+	  <td>
+	    <input type="submit" value="Connect" onclick="javascript: setupConnection(4);"/>
+	    <input type="submit" value="Disconnect" onclick="javascript: teardownConnection(4);"/>
+	    <strong style="clear: both;" id="status4">[Socket Not Active]</strong>
+	    <div>
+	      <textarea id="writeWindow4" cols="80", rows="15">Default test message 4</textarea><br/>
+	      <input type="submit" value="Write to socket" onclick="javascript: writeToSocket(4);"/>
+	    </div>
+	  </td>
+	</tr>
+      </tbody>
+    </table>
+
+
   </body>
 </html>
