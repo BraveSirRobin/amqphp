@@ -11,22 +11,79 @@ class WsServer2
     const SELECT_TIMEOUT_SECS = 0; // Select timeout seconds for reads and writes
     const SELECT_TIMEOUT_MILLIS = 3000; // .. millis ..
 
+    const LOG_INFO = 1;
+    const LOG_WARN = 2;
+    const LOG_ERROR = 4;
+    const LOG_FATAL = 8;
+
+    private static $LogLevel = 15; // All on
+
     private $sock = null; // Server socket, used to listen for new connections
 
     private $clients = array(); // List of raw connected client sockets
     private $clientObjects = array(); // List of WsClient objects, each $n contain the raw socket in $this->clients[$n]
 
+    private function msg($fmt, $args) {
+        vprintf("$fmt\n", $args);
+    }
+
+    protected function info() {
+        if (self::$LogLevel & self::LOG_INFO) {
+            $args = func_get_args();
+            $fmt = array_shift($args);
+            if (! $fmt) {
+                return;
+            }
+            $this->msg("[INFO][SRV] $fmt", $args);
+        }
+    }
+
+    protected function warn() {
+        if (self::$LogLevel & self::LOG_WARN) {
+            $args = func_get_args();
+            $fmt = array_shift($args);
+            if (! $fmt) {
+                return;
+            }
+            $this->msg("[WARN][SRV] $fmt", $args);
+        }
+    }
+
+    protected function error() {
+        if (self::$LogLevel & self::LOG_ERROR) {
+            $args = func_get_args();
+            $fmt = array_shift($args);
+            if (! $fmt) {
+                return;
+            }
+            $this->msg("[ERROR][SRV] $fmt", $args);
+        }
+    }
+
+    protected function fatal() {
+        if (self::$LogLevel & self::LOG_FATAL) {
+            $args = func_get_args();
+            $fmt = array_shift($args);
+            if (! $fmt) {
+                return;
+            }
+            $this->msg("[FATAL][SRV] $fmt", $args);
+        }
+    }
+
+
+
     /* Save the given client socket and create a wrapper for it */
     private function setNewClient($cSock, $loopId) {
         $n = array_push($this->clients, $cSock) - 1;
-        $this->clientObjects[$n] = new WsClient($cSock, $loopId);
+        $this->clientObjects[$n] = new WsClient($cSock, $this, $loopId);
         return $n;
     }
 
     /* Look up client wrapper object for the given client socket */
     private function getClientForSock($cSock) {
         if (($k = array_search($cSock, $this->clients, true)) === false) {
-            printf("[server] Error, socket not found\n");
+            $this->error("socket not found");
             throw new Exception('Socket not found', 8976);
         }
         return $this->clientObjects[$k];
@@ -34,12 +91,14 @@ class WsServer2
 
     private function removeClientBySock($sock) {
         // TODO: Locate and remove client & socket, collapse both sets of arrays
-        // so that keys are contigous
+        // so that keys are contigous  ?Needed?
     }
 
+    /**
+     * Remove the given client and associated socket ref and re-index the
+     * remaining arrays to be contigous.
+     */
     private function removeClientByClient(WsClient $c) {
-        // TODO: Locate and remove client & socket, collapse both sets of arrays
-        // so that keys are contigous
         foreach ($this->clientObjects as $i => $co) {
             if ($co === $c) {
                 $co->close();
@@ -120,15 +179,20 @@ class WsServer2
                 }
             }
 
-            $selN = socket_select($read, $written, $except, $this->selToSecs, $this->selToMillis);
+            $selN = @socket_select($read, $written, $except, $this->selToSecs, $this->selToMillis);
             if ($selN === false) {
-                printf("[ERROR]: client read select failed:\n%s\n", socket_strerror(socket_last_error()));
+                $errNo = socket_last_error();
+                if ($errNo ===  SOCKET_EINTR) {
+                    pcntl_signal_dispatch(); // select returned false due to signal, handle it ASAP
+                } else {
+                    $this->error("client read select failed:\n%s", socket_strerror());
+                }
             } else if ($selN > 0) {
                 if (in_array($this->sock, $read)) {
                     // New client is connecting
                     $cSock = @socket_accept($this->sock);
                     if (! $cSock) {
-                        printf("[ERROR] [%s] - socket is supposed to accept?!\n", $selN);
+                        $this->error(" [%s] - socket is supposed to accept?!", $selN);
                     } else {
                         $this->setNewClient($cSock, $n);
                     }
@@ -137,7 +201,7 @@ class WsServer2
                     if ($LDEBUG) {
                         $LDEBUG['dbgNExc']++;
                     }
-                    printf("Socket exception?!\n");
+                    $this->error("socket exception (?!)");
                 }
                 foreach ($read as $rSock) {
                     if ($rSock === $this->sock) {
@@ -164,9 +228,9 @@ class WsServer2
 
             if (($n % 10) == 0 && $this->shouldHeartBeat()) {
                 if ($LDEBUG) {
-                    printf(" [heartbeat] %s Debug: (r,w,e) = (%d,%d,%d)\n", $n, $LDEBUG['dbgNRead'], $LDEBUG['dbgNWrite'], $LDEBUG['dbgNExc']);
+                    $this->info("[heartbeat] %s Debug: (r,w,e) = (%d,%d,%d)", $n, $LDEBUG['dbgNRead'], $LDEBUG['dbgNWrite'], $LDEBUG['dbgNExc']);
                 } else {
-                    printf(" [heartbeat] %d\n", $n);
+                    $this->info("[heartbeat] %d", $n);
                 }
                 $this->initHeartbeat();
                 if ($LDEBUG) {
@@ -181,9 +245,9 @@ class WsServer2
 
     // pcntl signal handler
     function interrupt($signal) {
-        printf("Received interrupt signal %d, closing\n", $signal);
-        if ($this->client) {
-            $this->client->close();
+        $this->warn("received interrupt signal %d, closing", $signal);
+        foreach ($this->clientObjects as $co) {
+            $this->removeClientByClient($co);
         }
         socket_close($this->sock);
         exit(0);
@@ -198,7 +262,7 @@ class WsServer2
     private $hbMillis = self::HEARTBEAT_MILLIS;
     function setSelectTimeoutSecs($n) {
         if (! is_int($n)) {
-            printf("Error: invalid number of seconds: %s\n", $n);
+            $this->error("invalid number of seconds: %s", $n);
             return;
         }
         $this->selToSecs = $n;
@@ -210,7 +274,7 @@ class WsServer2
 
     function setSelectTimeoutMillis($n) {
         if (! is_int($n)) {
-            printf("Error: invalid number of millia: %s\n", $n);
+            $this->error("invalid number of millis: %s", $n);
             return;
         }
         $this->selToMillis = $n;
@@ -221,7 +285,7 @@ class WsServer2
 
     function setHeartbeatMillis($n) {
         if (! is_int($n)) {
-            printf("Error: invalid number of millia: %s\n", $n);
+            $this->error("invalid number of millis: %s", $n);
             return;
         }
         $this->hbMillis = $n;
@@ -232,30 +296,97 @@ class WsServer2
     }
 }
 
-// Simple blocking client.  Assume that socket_select does the business and reads &
-// writes will never fail.
+/**
+ * This class is designed to be over-ridden to implement per-client statuful handling.
+ * Note that this would have to change for a different version of the protocol, particularly
+ * is prototcol framing is introduced (not in Chromium @T.O.W.)
+ */
 class WsClient
 {
     const CLOSE_WAIT = 100; // Millis delay for graceful shutdown
     const BUFF_LEN = 1024; // Buffer length for reads and writes
     const WRITE_LOOP_MAX = 5; // Number of 0 length writes to allow before abandoning ship
 
-    private $sock = null;
+    const LOG_INFO = 1;
+    const LOG_WARN = 2;
+    const LOG_ERROR = 4;
+    const LOG_FATAL = 8;
+
+    private static $LogLevel = 15; // All on
+
+    private $sock;
+    private $server;
     private $loopId = 0;
     private $prevLoop = false;
     private $writeBuff = '';
     private $wbLoopId = -1;
     private $handshakeWritten = false;
+    private $hs = null;
 
-    function __construct($sock, $loopId) {
+    final function __construct($sock, WsServer2 $server, $loopId) {
         $this->sock = $sock;
-        printf("WsClient constructed in loop %d\n", $loopId);
+        $this->server = $server;
+        $this->onConnect();
+        $this->info("WsClient constructed in loop %d", $loopId);
     }
 
-    // Invoked when the main loop socket_select indicates this one is ready to read
-    function onReadReady($loopId) {
+    private function msg($fmt, $args) {
+        vprintf("$fmt\n", $args);
+    }
+
+    protected function info() {
+        if (self::$LogLevel & self::LOG_INFO) {
+            $args = func_get_args();
+            $fmt = array_shift($args);
+            if (! $fmt) {
+                return;
+            }
+            $this->msg("[INFO][CLI] $fmt", $args);
+        }
+    }
+
+    protected function warn() {
+        if (self::$LogLevel & self::LOG_WARN) {
+            $args = func_get_args();
+            $fmt = array_shift($args);
+            if (! $fmt) {
+                return;
+            }
+            $this->msg("[WARN][CLI] $fmt", $args);
+        }
+    }
+
+    protected function error() {
+        if (self::$LogLevel & self::LOG_ERROR) {
+            $args = func_get_args();
+            $fmt = array_shift($args);
+            if (! $fmt) {
+                return;
+            }
+            $this->msg("[ERROR][CLI] $fmt", $args);
+        }
+    }
+
+    protected function fatal() {
+        if (self::$LogLevel & self::LOG_FATAL) {
+            $args = func_get_args();
+            $fmt = array_shift($args);
+            if (! $fmt) {
+                return;
+            }
+            $this->msg("[FATAL][CLI] $fmt", $args);
+        }
+    }
+
+
+    /**
+     * Low level socket read / write callbacks.  These are invoked from the main loop
+     * only when a call to socket_select() has indicated that this socket is ready to
+     * read / write.
+     */
+    final function onReadReady($loopId) {
         $buff = $tmp = '';
-        $br = 0;
+        $br = $expectedBytes = 0;
         while ($brNow = @socket_recv($this->sock, $tmp, self::BUFF_LEN, MSG_DONTWAIT)) {
             $buff .= $tmp;
             $br += $brNow;
@@ -263,27 +394,30 @@ class WsClient
         if ($brNow === false) {
             $errNo = socket_last_error();
             if ($errNo != SOCKET_EAGAIN) {
-                printf("[read %d] Recv returned false: %d\n", $loopId, socket_strerror($errNo));
+                $this->error("[read %d] recv returned false: %d", $loopId, socket_strerror($errNo));
+            } else {
+                $errNo = 0;
             }
         }
         if (! $buff) {
-            printf("Empty read detected: assume client has closed connection\n");
+            // This probably means that the client has disconnected - let the caller decide.
+            // ?? Could this lead to undesired disconnects following temporary network disturbance ??
             return 0;
         }
-        printf("[read %d] read %d bytes from network\n", $loopId, $br);
+        $this->info("[read %d] read %d bytes from network", $loopId, $br);
         $this->wbLoopId = $loopId;
         if (! $this->handshakeWritten) {
-            $this->writeBuff = (string) new WebSocketHandshake($buff);
-            $this->handshakeWritten = true;
-            printf("[read %d:%d] Prepare handshake\n", $loopId, $this->wbLoopId);
+            $this->hs = new WebSocketHandshake($buff);
+            $this->writeBuff = (string) $this->hs;
+            $this->info("[read %d:%d] Prepare handshake", $loopId, $this->wbLoopId);
         } else {
-            $this->writeBuff = $buff;
+            $this->onRead(substr($buff, 1, $br - 2));
+            $this->writeBuff = $buff; // Raise event
         }
         return $br;
     }
 
-    // Invoked when the main loop socket_select indicates this one is ready to write
-    function onWriteReady($loopId) {
+    final function onWriteReady($loopId) {
         if (! $this->writeBuff) {
             return;
         }
@@ -291,33 +425,121 @@ class WsClient
         $nz = $bw = 0;
         while ($bw < $bl) {
             $tmp = socket_send($this->sock, substr($this->writeBuff, $bw, self::BUFF_LEN), self::BUFF_LEN, MSG_EOF);
-            $bw += $tmp;
-            if ($tmp === 0) {
+            if ($tmp === false) {
+                // Some kind of write error, exit early
+                $errNo = socket_last_error();
+                if (! $this->handshakeWritten) {
+                    $this->handshakeWritten = true;
+                    $this->onHandshake($this->hs, $errNo);
+                    $this->hs = null;
+                } else {
+                    $this->onWrite($bw, $errNo);
+                }
+                return;
+            } else if ($tmp === 0) {
                 if ($nz++ > self::WRITE_LOOP_MAX) {
-                    printf("[write %d:%d] Error: write loop hit empty write limit %d, only %d of %d bytes written\n", $loopId, $this->wbLoopId, self::WRITE_LOOP_MAX, $bw, $bl);
+                    $this->error("[write %d:%d] Error: write loop hit empty write limit %d, only %d of %d bytes written", $loopId, $this->wbLoopId, self::WRITE_LOOP_MAX, $bw, $bl);
+                    if (! $this->handshakeWritten) {
+                        $this->handshakeWritten = true;
+                        $this->onHandshake($this->hs, $errNo);
+                        $this->hs = null;
+                    } else {
+                        $this->onWrite($bw);
+                    }
                     $this->writeBuff = '';
                     return;
                 }
             }
+            $bw += $tmp;
+        } // End write loop
+        if (! $this->handshakeWritten) {
+            $this->handshakeWritten = true;
+            $this->onHandshake($this->hs);
+            $this->hs = null;
+        } else {
+            $this->onWrite($bw);
         }
         $this->writeBuff = '';
-        printf("[write %d:%d] %d bytes to network\n", $loopId, $this->wbLoopId, $bw);
+        $this->info("[write %d:%d] %d bytes to network", $loopId, $this->wbLoopId, $bw);
     }
+
+    /** Performs a graceful shutdown of the socket */
+    final function close() {
+        socket_shutdown($this->sock, 1); // Client connection can still read
+        usleep(self::CLOSE_WAIT);
+        @socket_shutdown($this->sock, 0); // Full disconnect
+        $errNo = socket_last_error();
+        if ($errNo) {
+            if ($errNo != SOCKET_ENOTCONN) {
+                $this->error("[client] socket error during socket close: %s", socket_strerror($errNo));
+            } else {
+                $errNo = 0;
+            }
+        }
+        socket_close($this->sock);
+        $this->onClose($errNo);
+    }
+
 
     function hasWriteBuffer() {
         return ($this->writeBuff !== '');
     }
 
-    function close() {
-        socket_shutdown($this->sock, 1); // Client connection can still read
-        usleep(self::CLOSE_WAIT);
-        @socket_shutdown($this->sock, 0); // Full disconnect
-        $err = socket_last_error();
-        if ($err && $err != SOCKET_ENOTCONN) {
-            printf("[client] Error during socket close: %s\n", socket_strerror($err));
-        }
-        socket_close($this->sock);
+    function write($buff) {
+        $this->writeBuff .= (string) $buff;
     }
+
+    function getWriteBuffer() {
+        return $this->writeBuff;
+    }
+
+    function clearWriteBuffer() {
+        $this->writeBuff = '';
+    }
+
+    function getServer() {
+        return $this->server;
+    }
+
+
+    /** High level socket connection callback, before handshake */
+    function onConnect() { }
+
+    /**
+     * High level WS handshake complete callback, i.e. written response to socket
+     * @param   integer    $errNo   If a socket error occured during the write this is set 
+     *                              the return value of socket_last_error()
+     */
+    function onHandshake(WebSocketHandshake $hs, $errNo = 0) { }
+
+    /**
+     * High level read callback, Called immediately after the socket has received a message
+     * @param   string     $buff    The raw content received from the client
+     * @param   integer    $errNo   If a socket error occured during the read this is set 
+     *                              the return value of socket_last_error() (Note SOCKET_EAGAIN is
+     *                              NOT reported here)
+     */
+    function onRead($buff, $errNo = 0) { }
+
+    /**
+     * High level write callback, called after a write has occurred but before the
+     * write buffer has been deleted.
+     * @param   integer    $bw      Bytes written
+     * @param   integer    $errNo   If a socket error occured during the write this is set 
+     *                              the return value of socket_last_error()
+     */
+    function onWrite($bw, $errNo = 0) { }
+
+    /**
+     * High level client disconnected callback, called after the socket is fully closed 
+     * @param   integer    $errNo   If a socket error occured during the close this is set 
+     *                              the return value of socket_last_error() (Note SOCKET_ENOTCONN is
+     *                              NOT reported here)
+     */
+    function onClose($errNo = 0) {
+        $this->info("Bye-bye client ;-)");
+    }
+
 }
 
 
@@ -325,9 +547,11 @@ class WsClient
 
 // From here: http://webreflection.blogspot.com/2010/06/websocket-handshake-76-simplified.html
 class WebSocketHandshake {
+    private $clientHs;
     private $__value__;
 
     public function __construct($buffer) {
+        $this->clientHs = $buffer;
         $resource = $host = $origin = $key1 = $key2 = $protocol = $code = $handshake = null;
         preg_match('#GET (.*?) HTTP#', $buffer, $match) && $resource = $match[1];
         preg_match("#Host: (.*?)\r\n#", $buffer, $match) && $host = $match[1];
@@ -348,6 +572,10 @@ class WebSocketHandshake {
             ;
     }
 
+    public function getClientHandshake() {
+        return $this->clientHs;
+    }
+
     public function __toString() {
         return $this->__value__;
     }
@@ -366,6 +594,70 @@ class WebSocketHandshake {
                    $code,
                    true
                    );
+    }
+}
+
+
+function hexdump ($data, $htmloutput = false, $uppercase = true, $return = true)
+{
+    // Init
+    $hexi   = '';
+    $ascii  = '';
+    $dump   = ($htmloutput === true) ? '<pre>' : '';
+    $offset = 0;
+    $len    = strlen($data);
+
+    // Upper or lower case hexidecimal
+    $x = ($uppercase === false) ? 'x' : 'X';
+
+    // Iterate string
+    for ($i = $j = 0; $i < $len; $i++)
+    {
+        // Convert to hexidecimal
+        $hexi .= sprintf("%02$x ", ord($data[$i]));
+
+        // Replace non-viewable bytes with '.'
+        if (ord($data[$i]) >= 32) {
+            $ascii .= ($htmloutput === true) ?
+                            htmlentities($data[$i]) :
+                            $data[$i];
+        } else {
+            $ascii .= '.';
+        }
+
+        // Add extra column spacing
+        if ($j === 7) {
+            $hexi  .= ' ';
+            $ascii .= ' ';
+        }
+
+        // Add row
+        if (++$j === 16 || $i === $len - 1) {
+            // Join the hexi / ascii output
+            $dump .= sprintf("%04$x  %-49s  %s", $offset, $hexi, $ascii);
+            
+            // Reset vars
+            $hexi   = $ascii = '';
+            $offset += 16;
+            $j      = 0;
+            
+            // Add newline            
+            if ($i !== $len - 1) {
+                $dump .= "\n";
+            }
+        }
+    }
+
+    // Finish dump
+    $dump .= $htmloutput === true ?
+                '</pre>' :
+                '';
+
+    // Output method
+    if ($return === false) {
+        echo $dump;
+    } else {
+        return $dump;
     }
 }
 
