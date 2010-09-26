@@ -76,7 +76,7 @@ class WsServer2
     /* Save the given client socket and create a wrapper for it */
     private function setNewClient($cSock, $loopId) {
         $n = array_push($this->clients, $cSock) - 1;
-        $this->clientObjects[$n] = new WsClient($cSock, $this, $loopId);
+        $this->clientObjects[$n] = new SimpleChatClientHandler($cSock, $this, $loopId);
         return $n;
     }
 
@@ -116,11 +116,12 @@ class WsServer2
 
     /**
      * Control the main loop heartbeat by setting and checking timeouts
+     * TODO: check this implementation to make sure it's not inefficient
      */
     private $hb = '';
     private function initHeartbeat() {
-        $this->hb = bcadd((string) microtime(true), 
-                          (string) ($this->getHeartbeatMillis() / 1000000),
+        $this->hb = bcadd((string) microtime(true),
+                          bcdiv((string) $this->getHeartbeatMillis(), '1000000', self::HEARTBEAT_PRECISION),
                           self::HEARTBEAT_PRECISION);
     }
     private function shouldHeartBeat() {
@@ -228,7 +229,8 @@ class WsServer2
 
             if (($n % 10) == 0 && $this->shouldHeartBeat()) {
                 if ($LDEBUG) {
-                    $this->info("[heartbeat] %s Debug: (r,w,e) = (%d,%d,%d)", $n, $LDEBUG['dbgNRead'], $LDEBUG['dbgNWrite'], $LDEBUG['dbgNExc']);
+                    $this->info("[heartbeat] %s Debug: (r,w,e) = (%d,%d,%d)",
+                                $n, $LDEBUG['dbgNRead'], $LDEBUG['dbgNWrite'], $LDEBUG['dbgNExc']);
                 } else {
                     $this->info("[heartbeat] %d", $n);
                 }
@@ -300,6 +302,7 @@ class WsServer2
  * This class is designed to be over-ridden to implement per-client statuful handling.
  * Note that this would have to change for a different version of the protocol, particularly
  * is prototcol framing is introduced (not in Chromium @T.O.W.)
+ * See here: http://code.google.com/p/chromium/issues/detail?id=37376
  */
 class WsClient
 {
@@ -312,7 +315,7 @@ class WsClient
     const LOG_ERROR = 4;
     const LOG_FATAL = 8;
 
-    private static $LogLevel = 15; // All on
+    protected static $LogLevel = 15; // All on
 
     private $sock;
     private $server;
@@ -327,7 +330,7 @@ class WsClient
         $this->sock = $sock;
         $this->server = $server;
         $this->onConnect();
-        $this->info("WsClient constructed in loop %d", $loopId);
+        //        $this->info("WsClient constructed in loop %d", $loopId);
     }
 
     private function msg($fmt, $args) {
@@ -404,15 +407,14 @@ class WsClient
             // ?? Could this lead to undesired disconnects following temporary network disturbance ??
             return 0;
         }
-        $this->info("[read %d] read %d bytes from network", $loopId, $br);
+        //        $this->info("[read %d] read %d bytes from network", $loopId, $br);
         $this->wbLoopId = $loopId;
         if (! $this->handshakeWritten) {
             $this->hs = new WebSocketHandshake($buff);
             $this->writeBuff = (string) $this->hs;
-            $this->info("[read %d:%d] Prepare handshake", $loopId, $this->wbLoopId);
+            //            $this->info("[read %d:%d] Prepare handshake", $loopId, $this->wbLoopId);
         } else {
             $this->onRead(substr($buff, 1, $br - 2));
-            $this->writeBuff = $buff; // Raise event
         }
         return $br;
     }
@@ -420,6 +422,9 @@ class WsClient
     final function onWriteReady($loopId) {
         if (! $this->writeBuff) {
             return;
+        }
+        if ($this->handshakeWritten) {
+            $this->writeBuff = "\x00{$this->writeBuff}\xFF";
         }
         $bl = strlen($this->writeBuff);
         $nz = $bw = 0;
@@ -438,7 +443,8 @@ class WsClient
                 return;
             } else if ($tmp === 0) {
                 if ($nz++ > self::WRITE_LOOP_MAX) {
-                    $this->error("[write %d:%d] Error: write loop hit empty write limit %d, only %d of %d bytes written", $loopId, $this->wbLoopId, self::WRITE_LOOP_MAX, $bw, $bl);
+                    $this->error("[write %d:%d] Error: write loop hit empty write limit %d, only %d of %d bytes written",
+                                 $loopId, $this->wbLoopId, self::WRITE_LOOP_MAX, $bw, $bl);
                     if (! $this->handshakeWritten) {
                         $this->handshakeWritten = true;
                         $this->onHandshake($this->hs, $errNo);
@@ -460,7 +466,7 @@ class WsClient
             $this->onWrite($bw);
         }
         $this->writeBuff = '';
-        $this->info("[write %d:%d] %d bytes to network", $loopId, $this->wbLoopId, $bw);
+        //        $this->info("[write %d:%d] %d bytes to network", $loopId, $this->wbLoopId, $bw);
     }
 
     /** Performs a graceful shutdown of the socket */
@@ -536,10 +542,71 @@ class WsClient
      *                              the return value of socket_last_error() (Note SOCKET_ENOTCONN is
      *                              NOT reported here)
      */
-    function onClose($errNo = 0) {
-        $this->info("Bye-bye client ;-)");
+    function onClose($errNo = 0) { }
+
+}
+
+/**
+ * Simple demo high-level handler - spits the client's messages back at them
+ */
+class EchoClientHandler extends WsClient
+{
+    function onConnect() {
+        $this->info("[Echo] client connected");
     }
 
+    function onHandshake(WebSocketHandshake $hs, $errNo = 0) {
+        $this->info("[Echo] client handshake complete");
+    }
+
+    function onRead($buff, $errNo = 0) {
+        $this->info("[Echo] client is delivered %d bytes", strlen($buff));
+        $this->write($buff);
+    }
+
+    function onWrite($bw, $errNo = 0) {
+        $this->info("[Echo] client, %d bytes written to network", $bw);
+    }
+
+    function onClose($errNo = 0) {
+        $this->info("[Echo] Bye-bye client ;-)");
+    }
+}
+
+/**
+ * No names or introductions ;-)
+ */
+class SimpleChatClientHandler extends WsClient
+{
+    private static $Chatters = array();
+    private $myPos;
+
+    function onConnect() {
+        $this->myPos = array_push(self::$Chatters, $this) - 1;
+        $this->info("[SChat] client connected");
+    }
+    function onHandshake(WebSocketHandshake $hs, $errNo = 0) {
+        $this->info("[SChat] client handshake complete");
+    }
+
+    function onRead($buff, $errNo = 0) {
+        $this->info("[SChat] client is delivered %d bytes", strlen($buff));
+        foreach (self::$Chatters as $chatee) {
+            if ($chatee !== $this) {
+                // Deliver this client's message to all others
+                $chatee->write($buff);
+            }
+        }
+    }
+
+    function onWrite($bw, $errNo = 0) {
+        $this->info("[SChat] client, %d bytes written to network", $bw);
+    }
+
+    function onClose($errNo = 0) {
+        unset(self::$Chatters[$this->myPos]);
+        $this->info("[SChat] Bye-bye client ;-)");
+    }
 }
 
 
