@@ -8,8 +8,8 @@ define('COMMS_SOCK', OUT_DIR . '/test-comms.sock');
 //runTest1(4);
 //runTest2(4);
 //dumbSockListener();
-dumbInetSockListener();
-//demoTalkToRabbit();
+//dumbInetSockListener();
+demoTalkToRabbit();
 //demoPacking();
 
 //

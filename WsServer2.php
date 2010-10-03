@@ -1,6 +1,27 @@
 <?php
 
 /**
+ * 
+ * Copyright (C) 2010  Robin Harvey (harvey.robin@gmail.com)
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ */
+
+
+
+/**
  * This server keeps all connections globally and only calls socket_select in the main loop
  */
 
@@ -116,7 +137,8 @@ class WsServer2
 
     /**
      * Control the main loop heartbeat by setting and checking timeouts
-     * TODO: check this implementation to make sure it's not inefficient
+     * TODO: check this implementation to make sure it's not inefficient -
+     * does using microtime make sense?  Would this be better in the seconds range?
      */
     private $hb = '';
     private function initHeartbeat() {
@@ -303,6 +325,7 @@ class WsServer2
  * Note that this would have to change for a different version of the protocol, particularly
  * is prototcol framing is introduced (not in Chromium @T.O.W.)
  * See here: http://code.google.com/p/chromium/issues/detail?id=37376
+ * TODO: Research and find out whether WRITE_LOOP_MAX is necessary
  */
 class WsClient
 {
