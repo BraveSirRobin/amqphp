@@ -1,9 +1,10 @@
 <?php
 
-class Rabbit
+/**
+ * Wraps low-level socket operations, current impl uses blocking socket read / write
+ */
+class RabbitSockHandler
 {
-    const PROTO_HEADER = "AMQP\x01\x01\x09\x01";
-    const PROTO_FRME = "\xCE"; // Frame end marker
     const READ_LEN = 1024;
     const WRITE_LEN = 1024;
 
@@ -31,11 +32,8 @@ class Rabbit
             $ret .= $tmp;
             $this->br += strlen($tmp);
             if (substr($tmp, -1) === self::PROTO_FRME) {
-                //info("(read) Ending detected - bail");
                 break;
             }
-            //info("(read) Read %d bytes", strlen($tmp));
-            //info("(Hex Ending):\n%s", $this->hexdump(substr($tmp, -1)));
         }
         return $ret;
     }
@@ -64,6 +62,66 @@ class Rabbit
     function close() {
         socket_shutdown($this->sock);
         socket_close($this->sock);
+    }
+}
+
+
+/**
+ * Decodes / Encodes from / to AMQP wire format
+ */
+class AmqpHandler
+{
+
+    const PROTO_HEADER = "AMQP\x01\x01\x09\x01";
+    const PROTO_FRME = "\xCE"; // Frame end marker
+
+    function extractFrame($buff) {
+        $rawType = substr($buff, 0, 1);
+        $rawChan = substr($buff, 1, 2);
+        $rawLen = substr($buff, 3, 4);
+
+        $type = array_pop(unpack('c', $rawType));
+        $chan = array_pop(unpack('n', $rawChan));
+        $len = array_pop(unpack('N', $rawLen));
+        $pl = substr($buff, 7, $len);
+        return array($type, $chan, $len, $pl);
+    }
+
+
+    function extractMethod($buff) {
+        list($type, $chan, $len, $pl) = $this->extractFrame($buff);
+        if ($type != 1) {
+            error("Frame is not a method: (type, chan, len) = (%d, $d, %d)", $type, $chan, $len);
+            return false;
+        }
+        /*
+        $classId = array_pop(unpack('n', substr($pl, 0, 2)));
+        $methodId = array_pop(unpack('n', substr($pl, 2, 2)));
+        */
+        $bits = unpack('n2', substr($pl, 0, 4));
+        $classId = $bits[1];
+        $methodId = $bits[2];
+        $pl = substr($pl, 4);
+        return array($type, $chan, $len, $classId, $methodId, $pl);
+    }
+
+
+    function packInt64($n) {
+        static $lbMask = null;
+        if (is_null($lbMask)) {
+            $lbMask = (pow(2, 32) - 1);
+        }
+        $hb = $n >> 16;
+        $lb = $n & $lbMask;
+        return pack('N', $hb) . pack('N', $lb);
+    }
+
+    function unpackInt64($pInt) {
+        $plb = substr($pInt, 0, 2);
+        $phb = substr($pInt, 2, 2);
+        $lb = (int) array_shift(unpack('N', $plb));
+        $hb = (int) array_shift(unpack('N', $phb));
+        return (int) $hb + (((int) $lb) << 16);
     }
 
     /**
@@ -97,54 +155,6 @@ class Rabbit
         return $ret;
     }
 
-
-    function packInt64($n) {
-        static $lbMask = null;
-        if (is_null($lbMask)) {
-            $lbMask = (pow(2, 32) - 1);
-        }
-        $hb = $n >> 16;
-        $lb = $n & $lbMask;
-        return pack('N', $hb) . pack('N', $lb);
-    }
-
-    function unpackInt64($pInt) {
-        $plb = substr($pInt, 0, 2);
-        $phb = substr($pInt, 2, 2);
-        $lb = (int) array_shift(unpack('N', $plb));
-        $hb = (int) array_shift(unpack('N', $phb));
-        return (int) $hb + (((int) $lb) << 16);
-    }
-
-    function extractFrame($buff) {
-        $rawType = substr($buff, 0, 1);
-        $rawChan = substr($buff, 1, 2);
-        $rawLen = substr($buff, 3, 4);
-
-        $type = array_pop(unpack('c', $rawType));
-        $chan = array_pop(unpack('n', $rawChan));
-        $len = array_pop(unpack('N', $rawLen));
-        $pl = substr($buff, 7, $len);
-        return array($type, $chan, $len, $pl);
-    }
-
-
-    function extractMethod($buff) {
-        list($type, $chan, $len, $pl) = $this->extractFrame($buff);
-        if ($type != 1) {
-            error("Frame is not a method: (type, chan, len) = (%d, $d, %d)", $type, $chan, $len);
-            return false;
-        }
-        /*
-        $classId = array_pop(unpack('n', substr($pl, 0, 2)));
-        $methodId = array_pop(unpack('n', substr($pl, 2, 2)));
-        */
-        $bits = unpack('n2', substr($pl, 0, 4));
-        $classId = $bits[1];
-        $methodId = $bits[2];
-        $pl = substr($pl, 4);
-        return array($type, $chan, $len, $classId, $methodId, $pl);
-    }
 }
 
 function info() {
@@ -160,16 +170,17 @@ function error() {
 
 
 info("Begin.");
-$r = new Rabbit('localhost', 5672);
+$s = new RabbitSockHandler('localhost', 5672);
+$amqp = new AmqpHandler;
 
 info("Write protocol header");
-$r->write(Rabbit::PROTO_HEADER);
+$s->write(AmqpHandler::PROTO_HEADER);
 info("Header written, now read");
-$response =$r->read();
-info("Response recieved:\n%s", $r->hexdump($response));
-$meth = $r->extractMethod($response);
-info("FRAME:\nType: %d\nChan: %d\nLen:  %d\nCls:  %d\nMeth: %d\n%s", $meth[0], $meth[1], $meth[2], $meth[3], $meth[4], $r->hexdump($meth[5]));
+$response = $s->read();
+info("Response recieved:\n%s", $amqp->hexdump($response));
+$meth = $amqp->extractMethod($response);
+info("FRAME:\nType: %d\nChan: %d\nLen:  %d\nCls:  %d\nMeth: %d\n%s", $meth[0], $meth[1], $meth[2], $meth[3], $meth[4], $amqp->hexdump($meth[5]));
 
 info("Close socket");
-$r->close();
+$s->close();
 info("Complete.");
