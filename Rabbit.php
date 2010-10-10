@@ -31,7 +31,7 @@ class RabbitSockHandler
         while ($tmp = socket_read($this->sock, self::READ_LEN)) {
             $ret .= $tmp;
             $this->br += strlen($tmp);
-            if (substr($tmp, -1) === AmqpMessageHandler::PROTO_FRME) {
+            if (substr($tmp, -1) === AmqpMessage::PROTO_FRME) {
                 break;
             }
         }
@@ -65,153 +65,44 @@ class RabbitSockHandler
     }
 }
 
-
 /**
- * Decodes / Encodes from / to AMQP wire format
+ * Low level Amqp protocol parsing operations
  */
-class AmqpMessageHandler
+abstract class AmqpCommunicator
 {
 
-    const PROTO_HEADER = "AMQP\x01\x01\x09\x01";
-    const PROTO_FRME = "\xCE"; // Frame end marker
+    private $buff;
+    protected $p = 0; // Position pointer within $buff
+
 
     // Mapping for property tables field types -> data extraction routines.
-    private static $FieldTypeMethodMap = array(
-                                        't' => 'readBoolean',
-                                        'b' => 'readShortShortInt',
-                                        'B' => 'readShortShortUInt',
-                                        'U' => 'readShortInt',
-                                        'u' => 'readShortUInt',
-                                        'I' => 'readLongInt',
-                                        'i' => 'readLongUInt',
-                                        'L' => 'readLongLongInt',
-                                        'l' => 'readLongLongUInt',
-                                        'f' => 'readFloat',
-                                        'd' => 'readDouble',
-                                        'D' => 'readDecimalValue',
-                                        's' => 'readShortString',
-                                        'S' => 'readLongString',
-                                        'A' => 'readFieldArray',
-                                        'T' => 'readTimestamp',
-                                        'F' => 'readFieldTable'
-                                        );
+    protected static $FieldTypeMethodMap = array(
+                                                 't' => 'readBoolean',
+                                                 'b' => 'readShortShortInt',
+                                                 'B' => 'readShortShortUInt',
+                                                 'U' => 'readShortInt',
+                                                 'u' => 'readShortUInt',
+                                                 'I' => 'readLongInt',
+                                                 'i' => 'readLongUInt',
+                                                 'L' => 'readLongLongInt',
+                                                 'l' => 'readLongLongUInt',
+                                                 'f' => 'readFloat',
+                                                 'd' => 'readDouble',
+                                                 'D' => 'readDecimalValue',
+                                                 's' => 'readShortString',
+                                                 'S' => 'readLongString',
+                                                 'A' => 'readFieldArray',
+                                                 'T' => 'readTimestamp',
+                                                 'F' => 'readFieldTable'
+                                                 );
 
-    private $buff;  // Full Amqp frame
-    private $p = 0; // Position pointer within $buff
 
-    function __construct($buff) {
+    protected function setBuffer($buff) {
         $this->buff = $buff;
-        $this->extractFrame();
     }
 
-
-    private $frameType;
-    private $frameChan;
-    private $frameLen;
-
-    function extractFrame() {
-        $this->frameType = array_pop(unpack('c', substr($this->buff, 0, 1)));
-        $this->frameChan = array_pop(unpack('n', substr($this->buff, 1, 2)));
-        $this->frameLen = array_pop(unpack('N', substr($this->buff, 3, 4)));
-        $this->p += 7;
-    }
-
-    function dumpFrameData() {
-        $args = array("Frame data:\nType: %d\nChan: %s\nLen:  %s", $this->frameType, $this->frameChan, $this->frameLen);
-        call_user_func_array('info', $args);
-    }
-
-
-    private $methClassId;
-    private $methMethodId;
-    function extractMethod() {
-        if ($this->frameType != 1) {
-            error("Frame is not a method: (type, chan, len) = (%d, $d, %d)", $this->frameType, $this->frameChan, $this->frameLen);
-            return false;
-        }
-        $bits = unpack('n2', substr($this->buff, $this->p, 4));
-        $this->p += 4;
-        $this->methClassId = $bits[1];
-        $this->methMethodId = $bits[2];
-        $this->readMethodArgs();
-    }
-
-
-    /**
-     * Given the Amqp method frame, class and method, extract and return
-     * the class and method name and the method args
-     * @param  integer     $classId       Class number
-     * @param  integer     $methodId      Method number
-     * @param  bstring     $buff          Method frame contents *after* method and class id are removed.
-     * @return array                      Format: array(<cls-name>, <meth-name>, <vers-maj>, <vers-min>, <TODO>)
-     */
-    private $methClassName;
-    private $methMethodName;
-    private $methProperties;
-    private function readMethodArgs() {
-        if ($this->methClassId == 10 && $this->methMethodId == 10) {
-            $this->methClassName = 'connection';
-            $this->methMethodName = 'start';
-            // (10, 10) = connection.start
-            // field [name = "version-major" domain = "octet" label = "protocol major version"]
-            // field [name = "version-minor" domain = "octet" label = "protocol minor version"]
-            // field [name = "server-properties" domain = "peer-properties" label = "server properties"]
-            // field [name = "mechanisms" domain = "longstr" label = "available security mechanisms"]
-            // field [name = "locales" domain = "longstr" label = "available message locales"]
-            $proto = unpack('C2', substr($this->buff, $this->p, 2));
-            $this->p += 2;
-            $vMaj = $proto[1];
-            $vMin = $proto[2];
-            $this->methProperties = array(
-                                          'version-major' => $vMaj,
-                                          'version-minor' => $vMin,
-                                          'server-properties' => $this->readFieldTable(),
-                                          'mechanisms' => $this->readLongString(),
-                                          'locales' => $this->readLongString()
-                                          );
-        }
-    }
-
-    function dumpMethodData() {
-        $msg = "Method frame details:\nClass:  %d (%s)\nMethod: %s (%s)\nProperties:";
-        $vals = array($this->methClassId, $this->methClassName, $this->methMethodId, $this->methMethodName);
-        $this->recursiveShow($this->methProperties, $msg, $vals);
-        array_unshift($vals, $msg);
-        call_user_func_array('info', $vals);
-    }
-
-
-    // Recurse through $subject appending printf control string and params to by-ref buffers
-    private function recursiveShow($subject, &$str, &$vals, $depth = 0) {
-        $preBuff = 10 + $depth;
-        foreach ($subject as $k => $v) {
-            if (is_array($v)) {
-                $str .= "\n%{$preBuff}s:";
-                $vals[] = $k;
-                $this->recursiveShow($v, $str, $vals, $depth + 1);
-            } else if (is_bool($v)) {
-                $str .= "\n%{$preBuff}s = %s";
-                $vals[] = $k;
-                $vals[] = ($v) ? 'true' : 'false';
-            } else if (is_int($v)) {
-                $str .= "\n%{$preBuff}s = %d";
-                $vals[] = $k;
-                $vals[] = $v;
-            } else if (is_string($v)) {
-                $str .= "\n%{$preBuff}s = %s";
-                $vals[] = $k;
-                $vals[] = $v;
-            } else if (is_float($v)) {
-                $str .= "\n%{$preBuff}s = %f";
-                $vals[] = $k;
-                $vals[] = $v;
-            } else {
-                error("Unhandled type in reciursive show: %s (assume string)", gettype($v));
-                $str .= "\n%{$preBuff}s = %s";
-                $vals[] = $k;
-                $vals[] = $v;
-            }
-        }
+    protected function getBuffer() {
+        return $this->buff;
     }
 
     // type 'F'
@@ -240,12 +131,16 @@ class AmqpMessageHandler
         $this->p++;
         return ($i !== 0);
     }
+    function writeBoolean($val) {
+    }
 
     // type 'b'
     function readShortShortInt() {
         $i = array_pop(unpack('c', substr($this->buff, $this->p, 1)));
         $this->p++;
         return $i;
+    }
+    function writeShortShortInt($val) {
     }
 
     // type 'B'
@@ -254,12 +149,16 @@ class AmqpMessageHandler
         $this->p++;
         return $i;
     }
+    function writeShortShortUInt($val) {
+    }
 
     // type 'U'
     function readShortInt() {
         $i = array_pop(unpack('s', substr($this->buff, $this->p, 2)));
         $this->p += 2;
         return $i;
+    }
+    function writeShortInt($val) {
     }
 
 
@@ -269,12 +168,16 @@ class AmqpMessageHandler
         $this->p += 2;
         return $i;
     }
+    function writeShortUInt($val) {
+    }
 
     // type 'I'
     function readLongInt() {
         $i = array_pop(unpack('L', substr($this->buff, $this->p, 4)));
         $this->p += 4;
         return $i;
+    }
+    function writeLongInt($val) {
     }
 
     // type 'i'
@@ -283,10 +186,14 @@ class AmqpMessageHandler
         $this->p += 4;
         return $i;
     }
+    function writeLongUInt($val) {
+    }
 
     // type 'L'
     function readLongLongInt() {
         error("Unimplemented read method %s", __METHOD__);
+    }
+    function writeLongLongInt($val) {
     }
 
     // type 'l'
@@ -299,20 +206,28 @@ class AmqpMessageHandler
         $hb = (int) array_shift(unpack('N', $phb));
         return (int) $hb + (((int) $lb) << 16);
     }
+    function writeLongLongUInt($val) {
+    }
 
     // type 'f'
     function readFloat() {
         error("Unimplemented read method %s", __METHOD__);
+    }
+    function writeFloat($val) {
     }
 
     // type 'd'
     function readDouble() {
         error("Unimplemented read method %s", __METHOD__);
     }
+    function writeDouble($val) {
+    }
 
     // type 'D'
     function readDecimalValue() {
         error("Unimplemented read method %s", __METHOD__);
+    }
+    function writeDecimalValue($val) {
     }
 
     // type 's'
@@ -324,6 +239,8 @@ class AmqpMessageHandler
         $this->p += $l;
         return $ret;
     }
+    function writeShortString($val) {
+    }
 
     // type 'S'
     function readLongString() {
@@ -333,10 +250,14 @@ class AmqpMessageHandler
         $this->p += $l;
         return $ret;
     }
+    function writeLongString($val) {
+    }
 
     // type 'A'
     function readFieldArray() {
         error("Unimplemented read method %s", __METHOD__);
+    }
+    function writeFieldArray($val) {
     }
 
     private function readFieldType($type) {
@@ -347,10 +268,15 @@ class AmqpMessageHandler
             return null;
         }
     }
+    function writeFieldType($type, $val) {
+        error("TODO : Implement mapped read.");
+    }
 
     // type 'T'
     function readTimestamp() {
         error("Unimplemented read method %s", __METHOD__);
+    }
+    function writeX($val) {
     }
 
 
@@ -402,8 +328,185 @@ class AmqpMessageHandler
         proc_close($proc);
         return $ret;
     }
+}
+
+
+
+/**
+ * Low level message wrapper
+ */
+class AmqpMessage extends AmqpCommunicator
+{
+
+    const PROTO_HEADER = "AMQP\x01\x01\x09\x01";
+    const PROTO_FRME = "\xCE"; // Frame end marker
+
+
+    //    protected $buff;  // Full Amqp frame
+
+    protected $frameType;
+    protected $frameChan;
+    protected $frameLen;
+
+
+    function __construct($buff) {
+        $this->setBuffer($buff);
+        $this->frameType = $this->readShortShortUInt();
+        $this->frameChan = $this->readShortUInt();
+        $this->frameLen = $this->readLongUInt();;
+    }
+
+
+    function getPointer() { return $this->p; }
+
+
+    function getFrameType() { return $this->frameType; }
+    function getFrameChannel() { return $this->frameChan; }
+    function getFrameLen() { return $this->frameLen; }
+
+    function dumpFrameData() {
+        $args = array("Frame data:\nType: %d\nChan: %s\nLen:  %s", $this->frameType, $this->frameChan, $this->frameLen);
+        call_user_func_array('info', $args);
+    }
+
+
+
+
+    // Recurse through $subject appending printf control string and params to by-ref buffers
+    protected function recursiveShow($subject, &$str, &$vals, $depth = 0) {
+        $preBuff = 10 + $depth;
+        foreach ($subject as $k => $v) {
+            if (is_array($v)) {
+                $str .= "\n%{$preBuff}s:";
+                $vals[] = $k;
+                $this->recursiveShow($v, $str, $vals, $depth + 1);
+            } else if (is_bool($v)) {
+                $str .= "\n%{$preBuff}s = %s";
+                $vals[] = $k;
+                $vals[] = ($v) ? 'true' : 'false';
+            } else if (is_int($v)) {
+                $str .= "\n%{$preBuff}s = %d";
+                $vals[] = $k;
+                $vals[] = $v;
+            } else if (is_string($v)) {
+                $str .= "\n%{$preBuff}s = %s";
+                $vals[] = $k;
+                $vals[] = $v;
+            } else if (is_float($v)) {
+                $str .= "\n%{$preBuff}s = %f";
+                $vals[] = $k;
+                $vals[] = $v;
+            } else {
+                error("Unhandled type in reciursive show: %s (assume string)", gettype($v));
+                $str .= "\n%{$preBuff}s = %s";
+                $vals[] = $k;
+                $vals[] = $v;
+            }
+        }
+    }
+}
+
+
+abstract class AmqpMethod extends AmqpMessage
+{
+    private $inMessage;
+    protected $methClassId = -1;
+    protected $methMethodId = -1;
+    protected $methClassName;
+    protected $methMethodName;
+    protected $methProperties;
+
+    function getClassId() { return $this->classId; }
+    function getMethodId() { return $this->methodId; }
+
+    function __construct(AmqpMessage $in = null) {
+        $this->inMessage = $in;
+        if ($this->inMessage->frameType != 1) {
+            throw new Exception(sprintf("Frame is not a method: (type, chan, len) = (%d, $d, %d)",
+                                        $this->inMessage->frameType, $this->inMessage->frameChan, $this->inMessage->frameLen), 743);
+        }
+        $this->p = $this->inMessage->p;
+        $this->setBuffer($this->inMessage->getBuffer());
+        $this->readMethodArgs();
+    }
+
+    abstract function readMethodArgs();
+
+    function dumpMethodData() {
+        $msg = "Method frame details:\nClass:  %d (%s)\nMethod: %s (%s)\nProperties:";
+        $vals = array($this->methClassId, $this->methClassName, $this->methMethodId, $this->methMethodName);
+        $this->recursiveShow($this->methProperties, $msg, $vals);
+        array_unshift($vals, $msg);
+        call_user_func_array('info', $vals);
+    }
+
+
+    function writeResponse($data) {
+    }
+
+    static function GetMethodParts() {
+    }
+}
+
+class Connection_Start extends AmqpMethod
+{
+    protected $methClassId = 10;
+    protected $methMethodId = 10;
+    protected $methClassName = 'connection';
+    protected $methMethodName = 'start';
+
+    function readMethodArgs() {
+        $vMaj = $this->readShortShortUInt();
+        $vMin = $this->readShortShortUInt();
+        $this->methProperties = array(
+                                      'version-major' => $vMaj,
+                                      'version-minor' => $vMin,
+                                      'server-properties' => $this->readFieldTable(),
+                                      'mechanisms' => $this->readLongString(),
+                                      'locales' => $this->readLongString()
+                                      );
+    }
+
 
 }
+
+
+function AmqpMethodFactory(AmqpMessage $msg) {
+    $classId = $msg->readShortUInt();
+    $methodId = $msg->readShortUInt();
+
+    switch ($classId) {
+    case 10:
+        switch ($methodId) {
+        case 10:
+            return new Connection_Start($msg);
+        }
+        break;
+    case 20:
+        switch ($methodId) {
+        }
+        break;
+    case 40:
+        switch ($methodId) {
+        }
+        break;
+    case 50:
+        switch ($methodId) {
+        }
+        break;
+    case 60:
+        switch ($methodId) {
+        }
+        break;
+    case 90:
+        switch ($methodId) {
+        }
+        break;
+    default:
+        throw new Exception("Unknown class in method dispatch", 8954);
+    }
+}
+
 
 function info() {
     $args = func_get_args();
@@ -422,18 +525,15 @@ $s = new RabbitSockHandler('localhost', 5672);
 
 
 info("Write protocol header");
-$s->write(AmqpMessageHandler::PROTO_HEADER);
+$s->write(AmqpMessage::PROTO_HEADER);
 info("Header written, now read");
 $response = $s->read();
-$amqp = new AmqpMessageHandler($response);
+$amqp = new AmqpMessage($response);
+$meth = AmqpMethodFactory($amqp);
 info("Response received:\n%s", $amqp->hexdump($response));
-
 $amqp->dumpFrameData();
-
-$amqp->extractMethod();
-
-$amqp->dumpMethodData();
-
+$meth->dumpMethodData();
+info("Msg pointer: %d, Meth pointer: %d", $amqp->getPointer(), $meth->getPointer());
 
 info("Close socket");
 $s->close();
