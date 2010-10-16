@@ -73,6 +73,51 @@ class RabbitSockHandler
     }
 }
 
+/**
+ * Generic Amqp boxed type - subclasses read/write to communicator
+ */
+abstract class AmqpValue
+{
+    protected $val; // PHP native
+    protected $name;  // Value name
+    protected $type;  // Amqp type
+
+    final function __construct($name, $type) {
+        $this->name = $name;
+        $this->type = $type;
+    }
+    final function getValue() { return $this->val; }
+    final function setValue($val) { $this->val = $val; }
+    final function getType() { return $this->type; }
+    final function getName() { return $this->name; }
+    final function __toString() { return (string) $this->val; }
+
+    abstract function readValue(AmqpCommunicator $c);
+    abstract function writeValue(AmqpCommunicator $c);
+}
+
+class AmqpParameter extends AmqpValue
+{
+    function readValue(AmqpCommunicator $c) {
+        $this->val = $c->readElementaryFieldType($this->type);
+    }
+    function writeValue(AmqpCommunicator $c) {
+        $c->writeElementaryFieldType($this->type, $this->val);
+    }
+}
+
+
+class AmqpTableField extends AmqpValue
+{
+    function readValue(AmqpCommunicator $c) {
+        $this->val = $c->readTableFieldType($this->type);
+    }
+    function writeValue(AmqpCommunicator $c) {
+        $c->writeTableFieldType($this->type, $this->val);
+    }
+}
+
+
 // Provides a simplified
 class AmqpTable implements ArrayAccess, Iterator
 {
@@ -101,8 +146,7 @@ class AmqpTable implements ArrayAccess, Iterator
     }
 
     function offsetSet($k, $v) {
-        $t = 'TODO: Guess type';
-        $this->offsetSetWithType($k, $v, $t);
+        throw new Exception("Array write feature not enabled");
     }
 
     function offsetUnset($k) {
@@ -128,14 +172,20 @@ class AmqpTable implements ArrayAccess, Iterator
     function offsetSetWithType($k, $v, $t) {
         // Required for Amqp types which share underlying byte patterns, e.g. timestamp
         if (false === ($n = array_search($k, $this->keys))) {
-            $this->data[] = $v;
-            $this->keys[] = $k;
-            $this->types[] = $t;
-        } else {
-            $this->data[$n] = $v;
-            $this->keys[$n] = $k;
-            $this->types[$n] = $t;
+            $n = count($this->data);
         }
+        if ($t === 'F') {
+            // Recursively convert arrays to tables using simple conversion
+            $table = new AmqpTable;
+            foreach ($v as $sk => $sv) {
+                $tables[$sk] = $sv;
+            }
+            $v = $table;
+        }
+        $this->data[$n] = $v;
+        $this->keys[$n] = $k;
+        $this->types[$n] = $t;
+
     }
 
     function offsetGetType($k) {
@@ -173,6 +223,7 @@ class AmqpTable implements ArrayAccess, Iterator
 
 
 
+
 /**
  * Low level Amqp protocol parsing operations
  */
@@ -185,8 +236,26 @@ abstract class AmqpCommunicator
     private $wBuff = '';
     protected $wp = 0;
 
+    /**
+     * Maps Amqp elementary domain types (from the Amqp XML spec,
+     * xpath //domain[@name = @type]) to read/write methods for that type
+     */
+    protected static $CoreTypeMethodMap = array(
+                                                'bit' => 'Boolean',
+                                                'octet' => 'ShortShortUInt',
+                                                'short' => 'ShortUInt',
+                                                'long' => 'LongUInt',
+                                                'longlong' => 'LongLongUInt',
+                                                'shortstr' => 'ShortString',
+                                                'longstr' => 'LongString',
+                                                'timestamp' => 'Timestamp',
+                                                'table' => 'FieldTable'
+                                                );
 
-    // Mapping for property tables field types -> data extraction routines.
+    /**
+     * Maps Amqp table field types (from the Amqp wire spec BNF, Sect. 4.2.1)
+     * to read/write methods for that type
+     */
     protected static $FieldTypeMethodMap = array(
                                                  't' => 'Boolean',
                                                  'b' => 'ShortShortInt',
@@ -232,7 +301,7 @@ abstract class AmqpCommunicator
         while ($this->rp < $tableEnd) {
             $k = $this->readShortString();
             $t = chr($this->readShortShortUInt());
-            $v = $this->readFieldType($t);
+            $v = $this->readTableFieldType($t);
             //            info(" (name, type, value) = (%s, %s, %s)", $k, $t, $v);
             $table->offsetSetWithType($k, $v, $t);
         }
@@ -392,8 +461,8 @@ abstract class AmqpCommunicator
         error("Unimplemented *write* method %s", __METHOD__);
     }
 
-    // Used to read table fields based on type
-    private function readFieldType($type) {
+    // Used to read table fields based on BNF wire type
+    private function readTableFieldType($type) {
         if (isset(self::$FieldTypeMethodMap[$type])) {
             return $this->{'read' .self::$FieldTypeMethodMap[$type]}();
         } else {
@@ -402,16 +471,8 @@ abstract class AmqpCommunicator
         }
     }
 
-    // Used to convert input var in to a table field, writes the
-    // type indicator and value
-    function writeFieldType($val) {
-        $type = 's';
-        if (is_int($val)) {
-        } else if (is_float($val)) {
-        } else if (is_string($val)) {
-        }
-        if (is_array($val)) {
-        }
+    // Used to write table fields based on BNF wire type
+    function writeTableFieldType($type, $val) {
         if (isset(self::$FieldTypeMethodMap[$type])) {
             $this->{'write' . self::$FieldTypeMethodMap[$type]}($val);
         } else {
@@ -419,6 +480,32 @@ abstract class AmqpCommunicator
         }
 
     }
+
+
+
+    // Used to read method fields based on Amqp elementary domain type
+    function readElementaryFieldType($type) {
+        if (isset(self::$CoreTypeMethodMap[$type])) {
+            return $this->{'read' . self::$CoreTypeMethodMap[$type]}();
+        } else {
+            error("Unknown field type %s", $type);
+            return null;
+        }
+    }
+
+    // Used to write method fields based on Amqp elementary domain type
+    function writeElementaryFieldType($type, $val) {
+        if (isset(self::$FieldTypeMethodMap[$type])) {
+            $this->{'write' . self::$FieldTypeMethodMap[$type]}($val);
+        } else {
+            error("Unknown field type %s", $type);
+        }
+
+    }
+
+
+
+
 
     // type 'T'
     function readTimestamp() {
@@ -486,38 +573,63 @@ class AmqpMessage extends AmqpCommunicator
 
 
 
-abstract class AmqpMethod extends AmqpMessage
+abstract class AmqpMethod extends AmqpCommunicator
 {
-    private $inMessage;
-    protected $classId = -1;
+    private $inMessage; /** Underlying AmqpMessage (if any)  */
+
+    protected $classId = -1; /** Hard-coded in generated child classes */
     protected $methodId = -1;
     protected $className;
     protected $methodName;
-    protected $properties;
 
-    function getClassId() { return $this->classId; }
-    function getMethodId() { return $this->methodId; }
+    protected $properties; // Key/value map of method properties
 
-    function __construct(AmqpMessage $in = null) {
-        if ($in) {
-            $this->inMessage = $in;
-            if ($this->inMessage->frameType != 1) {
-                throw new Exception(sprintf("Frame is not a method: (type, chan, len) = (%d, $d, %d)",
-                                            $this->inMessage->frameType,
-                                            $this->inMessage->frameChan,
-                                            $this->inMessage->frameLen), 743);
-            }
-            $this->rp = $this->inMessage->rp;
-            $this->setReadBuffer($this->inMessage->getReadBuffer());
-            $this->readMethodArgs();
+    final function getClassId() { return $this->classId; }
+    final function getMethodId() { return $this->methodId; }
+
+    final function setInputMessage(AmqpMessage $in) {
+        $this->inMessage = $in;
+        if ($this->inMessage->getFrameType() != 1) {
+            throw new Exception(sprintf("Frame is not a method: (type, chan, len) = (%d, %d, %d)",
+                                        $this->inMessage->getFrameType(),
+                                        $this->inMessage->getFrameChannel(),
+                                        $this->inMessage->getFrameLen()), 743);
+        }
+        $this->rp = $this->inMessage->rp;
+        $this->setReadBuffer($this->inMessage->getReadBuffer());
+        $this->readMethodProperties();
+    }
+
+
+    // Populate local properties from underlying message
+    final function readMethodProperties() {
+        foreach ($this->fieldMap as $field => $type) {
+            $this->properties[$field] = new AmqpParameter($field, $type);
+            $this->properties[$field]->readValue($this);
         }
     }
 
-    abstract function readMethodArgs();
+    // Key / value setter for properties - looks up types from generated data
+    final function setMethodProperty($name, $val) {
+        if (! in_array($name, $this->fieldMap)) {
+            error("No such property: %s", $name);
+            return;
+        }
+        $this->properties[$name] = new AmqpParameter($name, $this->fieldMap[$name]);
+        $this->properties[$name]->setValue($val);
+    }
+
+    // Write method properties to the underlying message
+    final function writeMethodProperties() {
+        foreach ($this->fieldMap as $field => $type) {
+            $this->properties[$field]->writeValue($this);
+        }
+    }
 
     function dumpMethodData() {
         $msg = "Method frame details:\nClass:  %d (%s)\nMethod: %s (%s)\nProperties:";
         $vals = array($this->classId, $this->className, $this->methodId, $this->methodName);
+        //var_dump($this->properties);
         recursiveShow($this->properties, $msg, $vals);
         array_unshift($vals, $msg);
         call_user_func_array('info', $vals);
@@ -533,15 +645,15 @@ class Connection_Start extends AmqpMethod
     protected $className = 'connection';
     protected $methodName = 'start';
 
-    function readMethodArgs() {
-        $this->properties = array(
-                                  'version-major' => $this->readShortShortUInt(),
-                                  'version-minor' => $this->readShortShortUInt(),
-                                  'server-properties' => $this->readFieldTable(),
-                                  'mechanisms' => $this->readLongString(),
-                                  'locales' => $this->readLongString()
-                                  );
-    }
+    // Generated
+    protected $fieldMap = array(
+                                'version-major' => 'octet',
+                                'version-minor' => 'octet',
+                                'server-properties' => 'table', // TODO: This is wrong!
+                                'mechanisms' => 'longstr',
+                                'locales' => 'longstr'
+                                );
+
 
     function getResponse() {
         return new Connection_Ok;
@@ -560,14 +672,6 @@ class Connection_StartOk extends AmqpMethod
     protected $className = 'connection';
     protected $methodName = 'start-ok';
 
-    function readMethodArgs() {
-        $this->properties = array(
-                                  'client-properties' => $this->readFieldTable(),
-                                  'mechanism' => $this->readShortString(),
-                                  'response' => $this->readLongString(),
-                                  'locale' => $this->readShortString()
-                                  );
-    }
 
 }
 
@@ -581,7 +685,9 @@ function AmqpMethodFactory(AmqpMessage $msg) {
     case 10:
         switch ($methodId) {
         case 10:
-            return new Connection_Start($msg);
+            $m = new Connection_Start;
+            $m->setInputMessage($msg);
+            return $m;
         case 11:
             return new Connection_StartOk($msg);
         }
@@ -654,14 +760,19 @@ function hexdump($subject) {
 
 /**
  * Debug helper: recurse through $subject appending printf control string and params to by-ref buffers
- */
+
 function recursiveShow($subject, &$str, &$vals, $depth = 0) {
     $preBuff = 10 + $depth;
+    if (is_object($subject) && ($subject instanceof AmqpValue)) {
+        $subject = array($subject->getName(), $subject->getValue());
+    }
     foreach ($subject as $k => $v) {
         if (is_object($v) && ($v instanceof AmqpTable)) {
             $str .= "\n%{$preBuff}s:";
             $vals[] = $k;
             recursiveShow($v->getArrayCopy(), $str, $vals, $depth + 1);
+        } else if (is_object($v) && ($v instanceof AmqpValue)) {
+            recursiveShow($v, $str, $vals, $depth);
         } else if (is_array($v)) {
             $str .= "\n%{$preBuff}s:";
             $vals[] = $k;
@@ -687,6 +798,28 @@ function recursiveShow($subject, &$str, &$vals, $depth = 0) {
             $str .= "\n%{$preBuff}s = %s";
             $vals[] = $k;
             $vals[] = $v;
+        }
+    }
+}
+ */
+
+function recursiveShow($subject, &$str, &$vals, $depth = 0) {
+    $preBuff = 10 + $depth;
+    foreach ($subject as  $av) {
+        if ($av->getType() == 'table') {
+            $preBuff = 11;
+            $str .= "\n%{$preBuff}s:";
+            $vals[] = $av->getName();
+            foreach ($av->getValue() as $sk => $sv) {
+                $str .= "\n%{$preBuff}s = %s";
+                $vals[] = $sk;
+                $vals[] = $sv;
+            }
+            $preBuff = 10 + $depth;
+        } else {
+            $str .= "\n%{$preBuff}s = %s";
+            $vals[] = $av->getName();
+            $vals[] = (string) $av;
         }
     }
 }
