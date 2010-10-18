@@ -284,6 +284,10 @@ abstract class AmqpCommunicator
     protected function setWriteBuffer($buff) {
     }
 
+    protected function getWriteBuffer() {
+        return $this->wBuff;
+    }
+
     protected function getReadBuffer() {
         return $this->rBuff;
     }
@@ -495,8 +499,8 @@ abstract class AmqpCommunicator
 
     // Used to write method fields based on Amqp elementary domain type
     function writeElementaryFieldType($type, $val) {
-        if (isset(self::$FieldTypeMethodMap[$type])) {
-            $this->{'write' . self::$FieldTypeMethodMap[$type]}($val);
+        if (isset(self::$CoreTypeMethodMap[$type])) {
+            $this->{'write' . self::$CoreTypeMethodMap[$type]}($val);
         } else {
             error("Unknown field type %s", $type);
         }
@@ -565,7 +569,8 @@ class AmqpMessage extends AmqpCommunicator
     function getFrameLen() { return $this->frameLen; }
 
     function dumpFrameData() {
-        $args = array("Frame data:\nType: %d\nChan: %s\nLen:  %s", $this->frameType, $this->frameChan, $this->frameLen);
+        $args = array("Frame data:\nType: %d\nChan: %s\nLen:  %s",
+                      $this->frameType, $this->frameChan, $this->frameLen);
         call_user_func_array('info', $args);
     }
 }
@@ -576,6 +581,8 @@ class AmqpMessage extends AmqpCommunicator
 abstract class AmqpMethod extends AmqpCommunicator
 {
     private $inMessage; /** Underlying AmqpMessage (if any)  */
+
+    protected $responder; /** Set to the source method when created from getResponseMethod  */
 
     protected $classId = -1; /** Hard-coded in generated child classes */
     protected $methodId = -1;
@@ -611,7 +618,7 @@ abstract class AmqpMethod extends AmqpCommunicator
 
     // Key / value setter for properties - looks up types from generated data
     final function setMethodProperty($name, $val) {
-        if (! in_array($name, $this->fieldMap)) {
+        if (! isset($this->fieldMap[$name])) {
             error("No such property: %s", $name);
             return;
         }
@@ -635,7 +642,7 @@ abstract class AmqpMethod extends AmqpCommunicator
         call_user_func_array('info', $vals);
     }
 
-
+    abstract function getResponseMethod(); // Could return null
 }
 
 class Connection_Start extends AmqpMethod
@@ -655,12 +662,10 @@ class Connection_Start extends AmqpMethod
                                 );
 
 
-    function getResponse() {
-        return new Connection_Ok;
-    }
-
-    function getResponseArgDefaults() {
-        // TODO: Clever?
+    function getResponseMethod() {
+        $responder = new Connection_StartOk;
+        $responder->responder = $this;
+        return $responder;
     }
 }
 
@@ -672,7 +677,16 @@ class Connection_StartOk extends AmqpMethod
     protected $className = 'connection';
     protected $methodName = 'start-ok';
 
+    protected $fieldMap = array(
+                                'client-properties' => 'table',
+                                'mechanism' => 'shortstr',
+                                'response' => 'longstr',
+                                'locale' => 'shortstr'
+                                );
 
+    function getResponseMethod() {
+        return null;
+    }
 }
 
 
@@ -758,51 +772,6 @@ function hexdump($subject) {
 }
 
 
-/**
- * Debug helper: recurse through $subject appending printf control string and params to by-ref buffers
-
-function recursiveShow($subject, &$str, &$vals, $depth = 0) {
-    $preBuff = 10 + $depth;
-    if (is_object($subject) && ($subject instanceof AmqpValue)) {
-        $subject = array($subject->getName(), $subject->getValue());
-    }
-    foreach ($subject as $k => $v) {
-        if (is_object($v) && ($v instanceof AmqpTable)) {
-            $str .= "\n%{$preBuff}s:";
-            $vals[] = $k;
-            recursiveShow($v->getArrayCopy(), $str, $vals, $depth + 1);
-        } else if (is_object($v) && ($v instanceof AmqpValue)) {
-            recursiveShow($v, $str, $vals, $depth);
-        } else if (is_array($v)) {
-            $str .= "\n%{$preBuff}s:";
-            $vals[] = $k;
-            recursiveShow($v, $str, $vals, $depth + 1);
-        } else if (is_bool($v)) {
-            $str .= "\n%{$preBuff}s = %s";
-            $vals[] = $k;
-            $vals[] = ($v) ? 'true' : 'false';
-        } else if (is_int($v)) {
-            $str .= "\n%{$preBuff}s = %d";
-            $vals[] = $k;
-            $vals[] = $v;
-        } else if (is_string($v)) {
-            $str .= "\n%{$preBuff}s = %s";
-            $vals[] = $k;
-            $vals[] = $v;
-        } else if (is_float($v)) {
-            $str .= "\n%{$preBuff}s = %f";
-            $vals[] = $k;
-            $vals[] = $v;
-        } else {
-            error("Unhandled type in reciursive show: %s (assume string)", gettype($v));
-            $str .= "\n%{$preBuff}s = %s";
-            $vals[] = $k;
-            $vals[] = $v;
-        }
-    }
-}
- */
-
 function recursiveShow($subject, &$str, &$vals, $depth = 0) {
     $preBuff = 10 + $depth;
     foreach ($subject as  $av) {
@@ -850,6 +819,13 @@ info("Response received:\n%s", hexdump($response));
 $amqp->dumpFrameData();
 $meth->dumpMethodData();
 info("Msg pointer: %d, Meth pointer: %d", $amqp->getReadPointer(), $meth->getReadPointer());
+
+info("Send start-ok method");
+$sOk = $meth->getResponseMethod();
+$sOk->setMethodProperty('client-properties', 'TABLE');
+$sOk->setMethodProperty('mechanism', 'PLAIN');
+$sOk->setMethodProperty('response', 'fookelz?!');
+$sOk->setMethodProperty('locale', 'en_US');
 
 info("Close socket");
 $s->close();
