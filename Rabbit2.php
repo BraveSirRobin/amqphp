@@ -1,6 +1,9 @@
 <?php
 
+const PROTO_HEADER = "AMQP\x01\x01\x09\x01";
 const PROTO_FRME = "\xCE"; // Frame end marker
+const HEXDUMP_BIN = '/usr/bin/hexdump -C';
+
 
 /**
  * Class to create connections to a single RabbitMQ endpoint.  If connections
@@ -65,7 +68,11 @@ class RabbitConnection
 
     private function initConnection() {
         // Perform initial Amqp connection negotiation
-        $m = new AmqpMessageBuffer();
+        $this->write(PROTO_HEADER);
+        $resp = $this->read();
+        // TODO: Handler errors!
+        $msg = new AmqpMessageBuffer($resp);
+        // Here.
     }
 
     function getChannel($num = false) {
@@ -546,7 +553,69 @@ class AmqpProtocol
     }
 }
 
-abstract class AmqpProtocolObject
+abstract class AmqpProtocolMethod
 {
+    // Read message properties and return as array
+    final function read(AmqpMessage $msg) {
+    }
 
+    final function setProperty($name, $value) {
+    }
+
+    final function write(AmqpMessage $msg) {
+    }
+}
+
+
+class Connection_Start extends AmqpProtocolMethod
+{
+    protected $classId = 10;
+    protected $methodId = 10;
+    protected $className = 'connection';
+    protected $methodName = 'start';
+
+    // Generated
+    protected $fieldMap = array(
+                                'version-major' => 'octet',
+                                'version-minor' => 'octet',
+                                'server-properties' => 'table', // TODO: This is wrong!
+                                'mechanisms' => 'longstr',
+                                'locales' => 'longstr'
+                                );
+
+
+    function getResponseMethod() {
+        // Return as string?
+    }
+}
+
+
+
+
+
+function hexdump($subject) {
+    if ($subject === '') {
+        error("Can't hexdump nothing");
+        return;
+    }
+    $pDesc = array(
+                   array('pipe', 'r'),
+                   array('pipe', 'w'),
+                   array('pipe', 'r')
+                   );
+    $pOpts = array('binary_pipes' => true);
+    if (($proc = proc_open(HEXDUMP_BIN, $pDesc, $pipes, null, null, $pOpts)) === false) {
+        throw new Exception("Failed to open hexdump proc!", 675);
+    }
+    fwrite($pipes[0], $subject);
+    fclose($pipes[0]);
+    $ret = stream_get_contents($pipes[1]);
+    fclose($pipes[1]);
+    $errs = stream_get_contents($pipes[2]);
+    fclose($pipes[2]);
+    if ($errs) {
+        printf("[ERROR] Stderr content from hexdump pipe: %s\n", $errs);
+    }
+    proc_close($proc);
+    return $ret;
 }
