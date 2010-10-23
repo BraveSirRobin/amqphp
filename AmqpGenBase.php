@@ -50,7 +50,7 @@ namespace bluelines\amqp\codegen_iface;
 // GLOBAL [one]
 abstract class Methods
 {
-    protected static $Meths; // Format: array(array(<class-idx>, <method-idx>, <fully-qualified XmlSpecClass impl. class name>))+
+    protected static $Meths; // Format: array(array(<class-idx>, <method-idx>, <fully-qualified XmlSpecMethod impl. class name>))+
     private $Imap = array();
 
     final static function IndexLookup($classId, $methodId) {
@@ -96,6 +96,9 @@ abstract class XmlSpecDomain
     }
     final function getDomainType() {
         return $this->domainType;
+    }
+    protected final function assert($bool, $dName) {
+        throw new Exception("Domain vaidation assert failed for domain $dName", 987543);
     }
     /* Implementations always proxy to (unwritten!) protocol validation funcs,
        optionally contain additional xml-generated validation routines */
