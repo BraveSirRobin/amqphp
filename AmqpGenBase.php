@@ -97,8 +97,10 @@ abstract class XmlSpecDomain
     final function getDomainType() {
         return $this->domainType;
     }
-    protected final function assert($bool, $dName) {
-        throw new Exception("Domain vaidation assert failed for domain $dName", 987543);
+    protected final function assert($bool) {
+        if (! $bool) {
+            throw new Exception("Domain vaidation assert failed for domain {$this->name}", 987543);
+        }
     }
     /* Implementations always proxy to (unwritten!) protocol validation funcs,
        optionally contain additional xml-generated validation routines */
@@ -250,6 +252,13 @@ abstract class XmlSpecField
     final function getDomain() {
         return $this->domain;
     }
+    protected final function assert($bool) {
+        if (! $bool) {
+            throw new Exception("Method field vaidation assert failed for domain {$this->name}", 987543);
+        }
+    }
     // Some child classes will contain generated validation routines, these expected to call parent::validate()
-    function validate($subject) { return DomainFactory::Validate($this->domain, $subject); }
+    function validate($subject) {
+        $this->assert(DomainFactory::Validate($this->domain, $subject));
+    }
 }
