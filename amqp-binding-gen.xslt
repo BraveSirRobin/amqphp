@@ -28,7 +28,7 @@
       <bl:domain name="shortstr" type="ShortString"/>
       <bl:domain name="longstr" type="LongString" />
       <bl:domain name="timestamp" type="Timestamp" />
-      <bl:omain name="table" type="Table" />
+      <bl:domain name="table" type="Table" />
     </bl:map>
   </bl:elk>
 
@@ -48,7 +48,7 @@ namespace amqp_<xsl:value-of select="$VERSION_TOKEN"/>;
 /** Ampq binding code, generated from doc version <xsl:value-of select="$VERSION_STRING"/> */
 use bluelines\amqp\codegen_iface;
 require 'AmqpGenBase.php';
-// Type conversion test: longlong => <xsl:value-of select="bl:getElementaryDomainType('longlong')"/>
+
 <xsl:for-each select="/amqp/class">
 require '<xsl:value-of select="bl:getFileName(@name)"/>';
 </xsl:for-each>
@@ -58,20 +58,25 @@ require '<xsl:value-of select="bl:getFileName(@name)"/>';
 const <xsl:value-of select="bl:convertToConst(@name)"/> = <xsl:value-of select="@value"/>;</xsl:for-each>
 
 <!-- Output method lookup factory -->
-class Methods
+class ClassFactory extends codegen_iface\ClassFactory
 {
-    <!-- Format: array(array(<class-idx>, <method-idx>, <fully-qualified XmlSpecMethod impl. class name>))+  -->
-    protected static $Meths = array(<xsl:for-each select="//method">array('<xsl:value-of select="../@index"/>', '<xsl:value-of select="@index"/>', '<xsl:value-of select="bl:getFQClassName(../@name, @name, 'Method')"/>')<xsl:if test="position() != last()">,</xsl:if></xsl:for-each>);
+    <!-- Format: array(array(<class-idx>, <class-name>, <fully-qualified XmlSpecMethod impl. class name>))+ -->
+    protected static $Cache = array(<xsl:for-each select="//class">array(<xsl:value-of select="@index"/>, '<xsl:value-of select="@name"/>', '<xsl:value-of select="bl:getFQClassName(@name, @name, 'Class')"/>')<xsl:if test="position() != last()">,</xsl:if></xsl:for-each>);
+
 }
 
 <!-- Ouptput global static domain loader map -->
 class DomainFactory extends codegen_iface\DomainFactory
 {
     <!-- Map: array(<xml-domain-name> => <local XmlSpecDomain impl. class name>) -->
-    protected static $Dmap = array(<xsl:for-each select="/amqp/domain[@name != @type]">'<xsl:value-of select="@name"/>' => '<xsl:value-of select="bl:getGenClassName(@name, 'Domain')"/>'<xsl:if test="position() != last()">, </xsl:if></xsl:for-each>);
+    protected static $Dmap = array(<xsl:for-each select="/amqp/domain">'<xsl:value-of select="@name"/>' => '<xsl:value-of select="bl:getGenClassName(@name, 'Domain')"/>'<xsl:if test="position() != last()">, </xsl:if></xsl:for-each>);
 }
 
+<!-- Output the fundamental domain objects -->
+// Fundamental domains
+<xsl:apply-templates select="/amqp/domain[@name = @type]" mode="output-fundamental-domain-class"/>
 <!-- Output the global domain objects -->
+// Global domains
 <xsl:apply-templates select="/amqp/domain[@name != @type]" mode="output-domain-class"/>
     </exsl:document>
   </xsl:template>
@@ -79,20 +84,37 @@ class DomainFactory extends codegen_iface\DomainFactory
 
   <!-- Output the domain class implementation for a single domain -->
   <xsl:template match="domain" mode="output-domain-class">
-class <xsl:value-of select="bl:getGenClassName(@name, 'Domain')"/>Domain extends codegen_iface\XmlSpecDomain
+class <xsl:value-of select="bl:getGenClassName(@name, 'Domain')"/> extends codegen_iface\XmlSpecDomain
 {
     protected $name = '<xsl:value-of select="@name"/>';
     protected $protocolType = '<xsl:value-of select="@type"/>';
     function validate($subject) {
-        // TODO: Implement the fundamental domain map function in codegen stylesheet!
+        if (DomainFactory::Validate($subject, $this->name)) {
         <xsl:for-each select="./assert">
-        $this->assert(<xsl:value-of select="bl:getCodeForAssert(@check, @value, '$subject')"/>);</xsl:for-each>
+          $this->assert(<xsl:value-of select="bl:getCodeForAssert(@check, @value, '$subject')"/>);</xsl:for-each>
+          return true;
+        }
+        return false;
     }
 }
   </xsl:template>
 
 
-
+  <!-- Output classes for fundamental domains, these use the internal protocol mappinging functions -->
+  <xsl:template match="domain" mode="output-fundamental-domain-class">
+    <xsl:variable name="proto" select="bl:getElementaryDomainType(@type)"/>
+    <xsl:choose>
+      <xsl:when test="$proto = ''"><xsl:message terminate="yes">Unmapped fundamental domain: '<xsl:value-of select="@type"/>'</xsl:message></xsl:when>
+      <xsl:otherwise>
+class <xsl:value-of select="bl:getGenClassName(@name, 'Domain')"/> extends codegen_iface\XmlSpecDomain
+{
+    protected $name = '<xsl:value-of select="@name"/>';
+    protected $protocolType = '<xsl:value-of select="@type"/>';
+    function validate($subject) { return validate<xsl:value-of select="$proto"/>($subject); }
+}
+      </xsl:otherwise>
+    </xsl:choose>
+  </xsl:template>
 
 
 
@@ -110,21 +132,22 @@ class <xsl:value-of select="bl:getGenClassName(@name, 'Class')"/> extends codege
     protected $name = '<xsl:value-of select="@name"/>';
     protected $index = <xsl:value-of select="@index"/>;
     protected $fields = array(<xsl:for-each select="./field">'<xsl:value-of select="@name"/>'<xsl:if test="position() != last()">,</xsl:if></xsl:for-each>);
-    protected $methods;
+    protected $methods = array(<xsl:for-each select="./method">'<xsl:value-of select="@name"/>'<xsl:if test="position() != last()">,</xsl:if></xsl:for-each>);
     function methods () { return MethodFactory::GetMethods(); }
 }
 
 class MethodFactory extends codegen_iface\MethodFactory
 {
     <!-- array(<xml-method-name> => <local XmlSpecMethod impl. class name>) -->
-    protected static $Mmap = array(<xsl:for-each select="./method">'<xsl:value-of select="@name"/>' => '<xsl:value-of select="bl:convertToCamel(@name, 1)"/>'<xsl:if test="position() != last()">,</xsl:if></xsl:for-each>);
+    protected static $Cache = array(<xsl:for-each select="./method">'<xsl:value-of select="@name"/>' => '<xsl:value-of select="bl:getGenClassName(@name, 'Method')"/>'<xsl:if test="position() != last()">,</xsl:if></xsl:for-each>);
+    protected static function I($name) { $s = '\\<xsl:value-of select="bl:getPackageName(@name, 1)"/>' . $name; return new $s; }
 }
 
 abstract class FieldFactory
 {
     <!-- Map: array(array(<fname>, <meth>, <local XmlSpecField impl. class name>)+) -->
     protected static $Fmap = array(<xsl:for-each select=".//field">array('<xsl:value-of select="@name"/>', '<xsl:value-of select="parent::*[local-name() = 'method']/@name"/>', '<xsl:value-of select="bl:getFieldClassName()"/>')<xsl:if test="position() != last()">,</xsl:if></xsl:for-each>);
-
+    protected static function I($name) { $s = sprintf("\\%s\%s", __NAMESPACE__, $name); return new $s; }
 }
 
 
@@ -168,6 +191,10 @@ class <xsl:value-of select="bl:getFieldClassName()"/> extends codegen_iface\XmlS
 
   </xsl:template>
 
+
+<!--
+   Stylesheet ends - all exslt funcs from here
+-->
 
 
   <func:function name="bl:uctoken">
@@ -284,7 +311,16 @@ class <xsl:value-of select="bl:getFieldClassName()"/> extends codegen_iface\XmlS
 
   <func:function name="bl:getPackageName">
     <xsl:param name="class"/>
-    <func:result select="concat('amqp_', $VERSION_TOKEN, '\', $class)"/>
+    <xsl:param name="return-as-string" select="0"/>
+
+    <xsl:choose>
+      <xsl:when test="$return-as-string">
+	<func:result select="concat('amqp_', $VERSION_TOKEN, '\\', $class, '\\')"/>
+      </xsl:when>
+      <xsl:otherwise>
+	<func:result select="concat('amqp_', $VERSION_TOKEN, '\', $class)"/>
+      </xsl:otherwise>
+    </xsl:choose>
   </func:function>
 
   <func:function name="bl:getFQClassName">

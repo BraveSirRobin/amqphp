@@ -48,18 +48,25 @@ namespace bluelines\amqp\codegen_iface;
  */
 
 // GLOBAL [one]
-abstract class Methods
+abstract class ClassFactory
 {
-    protected static $Meths; // Format: array(array(<class-idx>, <method-idx>, <fully-qualified XmlSpecMethod impl. class name>))+
-    private $Imap = array();
+    protected static $Cache; // Format: array(array(<class-idx>, <class-name>, <fully-qualified XmlSpecMethod impl. class name>))+
 
-    final static function IndexLookup($classId, $methodId) {
-        if (isset(self::$Imap["$classId,$methodId"])) {
-            return self::$Imap["$classId,$methodId"];
+    final static function GetClassByIndex($index) {
+        foreach (static::$Cache as $cNum => $c) {
+            if ($c[0] === $index) {
+                return is_string($c[2]) ?
+                    (static::$Cache[$cNum][2] = new $c[2])
+                    : $c[2];
+            }
         }
-        foreach (static::$Meths as $m) {
-            if ($m[0] === $classId && $m[1] === $methodId) {
-                return (self::$Imap["$classId,$methodId"] = new $m[2]);
+    }
+    final static function GetClassByName($name) {
+        foreach (static::$Cache as $cNum => $c) {
+            if ($c[1] === $name) {
+                return is_string($c[2]) ?
+                    (static::$Cache[$cNum][2] = new $c[2])
+                    : $c[2];
             }
         }
     }
@@ -138,23 +145,30 @@ abstract class XmlSpecClass
 // PER-NS [one]
 abstract class MethodFactory
 {
-    protected static $Mmap;// Map: array(<xml-method-name> => <local XmlSpecMethod impl. class name>)
-    private static $Imap = array(); // Runtime validation class instance map
+    protected static $Cache;// Map: array(<xml-method-name> => <local XmlSpecMethod impl. class name>)
+
     final static function IsMethod($mName) {
-        return isset(static::$Mmap[$mName]);
+        return isset(static::$Cache[$mName]);
     }
     final static function GetMethod($mName) {
-        return (isset(self::$Imap[$mName])) ? self::$Imap[$mName] : (self::$Imap[$mName] = new static::$Mmap[$mName]);
+        if (isset(static::$Cache[$mName])) {
+            return (is_string(static::$Cache[$mName])) ?
+                (static::$Cache[$mName] = static::I(static::$Cache[$mName]))
+                : static::$Cache[$mName];
+        } else {
+            return null;
+        }
     }
     final static function GetMethods(array $restrict = array()) {
         $m = array();
-        foreach (static::$Mmap as $mName => $clazz) {
-            if ($restrict && in_array($mName, $restrict)) {
-                $m[] = self::GetMethod($mName);
+        foreach (static::$Cache as $mName => $clazz) {
+            if (! $restrict || in_array($mName, $restrict)) {
+                $m[] = static::GetMethod($mName);
             }
         }
         return $m;
     }
+    protected abstract static function I($name); // Load class from gen ns.
 }
 
 
@@ -237,6 +251,7 @@ abstract class FieldFactory
         }
         return false;
     }
+    protected abstract static function I($name); // Load class from gen ns.
 }
 
 /** Use an underscore for a method field, i.e. <Method Name>_<Field Name> */
