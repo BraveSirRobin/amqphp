@@ -66,11 +66,6 @@ getFQPhpClassName($amqpClass, $amqpName, $prepend = '', $asLiteral=false)
 namespace <xsl:value-of select="bl:getPhpNamespace()"/>;
 /** Ampq binding code, generated from doc version <xsl:value-of select="$VERSION_STRING"/> */
 require 'AmqpGenBase.php';
-
-<xsl:for-each select="/amqp/class">
-require '<xsl:value-of select="bl:getFileName(@name)"/>';
-</xsl:for-each>
-
 <!-- Output constants -->
 <xsl:for-each select="/amqp/constant"> <!-- TODO: Convert to hex consts -->
 const <xsl:value-of select="bl:convertToConst(@name)"/> = <xsl:value-of select="@value"/>;</xsl:for-each>
@@ -96,24 +91,24 @@ class DomainFactory extends \<xsl:value-of select="bl:getPhpParentNs()"/>\Domain
 <!-- Output the global domain objects -->
 // Global domains
 <xsl:apply-templates select="/amqp/domain[@name != @type]" mode="output-domain-class"/>
+// Include generated sub-namespaces
+<xsl:for-each select="/amqp/class">
+require '<xsl:value-of select="bl:getFileName(@name)"/>';</xsl:for-each>
     </exsl:document>
   </xsl:template>
 
 
   <!-- Output the domain class implementation for a single domain -->
   <xsl:template match="domain" mode="output-domain-class">
-class <xsl:value-of select="bl:getPhpClassName('Domain')"/> extends \<xsl:value-of select="bl:getPhpParentNs()"/>\XmlSpecDomain
+class <xsl:value-of select="bl:getPhpClassName('Domain')"/> extends <xsl:value-of select="bl:getGenClassName(@type, 'Domain')"/>
 {
     protected $name = '<xsl:value-of select="@name"/>';
     protected $protocolType = '<xsl:value-of select="@type"/>';
+    <xsl:if test="./assert">
     function validate($subject) {
-        if (DomainFactory::Validate($subject, $this->name)) {
-        <xsl:for-each select="./assert">
-          $this->assert(<xsl:value-of select="bl:getCodeForAssert(@check, @value, '$subject')"/>);</xsl:for-each>
-          return true;
-        }
-        return false;
+        return (parent::validate($subject) &amp;&amp; <xsl:for-each select="./assert"><xsl:value-of select="bl:getCodeForAssert(@check, @value, '$subject')"/><xsl:if test="position() != last()"> &amp;&amp; </xsl:if></xsl:for-each>);
     }
+    </xsl:if>
 }
   </xsl:template>
 
@@ -149,20 +144,18 @@ class <xsl:value-of select="bl:getPhpClassName('Class')"/> extends \<xsl:value-o
     protected $name = '<xsl:value-of select="@name"/>';
     protected $index = <xsl:value-of select="@index"/>;
     protected $fields = array(<xsl:for-each select="./field">'<xsl:value-of select="@name"/>'<xsl:if test="position() != last()">,</xsl:if></xsl:for-each>);
-    protected $methods = array(<xsl:for-each select="./method">'<xsl:value-of select="@name"/>'<xsl:if test="position() != last()">,</xsl:if></xsl:for-each>);
+    protected $methods = array(<xsl:for-each select="./method"><xsl:value-of select="@index"/> => '<xsl:value-of select="@name"/>'<xsl:if test="position() != last()">,</xsl:if></xsl:for-each>);
     protected $methFact = '\\<xsl:value-of select="bl:getPhpNamespace(@name, true())"/>\\MethodFactory';
     protected $fieldFact = '\\<xsl:value-of select="bl:getPhpNamespace(@name, true())"/>\\FieldFactory';
 }
 
 abstract class MethodFactory extends \<xsl:value-of select="bl:getPhpParentNs()"/>\MethodFactory
 {
-    <!-- array(<xml-method-name> => <local XmlSpecMethod impl. class name>) -->
-    protected static $Cache = array(<xsl:for-each select="./method">'<xsl:value-of select="@name"/>' => '\\<xsl:value-of select="bl:getPhpClassName('Method', true(), true())"/>'<xsl:if test="position() != last()">,</xsl:if></xsl:for-each>);
+    protected static $Cache = array(<xsl:for-each select="./method">array(<xsl:value-of select="@index"/>, '<xsl:value-of select="@name"/>', '\\<xsl:value-of select="bl:getPhpClassName('Method', true(), true())"/>')<xsl:if test="position() != last()">,</xsl:if></xsl:for-each>);
 }
 
 abstract class FieldFactory  extends \<xsl:value-of select="bl:getPhpParentNs()"/>\FieldFactory
 {
-    <!-- Map: array(array(<fname>, <meth>, <local XmlSpecField impl. class name>)+) -->
     protected static $Cache = array(<xsl:for-each select=".//field">array('<xsl:value-of select="@name"/>', '<xsl:value-of select="parent::*[local-name() = 'method']/@name"/>', '\\<xsl:value-of select="bl:getPhpClassName('Field', true(), true())"/>')<xsl:if test="position() != last()">,</xsl:if></xsl:for-each>);
 }
 
@@ -170,7 +163,7 @@ abstract class FieldFactory  extends \<xsl:value-of select="bl:getPhpParentNs()"
 <xsl:apply-templates select="./method" mode="output-method-classes"/>
 
 
-<xsl:apply-templates select=".//field" mode="output-method-fields"/>
+<xsl:apply-templates select=".//field[@domain != '']" mode="output-method-fields"/>
 
     </exsl:document>
   </xsl:template>
@@ -192,16 +185,13 @@ class <xsl:value-of select="bl:getPhpClassName('Method')"/> extends \<xsl:value-
 
 
   <xsl:template match="field" mode="output-method-fields">
-class <xsl:value-of select="bl:getPhpClassName('Field')"/> extends \<xsl:value-of select="bl:getPhpParentNs()"/>\XmlSpecField
+class <xsl:value-of select="bl:getPhpClassName('Field')"/> extends \<xsl:value-of select="bl:getPhpNamespace()"/>\<xsl:value-of select="bl:getGenClassName(@domain)"/>Domain implements \<xsl:value-of select="bl:getPhpParentNs()"/>\XmlSpecField
 {
-    protected $name = '<xsl:value-of select="@name"/>';
-    protected $domain = '<xsl:value-of select="@domain"/>';
-    protected $fieldFact = '\\<xsl:value-of select="bl:getPhpNamespace(ancestor::class[1]/@name, true())"/>\\FieldFactory';
+    function getSpecFieldName() { return '<xsl:value-of select="@name"/>'; }
+    function getSpecFieldDomain() { return '<xsl:value-of select="@domain"/>'; }
 <xsl:if test="./assert">
     function validate($subject) {
-        parent::validate($subject);
-        <xsl:for-each select="./assert">
-        $this->assert(<xsl:value-of select="bl:getCodeForAssert(@check, @value, '$subject')"/>);</xsl:for-each>
+        return (parent::validate($subject) &amp;&amp; <xsl:for-each select="./assert"><xsl:value-of select="bl:getCodeForAssert(@check, @value, '$subject')"/><xsl:if test="position() != last()"> &amp;&amp; </xsl:if></xsl:for-each>);
     }
 </xsl:if>
 }

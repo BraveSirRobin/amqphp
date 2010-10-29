@@ -64,21 +64,24 @@ abstract class XmlSpecDomain
     protected $name;
     protected $protocolType;
 
-    final function getName() {
+    final function getSpecDomainName() {
         return $this->name;
     }
-    final function getDomainType() {
+    final function getSpecDomainType() {
         return $this->domainType;
-    }
-    protected final function assert($bool) {
-        if (! $bool) {
-            throw new Exception("Domain vaidation assert failed for domain {$this->name}", 987543);
-        }
     }
     /* Implementations always proxy to (unwritten!) protocol validation funcs,
        optionally contain additional xml-generated validation routines */
     abstract function validate($subject);
 }
+
+// PER-NS [many]
+interface XmlSpecField
+{
+    function getSpecFieldName();
+    function getSpecFieldDomain();
+}
+
 
 
 // PER-NS [one]
@@ -86,30 +89,43 @@ abstract class XmlSpecClass
 {
     protected $name;
     protected $index;
-    protected $fields;
-    protected $methods;
+    protected $fields; // Format: array(<amqp field name>)
+    protected $methods; // Format: array(<amqp method name>)
     protected $methFact;
     protected $fieldFact;
 
-    final function getName() {
+    final function getSpecName() {
         return $this->name;
     }
-    final function getIndex() {
+    final function getSpecIndex() {
         return $this->index;
     }
-    final function getFields() {
+    final function getSpecFields() {
         return $this->fields;
     }
-    final function getMethods() {
+    final function getSpecMethods() {
         return $this->methods;
     }
-    /** Hard-coded generated method uses local MethodFactory to return a list of XmlSpecMethod objects.
-        This is required, as the sub-namespace cannot be accessed from here */
-    final function methods() {
-        return call_user_func(array($this->methFact, 'GetMethods'), $this->methods);
+    final function getMethods() {
+        return call_user_func(array($this->methFact, 'GetMethodsByName'), $this->methods);
     }
-    final function fields() {
+    final function getMethodByName($mName) {
+        if (in_array($mName, $this->methods)) {
+            return call_user_func(array($this->methFact, 'GetMethodByName'), $mName);
+        }
+    }
+    final function getMethodByIndex($idx) {
+        if (in_array($idx, array_keys($this->methods))) {
+            return call_user_func(array($this->methFact, 'GetMethodByIndex'), $idx);
+        }
+    }
+    final function getFields() {
         return call_user_func(array($this->fieldFact, 'GetClassFields'), $this->name);
+    }
+    final function getFieldByName($fName) {
+        if (in_array($fName, $this->fields)) {
+            return call_user_func(array($this->fieldFact, 'GetField'), $fName);
+        }
     }
 }
 
@@ -117,25 +133,47 @@ abstract class XmlSpecClass
 // PER-NS [one]
 abstract class MethodFactory
 {
-    protected static $Cache;// Map: array(<xml-method-name> => <fully-qualified XmlSpecMethod impl. class name>)
+    protected static $Cache;// Map: array(array(<xml-method-index>, <xml-method-name>, <fully-qualified XmlSpecMethod impl. class name>)+)
 
-    final static function IsMethod($mName) {
-        return isset(static::$Cache[$mName]);
+    private static function Lookup($mName, $asName = true) {
+        $j = ($asName) ? 1 : 0;
+        foreach (static::$Cache as $i => $f) {
+            if ($f[$j] === $mName) {
+                return $i;
+            }
+        }
+        return false;
     }
-    final static function GetMethod($mName) {
-        if (isset(static::$Cache[$mName])) {
-            return (is_string(static::$Cache[$mName])) ?
-                (static::$Cache[$mName] = new static::$Cache[$mName])
-                : static::$Cache[$mName];
-        } else {
-            return null;
+
+    final static function GetMethodByName($mName) {
+        if (false !== ($i = static::Lookup($mName))) {
+            return (is_string(static::$Cache[$i][2])) ?
+                (static::$Cache[$i][2] = new static::$Cache[$i][2])
+                : static::$Cache[$i][2];
         }
     }
-    final static function GetMethods(array $restrict = array()) {
+    final static function GetMethodsByName(array $restrict = array()) {
         $m = array();
-        foreach (static::$Cache as $mName => $clazz) {
-            if (! $restrict || in_array($mName, $restrict)) {
-                $m[] = static::GetMethod($mName);
+        foreach (static::$Cache as $c) {
+            if (! $restrict || in_array($c[1], $restrict)) {
+                $m[] = static::GetMethodByName($c[1]);
+            }
+        }
+        return $m;
+    }
+
+    final static function GetMethodByIndex($idx) {
+        if (false !== ($i = static::Lookup($idx, false))) {
+            return (is_string(static::$Cache[$i][2])) ?
+                (static::$Cache[$i][2] = new static::$Cache[$i][2])
+                : static::$Cache[$i][2];
+        }
+    }
+    final static function GetMethodsByIndex(array $restrict = array()) {
+        $m = array();
+        foreach (static::$Cache as $c) {
+            if (! $restrict || in_array($c[0], $restrict)) {
+                $m[] = static::GetMethodByIndex($c[0]);
             }
         }
         return $m;
@@ -155,26 +193,26 @@ abstract class XmlSpecMethod
     protected $methFact;
     protected $fieldFact;
 
-    final function getName() {
+    final function getSpecName() {
         return $this->name;
     }
-    final function getIndex() {
+    final function getSpecIndex() {
         return $this->index;
     }
-    final function isSynchronous() {
+    final function getSpecIsSynchronous() {
         return $this->synchronous;
     }
-    final function getResponseMethods() {
+    final function getSpecResponseMethods() {
         return $this->responseMethods;
     }
-    final function getFields() {
+    final function getSpecFields() {
         return $this->fields;
     }
-    final function fields() {
+    final function getFields() {
         return call_user_func(array($this->fieldFact, 'GetFieldsForMethod'), $this->name);
     }
-    final function responses() {
-        return call_user_func(array($this->methFact, 'GetMethods'), $this->responseMethods);
+    final function getResponses() {
+        return call_user_func(array($this->methFact, 'GetMethodsByName'), $this->responseMethods);
     }
 }
 
@@ -229,27 +267,3 @@ abstract class FieldFactory
 
 }
 
-/** Use an underscore for a method field, i.e. <Method Name>_<Field Name> */
-// PER-NS [many]
-abstract class XmlSpecField
-{
-    protected $name;
-    protected $domain;
-    protected $fieldFact;
-
-    final function getName() {
-        return $this->name;
-    }
-    final function getDomain() {
-        return $this->domain;
-    }
-    protected final function assert($bool) {
-        if (! $bool) {
-            throw new Exception("Method field vaidation assert failed for domain {$this->name}", 987543);
-        }
-    }
-    // Some child classes will contain generated validation routines, these expected to call parent::validate()
-    function validate($subject) {
-        $this->assert(DomainFactory::Validate($this->domain, $subject));
-    }
-}
