@@ -560,7 +560,7 @@ class AmqpMessage extends AmqpCommunicator
         $this->setReadBuffer($buff);
         $this->frameType = $this->readShortShortUInt();
         $this->frameChan = $this->readShortUInt();
-        $this->frameLen = $this->readLongUInt();;
+        $this->frameLen = $this->readLongUInt();
     }
 
 

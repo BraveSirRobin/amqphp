@@ -1,16 +1,5 @@
 <?xml version="1.0"?>
-<!--
-Refactor to always output fully qualified class names, allow for optional namespace
-prepend via. SS input params.
 
- + $NS_PREPEND ... Optional prepend (FQ) for all generated namespaces
- + $IMPL_NS ... Optional namespace (FQ) of all parent abstract classes (default to \codegen_iface\)
-
-getPhpNamespace($amqpClass = '', $asLiteral=false) ... return $NS_PREPEND\amqp_<version>{\<$class>})
-
-getPhpClassName($amqpClass, $amqpName, $prepend = '', $asLiteral=false)
-getFQPhpClassName($amqpClass, $amqpName, $prepend = '', $asLiteral=false)
--->
 <xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
 		xmlns:func="http://exslt.org/functions"
 		xmlns:str="http://exslt.org/strings"
@@ -19,8 +8,9 @@ getFQPhpClassName($amqpClass, $amqpName, $prepend = '', $asLiteral=false)
 		version="1.0"
 		extension-element-prefixes="func str exsl">
 
-  <xsl:param name="NS_PREPEND" select="'amqp'"/><!--  -->
-  <xsl:param name="IMPL_NS" select="'bluelines\amqp\codegen_iface'"/>
+  <xsl:param name="NS_PREPEND" select="'amqp_091\protocol'"/>
+  <xsl:param name="IMPL_NS" select="'amqp_091\protocol\abstrakt'"/>
+  <xsl:param name="WIRE_NS" select="'amqp_091\wire'"/>
   <xsl:param name="OUTPUT_DIR" select="'gencode/'"/>
 
   <xsl:variable name="VERSION_TOKEN" select="concat(string(/amqp/@major), '_', string(/amqp/@minor), '_', string(/amqp/@revision))"/>
@@ -28,15 +18,15 @@ getFQPhpClassName($amqpClass, $amqpName, $prepend = '', $asLiteral=false)
 
   <!-- Normalise the input to remove leading and trailing slashes -->
   <xsl:variable name="_NS_PREPEND" select="bl:normalisePhpNsIdentifier($NS_PREPEND)"/>
-
   <xsl:variable name="_IMPL_NS" select="bl:normalisePhpNsIdentifier($IMPL_NS)"/>
+  <xsl:variable name="_WIRE_NS" select="bl:normalisePhpNsIdentifier($WIRE_NS)"/>
 
 
   <xsl:output method="text"/>
 
 
 
-  <!-- Embedded elementary domain looup map -->
+  <!-- Embedded elementary domain lookup map -->
   <bl:elk>
     <bl:map version="0.9.1">
       <bl:domain name="bit" type="Boolean" />
@@ -66,6 +56,7 @@ getFQPhpClassName($amqpClass, $amqpName, $prepend = '', $asLiteral=false)
 namespace <xsl:value-of select="bl:getPhpNamespace()"/>;
 /** Ampq binding code, generated from doc version <xsl:value-of select="$VERSION_STRING"/> */
 require 'AmqpGenBase.php';
+use <xsl:value-of select="$_WIRE_NS"/> as wire;
 <!-- Output constants -->
 <xsl:for-each select="/amqp/constant"> <!-- TODO: Convert to hex consts -->
 const <xsl:value-of select="bl:convertToConst(@name)"/> = <xsl:value-of select="@value"/>;</xsl:for-each>
@@ -123,7 +114,7 @@ class <xsl:value-of select="bl:getPhpClassName('Domain')"/> extends \<xsl:value-
 {
     protected $name = '<xsl:value-of select="@name"/>';
     protected $protocolType = '<xsl:value-of select="@type"/>';
-    function validate($subject) { return validate<xsl:value-of select="$proto"/>($subject); }
+    function validate($subject) { return wire\validate<xsl:value-of select="$proto"/>($subject); }
 }
       </xsl:otherwise>
     </xsl:choose>
@@ -426,14 +417,13 @@ getFQPhpClassName($amqpClass, $amqpName, $append = '', $asLiteral=false)
     <xsl:variable name="ret">
       <xsl:choose>
 	<xsl:when test="$amqpClass != ''">
-	  <xsl:value-of select="concat($_NS_PREPEND, '\v', $VERSION_TOKEN, '\', $amqpClass)"/>
+	  <xsl:value-of select="concat($_NS_PREPEND, '\', $amqpClass)"/>
 	</xsl:when>
 	<xsl:otherwise>
-	  <xsl:value-of select="concat($_NS_PREPEND, '\v', $VERSION_TOKEN)"/>
+	  <xsl:value-of select="$_NS_PREPEND"/>
 	</xsl:otherwise>
       </xsl:choose>
     </xsl:variable>
-
     <xsl:choose>
       <xsl:when test="$asLiteral = false()">
 	<func:result select="$ret"/>

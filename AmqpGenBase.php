@@ -1,15 +1,6 @@
 <?php
 
-namespace bluelines\amqp\codegen_iface;
-
-/**
-   Refactoring:
-     * ALL functionality will be implemented in final functions in superclasses,
-       all child classes to be pure generated data
-     * All "weak object references" non-factory generated classes must contain both the AMQP spec name & index, but also the FQname of the class which implements it.  All static:: references to be kept in the Factories,
-     * +++ Investigate the "non-static" use of static - can this pull more code out of generated classes?
-
- */
+namespace amqp_091\protocol\abstrakt;
 
 // GLOBAL [one]
 abstract class ClassFactory
@@ -210,6 +201,11 @@ abstract class XmlSpecMethod
     }
     final function getFields() {
         return call_user_func(array($this->fieldFact, 'GetFieldsForMethod'), $this->name);
+    }
+    final function getField($fName) {
+        if (in_array($fName, $this->fields)) {
+            return call_user_func(array($this->fieldFact, 'GetField'), $fName, $this->name);
+        }
     }
     final function getResponses() {
         return call_user_func(array($this->methFact, 'GetMethodsByName'), $this->responseMethods);
