@@ -55,7 +55,7 @@
     <exsl:document href="{$file-name}" method="text" omit-xml-declaration="yes">&lt;?php
 namespace <xsl:value-of select="bl:getPhpNamespace()"/>;
 /** Ampq binding code, generated from doc version <xsl:value-of select="$VERSION_STRING"/> */
-require 'AmqpGenBase.php';
+require 'amqp.protocol.abstrakt.php';
 use <xsl:value-of select="$_WIRE_NS"/> as wire;
 <!-- Output constants -->
 <xsl:for-each select="/amqp/constant"> <!-- TODO: Convert to hex consts -->
@@ -115,6 +115,8 @@ class <xsl:value-of select="bl:getPhpClassName('Domain')"/> extends \<xsl:value-
     protected $name = '<xsl:value-of select="@name"/>';
     protected $protocolType = '<xsl:value-of select="@type"/>';
     function validate($subject) { return wire\validate<xsl:value-of select="$proto"/>($subject); }
+    function read($mBuff) { return wire\read<xsl:value-of select="$proto"/>($mBuff); }
+    function write($mBuff, $subject) { return wire\write<xsl:value-of select="$proto"/>($mBuff, $subject); }
 }
       </xsl:otherwise>
     </xsl:choose>

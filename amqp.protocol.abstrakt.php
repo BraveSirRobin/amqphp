@@ -64,6 +64,8 @@ abstract class XmlSpecDomain
     /* Implementations always proxy to (unwritten!) protocol validation funcs,
        optionally contain additional xml-generated validation routines */
     abstract function validate($subject);
+    abstract function read($mBuff);
+    abstract function write($mBuff, $val);
 }
 
 // PER-NS [many]
