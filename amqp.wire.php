@@ -2,6 +2,10 @@
 namespace amqp_091\wire;
 use amqp_091\protocol as protocol;
 
+const HELLO = "AMQP\x00\x00\x09\x01"; // Hello text to spit down a freshly opened socket
+const FRME = "\xCE"; // Frame end marker
+
+
 // Could potentially be switched to write to a stream?
 class AmqpMessageBuffer
 {
@@ -39,6 +43,8 @@ class AmqpMessageBuffer
     }
 
     function getBuffer() { return $this->buff; }
+
+    function getLength() { return strlen($this->buff); }
 }
 
 
@@ -196,8 +202,8 @@ function readTable(AmqpMessageBuffer $msg) {
     while ($msg->getOffset() < $tableEnd) {
         $k = readShortString($msg);
         $t = chr(readShortShortUInt($msg));
-        $v = new AmqpTableField;
-        $v->readValue($msg, $t);
+        $v = new AmqpTableField(null, $t);
+        $v->readValue($msg);
         $table[$k] = $v;
     }
     return $table;
@@ -211,6 +217,7 @@ function writeTable(AmqpMessageBuffer $msg, AmqpTable $val) {
         $fVal->writeValue($msg);
     }
     $new = $msg->getOffset();
+    $msg->setOffset($orig);
     writeLongUInt($msg, ($new - $orig));
     $msg->setOffsetEnd();
 }

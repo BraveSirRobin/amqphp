@@ -12,6 +12,10 @@ use amqp_091\protocol;
 const HEXDUMP_BIN = '/usr/bin/hexdump -C';
 
 
+const PROTO_HEADER = wire\HELLO;
+const PROTO_FRME = wire\FRME;
+
+
 
 
 abstract class AmqpMessage
@@ -75,6 +79,32 @@ abstract class AmqpMessage
     function getType () { return $this->type; }
     function getLength () { return $this->len; }
     function getChannel () { return $this->chan; }
+
+
+    function flush() {
+        //echo "(TEST)\nFrame End: \n";
+        //echo hexdump(PROTO_FRME);
+        //echo "(TEST)\n";
+        $this->buff = new wire\AmqpMessageBuffer('');
+        static::flushMessage(); // Copy message contents from child class
+        $len = $this->buff->getLength();
+        wire\writeShortShortUInt($this->buff, 206);
+        $this->buff->setOffset(0);
+        echo "  [AmqpMessage->flush] len = $len, type = {$this->type}, channel = {$this->chan}\n";
+        wire\writeShortShortUInt($this->buff, $this->type);
+        wire\writeShortUInt($this->buff, $this->chan);
+        wire\writeLongUInt($this->buff, $len);
+        //wire\writeShortShortUInt($this->buff, 1);
+        //wire\writeShortUInt($this->buff, 2);
+        //wire\writeLongUInt($this->buff, 3);
+
+        $b = $this->buff->getBuffer();
+        //echo hexdump($b);
+        return $b;
+    }
+
+    // Subclasses can implement so that their content can be added to the message
+    function flushMessage() {}
 }
 
 
@@ -122,16 +152,17 @@ class AmqpMethod extends AmqpMessage implements \ArrayAccess {
         // Look up the method prototype object
         list($classProto, $methProto) = $this->getPrototypes();
         $ret = 0;
-        echo "";
+        // Write the class and method numbers in to the buffer
+        wire\writeShortUInt($buff, $classProto->getSpecIndex());
+        wire\writeShortUInt($buff, $methProto->getSpecIndex());
         foreach ($methProto->getFields() as $f) {
             //echo "  Process field {$f->getSpecFieldName()}: " .
             //"({$this->cache[$f->getSpecFieldName()]})-[" . get_class($f) . "]\n";
             if (! isset($this->cache[$f->getSpecFieldName()])) {
                 throw new \Exception("Field {$f->getSpecFieldName()} of method {$methProto->getSpecName()}", 98765);
             }
-            $ret += $f->write($buff, $this->cache[$f->getSpecFieldName()]);
+            $f->write($buff, $this->cache[$f->getSpecFieldName()]);
         }
-        return $ret;
     }
     /** Lookup method allows mixed usage of method / class names / numbers.  Numbers are preferred */
     private function getPrototypes () {
@@ -158,6 +189,10 @@ class AmqpMethod extends AmqpMessage implements \ArrayAccess {
     function offsetGet ($offset) { return $this->cache[$offset]; }
     function offsetSet ($offset, $value) { $this->cache[$offset] = $value; }
     function offsetUnset ($offset) { unset($this->cache[$offset]); }
+
+    function getMethodData() {
+        return $this->cache;
+    }
 }
 class AmqpHeader extends AmqpMessage {}
 class AmqpBody extends AmqpMessage {}
@@ -168,8 +203,7 @@ class AmqpHeartbeat extends AmqpMessage {}
 
 function hexdump($subject) {
     if ($subject === '') {
-        error("Can't hexdump nothing");
-        return;
+        return "00000000\n";
     }
     $pDesc = array(
                    array('pipe', 'r'),
