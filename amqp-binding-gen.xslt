@@ -149,14 +149,14 @@ abstract class MethodFactory extends \<xsl:value-of select="bl:getPhpParentNs()"
 
 abstract class FieldFactory  extends \<xsl:value-of select="bl:getPhpParentNs()"/>\FieldFactory
 {
-    protected static $Cache = array(<xsl:for-each select=".//field">array('<xsl:value-of select="@name"/>', '<xsl:value-of select="parent::*[local-name() = 'method']/@name"/>', '\\<xsl:value-of select="bl:getPhpClassName('Field', true(), true())"/>')<xsl:if test="position() != last()">,</xsl:if></xsl:for-each>);
+    protected static $Cache = array(<xsl:for-each select=".//field[@domain]">array('<xsl:value-of select="@name"/>', '<xsl:value-of select="parent::*[local-name() = 'method']/@name"/>', '\\<xsl:value-of select="bl:getPhpClassName('Field', true(), true())"/>')<xsl:if test="position() != last()">,</xsl:if></xsl:for-each>);
 }
 
 
 <xsl:apply-templates select="./method" mode="output-method-classes"/>
 
 
-<xsl:apply-templates select=".//field[@domain != '']" mode="output-method-fields"/>
+<xsl:apply-templates select=".//field[@domain]" mode="output-method-fields"/>
 
     </exsl:document>
   </xsl:template>

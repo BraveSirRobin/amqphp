@@ -63,6 +63,8 @@ class RabbitConnection
 
     private $chans = array(); // Format: array(<chan-id> => RabbitChannel)
     private $nextChan = 1;
+    private $chanMax; // Set during setup.
+    private $frameMax; // Set during setup.
 
 
     private $username;
@@ -77,6 +79,8 @@ class RabbitConnection
         $this->initConnection();
     }
 
+    /** TODO: Un-hard code the setup and use the request/response features of the
+        protocol layer to manage the setup. */
     private function initConnection () {
         // Perform initial Amqp connection negotiation
         $this->write(\amqp_091\PROTO_HEADER);
@@ -93,7 +97,7 @@ class RabbitConnection
         }
 
         if (DEBUG) {
-            $this->showMessage($msg);
+            $this->showMethod($msg);
         }
 
         // Write connection.start-ok to wire.
@@ -110,23 +114,52 @@ class RabbitConnection
         $msg['mechanism'] = 'AMQPLAIN';
         $msg['response'] = $this->saslHack();
         $msg['locale'] = 'en_US';
-        $b = $msg->flush();
-        echo "From this lib:\n" . \amqp_091\hexdump($b);
-        file_put_contents('/tmp/mine.bin', $b);
-        $this->write($b);
+        if (DEBUG) {
+            $this->showMethod($msg);
+        }
+        $this->write($msg->flush());
 
-        // Read 
+        // Read connection.tune
         $resp = $this->read();
         $msg = \amqp_091\AmqpMessage::FromMessage($resp);
         $msg->parseMessage();
         if (DEBUG) {
-            echo "\nResponse:\n" . \amqp_091\hexdump($resp);
-            echo ("Response data:\n");
-            foreach ($msg->getMethodData() as $k => $v) {
-                echo "  $k = $v\n";
-            }
+            $this->showMethod($msg);
         }
+        $this->chanMax = $msg['channel-max'];
+        $this->frameMax = $msg['frame-max'];
 
+        // write connection.tune-ok
+        $msg = \amqp_091\AmqpMessage::NewMessage(\amqp_091\AmqpMessage::TYPE_METHOD, 0);
+        $msg->setClassName('connection');
+        $msg->setMethodName('tune-ok');
+        $msg['channel-max'] = $this->chanMax;
+        $msg['frame-max'] = $this->frameMax;
+        $msg['heartbeat'] = 0;
+        if (DEBUG) {
+            $this->showMethod($msg);
+        }
+        $this->write($msg->flush());
+
+        // Write connection.open
+        $msg = \amqp_091\AmqpMessage::NewMessage(\amqp_091\AmqpMessage::TYPE_METHOD, 0);
+        $msg->setClassName('connection');
+        $msg->setMethodName('open');
+        $msg['virtual-host'] = $this->vhost;
+        if (DEBUG) {
+            $this->showMethod($msg);
+        }
+        $b = $msg->flush();
+        echo \amqp_091\hexdump($b);
+        $this->write($msg->flush());
+
+        // Read ...
+        $resp = $this->read();
+        $msg = \amqp_091\AmqpMessage::FromMessage($resp);
+        $msg->parseMessage();
+        if (DEBUG) {
+            $this->showMethod($msg);
+        }
     }
 
     private function saslHack() {
@@ -145,6 +178,9 @@ class RabbitConnection
 
     private function initNewChannel () {
         $newChan = $this->nextChan++;
+        if ($this->chanMax > 0 && $newChan > $this->chanMax) {
+            throw new \Exception("Channels are exhausted!", 23756);
+        }
         return ($this->chans[$newChan] = new RabbitChannel($this, $newChan));
     }
 
@@ -184,8 +220,9 @@ class RabbitConnection
     }
 
 
-    private function showMessage($msg) {
-        echo "";
+    private function showMethod($msg) {
+        $s = sprintf("Method: (%s, %s, %d, %d):", $msg->getClassName(), $msg->getMethodName(), $msg->getClassId(), $msg->getMethodId());
+        printf("\n%s\n%s\n", $s, str_repeat('-', strlen($s)));
         foreach ($msg->getMethodData() as $k => $v) {
             if ($v instanceof \amqp_091\wire\AmqpTable) {
                 echo "$k (table)\n";
