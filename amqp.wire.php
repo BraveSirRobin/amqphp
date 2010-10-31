@@ -1,36 +1,6 @@
 <?php
-
 namespace amqp_091\wire;
-
 use amqp_091\protocol as protocol;
-
-class AmqpMessage
-{
-    const TYPE_METHOD = 1;
-    const TYPE_HEADER = 2;
-    const TYPE_BODY = 3;
-    const TYPE_HEARTBEAT = 4;
-
-    private $buff;
-    private $type;
-    private $len;
-    private $chan;
-
-    function __construct($sBuff) {
-        $this->buff = new AmqpMessageBuffer($sBuff);
-        $this->type = readShortShortUInt($this->buff);
-        $this->chan = readShortUInt($this->buff);
-        $this->len = readLongUInt($this->buff);
-    }
-
-    // @Return an array of
-    function readMethod() {
-        if ($this->type != self::TYPE_METHOD) {
-            throw new Exception("Cannot read message as a method - wrong type", 8645);
-        }
-    }
-}
-
 
 // Could potentially be switched to write to a stream?
 class AmqpMessageBuffer
@@ -42,16 +12,20 @@ class AmqpMessageBuffer
         $this->buff = $buff;
         $this->len = strlen($this->buff);
     }
-
+    /** Read from current position and return up to $n bytes, advances the internal pointer by N
+        bytes wjere N is strlen(<return value>) */
     function read($n) {
         $ret = substr($this->buff, $this->p, $n);
         $this->p += $n;
         return $ret;
     }
-
+    /** Insert the given text in to buffer at current position, advances the internal pointer by
+        N bytes where N = strlen(<input data>) */
     function write($buff) {
         $this->buff = substr($this->buff, 0, $this->p) . $buff . substr($this->buff, $this->p);
-        $this->p += strlen($buff);
+        $l = strlen($buff);
+        $this->p += $l;
+        return $l;
     }
 
     function getOffset() { return $this->p; }
@@ -88,7 +62,7 @@ abstract class AmqpValue
         if (isset(self::$MethodMap[$this->type])) {
             $this->val = call_user_func(array('AmqpProtocol', 'read' . self::$MethodMap[$this->type]), $c);
         } else {
-            throw new Exception(sprintf("Unknown parameter field type %s", $this->type), 986);
+            throw new \Exception(sprintf("Unknown parameter field type %s", $this->type), 986);
         }
     }
 
@@ -97,7 +71,7 @@ abstract class AmqpValue
             return call_user_func(array('AmqpProtocol', 'write' . self::$MethodMap[$this->type]),
                                   $c, $this->val);
         } else {
-            throw new Exception(sprintf("Unknown parameter field type %s", $type), 7547);
+            throw new \Exception(sprintf("Unknown parameter field type %s", $type), 7547);
         }
 
     }
@@ -146,7 +120,7 @@ class AmqpTableField extends AmqpValue
 
 
 
-class AmqpTable implements ArrayAccess, Iterator
+class AmqpTable implements \ArrayAccess, \Iterator
 {
     const ITER_MODE_SIMPLE = 1;
     const ITER_MODE_TYPED = 2;
@@ -186,9 +160,9 @@ class AmqpTable implements ArrayAccess, Iterator
 
     function offsetSet($k, $v) {
         if (! ($v instanceof AmqpTableField)) {
-            throw new Exception("Table data must already be boxed", 7355);
+            throw new \Exception("Table data must already be boxed", 7355);
         } else if ( ! self::IsValidKey($k)) {
-            throw new Exception("Invalid table key", 7255);
+            throw new \Exception("Invalid table key", 7255);
         }
         $this->data[$k] = $v;
     }
@@ -297,7 +271,7 @@ function readShortShortUInt(AmqpMessageBuffer $msg) {
     return $i;
 }
 function writeShortShortUInt(AmqpMessageBuffer $msg, $val) {
-    $this->wBuff .= pack('C', (int) $val);
+    $msg->write(pack('C', (int) $val));
 }
 
 // type 'U'
@@ -414,7 +388,7 @@ function writeTimestamp(AmqpMessageBuffer $msg, $val) {
 }
 
 
-private function packInt64($n) {
+function packInt64($n) {
     static $lbMask = null;
     if (is_null($lbMask)) {
         $lbMask = (pow(2, 32) - 1);
@@ -424,7 +398,7 @@ private function packInt64($n) {
     return pack('N', $hb) . pack('N', $lb);
 }
 
-private function unpackInt64($pInt) {
+function unpackInt64($pInt) {
     $plb = substr($pInt, 0, 2);
     $phb = substr($pInt, 2, 2);
     $lb = (int) array_shift(unpack('N', $plb));
