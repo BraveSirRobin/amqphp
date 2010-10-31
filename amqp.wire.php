@@ -43,24 +43,42 @@ class AmqpMessageBuffer
 
 
 
-abstract class AmqpValue
+class AmqpTableField
 {
+    private static $MethodMap = array(
+                                      't' => 'Boolean',
+                                      'b' => 'ShortShortInt',
+                                      'B' => 'ShortShortUInt',
+                                      'U' => 'ShortInt',
+                                      'u' => 'ShortUInt',
+                                      'I' => 'LongInt',
+                                      'i' => 'LongUInt',
+                                      'L' => 'LongLongInt',
+                                      'l' => 'LongLongUInt',
+                                      'f' => 'Float',
+                                      'd' => 'Double',
+                                      'D' => 'DecimalValue',
+                                      's' => 'ShortString',
+                                      'S' => 'LongString',
+                                      'A' => 'FieldArray',
+                                      'T' => 'Timestamp',
+                                      'F' => 'Table'
+                                      );
     protected $val; // PHP native
     protected $type;  // Amqp type
 
-    final function __construct($val, $type) {
-        $this->name = $name;
+    function __construct($val, $type) {
+        $this->val = $val;
         $this->type = $type;
     }
-    final function getValue() { return $this->val; }
-    final function setValue($val) { $this->val = $val; }
-    final function getType() { return $this->type; }
-    final function __toString() { return (string) $this->val; }
-
+    function getValue() { return $this->val; }
+    function setValue($val) { $this->val = $val; }
+    function getType() { return $this->type; }
+    function __toString() { return (string) $this->val; }
 
     final function readValue(AmqpMessageBuffer $c) {
         if (isset(self::$MethodMap[$this->type])) {
-            $this->val = call_user_func(array('AmqpProtocol', 'read' . self::$MethodMap[$this->type]), $c);
+            $this->val = call_user_func(__NAMESPACE__ . '\\read' . self::$MethodMap[$this->type], $c);
         } else {
             throw new \Exception(sprintf("Unknown parameter field type %s", $this->type), 986);
         }
@@ -68,56 +86,13 @@ abstract class AmqpValue
 
     final function writeValue(AmqpMessageBuffer $c) {
         if (isset(self::$MethodMap[$this->type])) {
-            return call_user_func(array('AmqpProtocol', 'write' . self::$MethodMap[$this->type]),
-                                  $c, $this->val);
+            return call_user_func(__NAMESPACE__ . '\\write' . self::$MethodMap[$this->type], $c, $this->val);
         } else {
             throw new \Exception(sprintf("Unknown parameter field type %s", $type), 7547);
         }
 
     }
 }
-
-class AmqpParameter extends AmqpValue
-{
-    protected static $MethodMap = array(
-                                        'bit' => 'Boolean',
-                                        'octet' => 'ShortShortUInt',
-                                        'short' => 'ShortUInt',
-                                        'long' => 'LongUInt',
-                                        'longlong' => 'LongLongUInt',
-                                        'shortstr' => 'ShortString',
-                                        'longstr' => 'LongString',
-                                        'timestamp' => 'Timestamp',
-                                        'table' => 'Table'
-                                        );
-}
-
-
-class AmqpTableField extends AmqpValue
-{
-    protected static $MethodMap = array(
-                                        't' => 'Boolean',
-                                        'b' => 'ShortShortInt',
-                                        'B' => 'ShortShortUInt',
-                                        'U' => 'ShortInt',
-                                        'u' => 'ShortUInt',
-                                        'I' => 'LongInt',
-                                        'i' => 'LongUInt',
-                                        'L' => 'LongLongInt',
-                                        'l' => 'LongLongUInt',
-                                        'f' => 'Float',
-                                        'd' => 'Double',
-                                        'D' => 'DecimalValue',
-                                        's' => 'ShortString',
-                                        'S' => 'LongString',
-                                        'A' => 'FieldArray',
-                                        'T' => 'Timestamp',
-                                        'F' => 'Table'
-                                        );
-}
-
-
-
 
 
 class AmqpTable implements \ArrayAccess, \Iterator

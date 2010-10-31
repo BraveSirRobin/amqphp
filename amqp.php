@@ -12,6 +12,8 @@ use amqp_091\protocol;
 const HEXDUMP_BIN = '/usr/bin/hexdump -C';
 
 
+
+
 abstract class AmqpMessage
 {
 
@@ -110,7 +112,8 @@ class AmqpMethod extends AmqpMessage implements \ArrayAccess {
         }
     }
 
-    /** Copies data from cache to the underlying message, returns number of bytes copied */
+    /** Copies data from cache to the underlying message, returns number of bytes copied
+        NOTE: this does not copy the message level parameters (type, channel, length) */
     function flushMessage () {
         if (! $this->cache) {
             return 0;
@@ -121,7 +124,8 @@ class AmqpMethod extends AmqpMessage implements \ArrayAccess {
         $ret = 0;
         echo "";
         foreach ($methProto->getFields() as $f) {
-            echo "  Process field {$f->getSpecFieldName()}: ({$this->cache[$f->getSpecFieldName()]})-[" . get_class($f) . "]\n";
+            //echo "  Process field {$f->getSpecFieldName()}: " .
+            //"({$this->cache[$f->getSpecFieldName()]})-[" . get_class($f) . "]\n";
             if (! isset($this->cache[$f->getSpecFieldName()])) {
                 throw new \Exception("Field {$f->getSpecFieldName()} of method {$methProto->getSpecName()}", 98765);
             }
