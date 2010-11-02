@@ -79,12 +79,10 @@ abstract class AmqpMessage
     function getType () { return $this->type; }
     function getLength () { return $this->len; }
     function getChannel () { return $this->chan; }
+    function setChannel ($chan) { $this->chan = $chan; }
 
 
     function flush() {
-        //echo "(TEST)\nFrame End: \n";
-        //echo hexdump(PROTO_FRME);
-        //echo "(TEST)\n";
         $this->buff = new wire\AmqpMessageBuffer('');
         static::flushMessage(); // Copy message contents from child class
         $len = $this->buff->getLength();
@@ -94,12 +92,9 @@ abstract class AmqpMessage
         wire\writeShortShortUInt($this->buff, $this->type);
         wire\writeShortUInt($this->buff, $this->chan);
         wire\writeLongUInt($this->buff, $len);
-        //wire\writeShortShortUInt($this->buff, 1);
-        //wire\writeShortUInt($this->buff, 2);
-        //wire\writeLongUInt($this->buff, 3);
 
         $b = $this->buff->getBuffer();
-        //echo hexdump($b);
+        //        echo hexdump($b);
         return $b;
     }
 

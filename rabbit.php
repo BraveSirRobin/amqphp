@@ -82,6 +82,9 @@ class RabbitConnection
     /** TODO: Un-hard code the setup and use the request/response features of the
         protocol layer to manage the setup. */
     private function initConnection () {
+        if (DEBUG) {
+            echo "\nCreate new RabbitConnection object.\n-----------------------------------\n";
+        }
         // Perform initial Amqp connection negotiation
         $this->write(\amqp_091\PROTO_HEADER);
 
@@ -97,7 +100,7 @@ class RabbitConnection
         }
 
         if (DEBUG) {
-            $this->showMethod($msg);
+            debugShowMethod($msg, '[recv] ');
         }
 
         // Write connection.start-ok to wire.
@@ -115,7 +118,7 @@ class RabbitConnection
         $msg['response'] = $this->saslHack();
         $msg['locale'] = 'en_US';
         if (DEBUG) {
-            $this->showMethod($msg);
+            debugShowMethod($msg, '[send] ');
         }
         $this->write($msg->flush());
 
@@ -124,7 +127,7 @@ class RabbitConnection
         $msg = \amqp_091\AmqpMessage::FromMessage($resp);
         $msg->parseMessage();
         if (DEBUG) {
-            $this->showMethod($msg);
+            debugShowMethod($msg, '[recv] ');
         }
         $this->chanMax = $msg['channel-max'];
         $this->frameMax = $msg['frame-max'];
@@ -137,7 +140,7 @@ class RabbitConnection
         $msg['frame-max'] = $this->frameMax;
         $msg['heartbeat'] = 0;
         if (DEBUG) {
-            $this->showMethod($msg);
+            debugShowMethod($msg, '[send] ');
         }
         $this->write($msg->flush());
 
@@ -146,8 +149,10 @@ class RabbitConnection
         $msg->setClassName('connection');
         $msg->setMethodName('open');
         $msg['virtual-host'] = $this->vhost;
+        $msg['reserved-1'] = '';
+        $msg['reserved-2'] = '';
         if (DEBUG) {
-            $this->showMethod($msg);
+            debugShowMethod($msg, '[send] ');
         }
         $b = $msg->flush();
         echo \amqp_091\hexdump($b);
@@ -158,7 +163,11 @@ class RabbitConnection
         $msg = \amqp_091\AmqpMessage::FromMessage($resp);
         $msg->parseMessage();
         if (DEBUG) {
-            $this->showMethod($msg);
+            debugShowMethod($msg, '[recv] ');
+        }
+
+        if (DEBUG) {
+            echo "\nRabbitConnection setup complete\n";
         }
     }
 
@@ -185,7 +194,8 @@ class RabbitConnection
     }
 
 
-    private function read () {
+    /** TODO: Become private */
+    public function read () {
         $ret = '';
         while ($tmp = socket_read($this->sock, self::READ_LEN)) {
             $ret .= $tmp;
@@ -197,7 +207,8 @@ class RabbitConnection
         return $ret;
     }
 
-    private function write ($buff) {
+    /** TODO: Become private */
+    public function write ($buff) {
         $bw = 0;
         $contentLength = strlen($buff);
         while ($bw < $contentLength) {
@@ -220,18 +231,21 @@ class RabbitConnection
     }
 
 
-    private function showMethod($msg) {
-        $s = sprintf("Method: (%s, %s, %d, %d):", $msg->getClassName(), $msg->getMethodName(), $msg->getClassId(), $msg->getMethodId());
-        printf("\n%s\n%s\n", $s, str_repeat('-', strlen($s)));
-        foreach ($msg->getMethodData() as $k => $v) {
-            if ($v instanceof \amqp_091\wire\AmqpTable) {
-                echo "$k (table)\n";
-                foreach ($v as $sk => $sv) {
-                    echo "  $sk = $sv\n";
-                }
-            } else {
-                echo "$k = $v\n";
+}
+
+
+function debugShowMethod ($msg, $sr) {
+    $s = sprintf("$sr, Method: (%s, %s, %d, %d):", $msg->getClassName(), $msg->getMethodName(),
+                 $msg->getClassId(), $msg->getMethodId());
+    printf("\n%s\n%s\n", $s, str_repeat('-', strlen($s)));
+    foreach ($msg->getMethodData() as $k => $v) {
+        if ($v instanceof \amqp_091\wire\AmqpTable) {
+            echo "$k (table)\n";
+            foreach ($v as $sk => $sv) {
+                echo "  $sk = $sv\n";
             }
+        } else {
+            echo "$k = $v\n";
         }
     }
 }
@@ -248,6 +262,30 @@ class RabbitChannel
     function __construct (RabbitConnection $rConn, $chanId) {
         $this->myConn = $rConn;
         $this->chanId = $chanId;
+
+        if (DEBUG) {
+            echo "\nRabbitChannel setup\n-------------------\n";
+        }
+        // write channel.open
+        $msg = \amqp_091\AmqpMessage::NewMessage(\amqp_091\AmqpMessage::TYPE_METHOD, 0);
+        $msg->setClassName('channel');
+        $msg->setMethodName('open');
+        $msg->setChannel($this->chanId);
+        $msg['reserved-1'] = '';
+        if (DEBUG) {
+            debugShowMethod($msg, '[send] ');
+        }
+        $this->myConn->write($msg->flush());
+
+        // read channel.open-ok
+        $resp = $this->myConn->read();
+        $msg = \amqp_091\AmqpMessage::FromMessage($resp);
+        $msg->parseMessage();
+        if (DEBUG) {
+            debugShowMethod($msg, '[recv] ');
+        }
+
+
     }
 
     function exchange () {

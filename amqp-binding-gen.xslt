@@ -149,14 +149,14 @@ abstract class MethodFactory extends \<xsl:value-of select="bl:getPhpParentNs()"
 
 abstract class FieldFactory  extends \<xsl:value-of select="bl:getPhpParentNs()"/>\FieldFactory
 {
-    protected static $Cache = array(<xsl:for-each select=".//field[@domain]">array('<xsl:value-of select="@name"/>', '<xsl:value-of select="parent::*[local-name() = 'method']/@name"/>', '\\<xsl:value-of select="bl:getPhpClassName('Field', true(), true())"/>')<xsl:if test="position() != last()">,</xsl:if></xsl:for-each>);
+    protected static $Cache = array(<xsl:for-each select=".//field[@domain or @type]">array('<xsl:value-of select="@name"/>', '<xsl:value-of select="parent::*[local-name() = 'method']/@name"/>', '\\<xsl:value-of select="bl:getPhpClassName('Field', true(), true())"/>')<xsl:if test="position() != last()">,</xsl:if></xsl:for-each>);
 }
 
 
 <xsl:apply-templates select="./method" mode="output-method-classes"/>
 
 
-<xsl:apply-templates select=".//field[@domain]" mode="output-method-fields"/>
+<xsl:apply-templates select=".//field[@domain or @type]" mode="output-method-fields"/>
 
     </exsl:document>
   </xsl:template>
@@ -178,10 +178,21 @@ class <xsl:value-of select="bl:getPhpClassName('Method')"/> extends \<xsl:value-
 
 
   <xsl:template match="field" mode="output-method-fields">
-class <xsl:value-of select="bl:getPhpClassName('Field')"/> extends \<xsl:value-of select="bl:getPhpNamespace()"/>\<xsl:value-of select="bl:getGenClassName(@domain)"/>Domain implements \<xsl:value-of select="bl:getPhpParentNs()"/>\XmlSpecField
+    <xsl:variable name="daType"><!-- @domain or @type -->
+    <xsl:choose>
+      <xsl:when test="@domain">
+	<xsl:value-of select="@domain"/>
+      </xsl:when>
+      <xsl:otherwise>
+	<xsl:value-of select="@type"/>
+      </xsl:otherwise>
+    </xsl:choose>
+      
+    </xsl:variable>
+class <xsl:value-of select="bl:getPhpClassName('Field')"/> extends \<xsl:value-of select="bl:getPhpNamespace()"/>\<xsl:value-of select="bl:getGenClassName($daType)"/>Domain implements \<xsl:value-of select="bl:getPhpParentNs()"/>\XmlSpecField
 {
     function getSpecFieldName() { return '<xsl:value-of select="@name"/>'; }
-    function getSpecFieldDomain() { return '<xsl:value-of select="@domain"/>'; }
+    function getSpecFieldDomain() { return '<xsl:value-of select="$daType"/>'; }
 <xsl:if test="./assert">
     function validate($subject) {
         return (parent::validate($subject) &amp;&amp; <xsl:for-each select="./assert"><xsl:value-of select="bl:getCodeForAssert(@check, @value, '$subject')"/><xsl:if test="position() != last()"> &amp;&amp; </xsl:if></xsl:for-each>);
@@ -195,7 +206,6 @@ class <xsl:value-of select="bl:getPhpClassName('Field')"/> extends \<xsl:value-o
 <!--
    Stylesheet ends - all exslt funcs from here
 -->
-
 
 
   <!-- Helper: double slash the given ns ID -->
