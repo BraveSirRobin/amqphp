@@ -2724,3 +2724,25 @@
 
 </amqp>
 
+<!--
+
+
+	{
+	    "id": 30,
+	    "methods": [{"id": 10,
+			 "arguments": [{"type": "shortstr", "name": "realm", "default-value": "/data"},
+				       {"type": "bit", "name": "exclusive", "default-value": false},
+				       {"type": "bit", "name": "passive", "default-value": true},
+				       {"type": "bit", "name": "active", "default-value": true},
+				       {"type": "bit", "name": "write", "default-value": true},
+				       {"type": "bit", "name": "read", "default-value": true}],
+			 "name": "request",
+			 "synchronous" : true},
+			{"id": 11,
+                    "arguments": [{"type": "short", "name": "ticket", "default-value": 1}],
+			 "name": "request-ok"}],
+	    "name": "access"
+	},
+
+
+-->
