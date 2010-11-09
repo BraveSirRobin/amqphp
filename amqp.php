@@ -134,6 +134,7 @@ class AmqpMethod extends AmqpMessage implements \ArrayAccess {
         // Copy field data in to cache
         foreach ($methProto->getFields() as $f) {
             $this->cache[$f->getSpecFieldName()] = $f->read($buff);
+            // $this->cache[$f->getSpecFieldName()] = $buff->read($f);
         }
     }
 
@@ -154,9 +155,10 @@ class AmqpMethod extends AmqpMessage implements \ArrayAccess {
             //echo "  Process field {$f->getSpecFieldName()}: " .
             //"({$this->cache[$f->getSpecFieldName()]})-[" . get_class($f) . "]\n";
             if (! isset($this->cache[$f->getSpecFieldName()])) {
-                throw new \Exception("Field {$f->getSpecFieldName()} of method {$methProto->getSpecName()}", 98765);
+                throw new \Exception("Missing field {$f->getSpecFieldName()} of method {$methProto->getSpecName()}", 98765);
             }
             $f->write($buff, $this->cache[$f->getSpecFieldName()]);
+            // $buff->write($f, $this->cache[$f->getSpecFieldName()]);
         }
     }
     /** Lookup method allows mixed usage of method / class names / numbers.  Numbers are preferred */
