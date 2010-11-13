@@ -1,106 +1,456 @@
 <?php
 namespace amqp_091\wire;
 
+/**
+ * Note the additional complexity WRT. Boolean types, from the 0.9.1 spec:
+ *    When two or more bits are contiguous in a frame these will be packed
+ *    into one or more octets, starting from the low bit in each octet.
+ */
+
 const HELLO = "AMQP\x00\x00\x09\x01"; // Hello text to spit down a freshly opened socket
 const FRME = "\xCE"; // Frame end marker
 
 
-// Could potentially be switched to write to a stream?
-class AmqpMessageBuffer
+// Protocol as in PDF / BNF type
+abstract class Protocol
 {
-    private $buff = '';
+    private static $Versions = array('0.9.1');
+    private static $ImplTypes = array('Table',
+                                      'Boolean',
+                                      'ShortShortInt',
+                                      'ShortShortUInt',
+                                      'ShortInt',
+                                      'ShortUInt',
+                                      'LongInt',
+                                      'LongUInt',
+                                      'LongLongInt',
+                                      'LongLongUInt',
+                                      'Float',
+                                      'Double',
+                                      'DecimalValue',
+                                      'ShortString',
+                                      'LongString',
+                                      'FieldArray',
+                                      'Timestamp');
+
+    private static $XmlTypesMap = array(
+                                        'bit' => 'Boolean',
+                                        'octet' => 'ShortShortUInt',
+                                        'short' => 'ShortUInt',
+                                        'long' => 'LongUInt',
+                                        'longlong' => 'LongLongUInt',
+                                        'shortstr' => 'ShortString',
+                                        'longstr' => 'LongString',
+                                        'timestamp' => 'Timestamp',
+                                        'table' => 'Table');
+
+
+    private static $AmqpTableMap = array(
+                                         't' => 'Boolean',
+                                         'b' => 'ShortShortInt',
+                                         'B' => 'ShortShortUInt',
+                                         'U' => 'ShortInt',
+                                         'u' => 'ShortUInt',
+                                         'I' => 'LongInt',
+                                         'i' => 'LongUInt',
+                                         'L' => 'LongLongInt',
+                                         'l' => 'LongLongUInt',
+                                         'f' => 'Float',
+                                         'd' => 'Double',
+                                         'D' => 'DecimalValue',
+                                         's' => 'ShortString',
+                                         'S' => 'LongString',
+                                         'A' => 'FieldArray',
+                                         'T' => 'Timestamp',
+                                         'F' => 'Table');
+
+    static function GetXmlTypes () { return self::$XmlTypesMap; }
+
+
+    protected function getImplForXmlType($t) {
+        return isset(self::$XmlTypesMap[$t]) ?
+            self::$XmlTypesMap[$t]
+            : null;
+    }
+    protected function getImplForTableType($t) {
+        return isset(self::$AmqpTableMap[$t]) ?
+            self::$AmqpTableMap[$t]
+            : null;
+    }
+
+    /** CAUTION: Use with care - lots of types are 'unreachable', default behaviour is
+        to use shortest storage type available */
+    protected function getTableTypeForValue($val) {
+        if (is_bool($val)) {
+            return 't';
+        } else if (is_int($val))  {
+            // Prefer unsigned types
+            if ($val > 0) {
+                if ($val < 256) {
+                    return 'B'; // short-short-uint
+                } else if ($val < 65536) {
+                    return 'u'; // short-uint
+                } else if ($val < 4294967296) {
+                    return 'i'; // long-uint
+                } else {
+                    return 'l'; // long-long-uint
+                }
+            } else if ($val < 0) {
+                $val = abs($val);
+                if ($val < 256) {
+                    return 'b'; // short-short-int
+                } else if ($val < 65536) {
+                    return 'U'; // short-int
+                } else if ($val < 4294967296) {
+                    return 'I'; // long-int
+                } else {
+                    return 'L'; // long-long-int
+                }
+            } else {
+                return 'B'; // short-short-uint
+            }
+        } else if (is_float($val)) {
+            // Prefer Decimal?
+            return 'f'; // float
+        } else if (is_string($val)) {
+            return (strlen($val) < 255) ?
+                's' // short-string
+                : 'S'; // long-string
+        }
+        return null;
+    }
+    /** CAUTION: Use with care - some types are 'unreachable', default behaviour is
+        to use shortest storage type available */
+    protected function getXmlTypeForValue($val) {
+        if (is_bool($val)) {
+            return 'bit';
+        } else if (is_int($val))  {
+            $val = abs($val);
+            if ($val < 256) {
+                return 'octet'; // short-short-int
+            } else if ($val < 65536) {
+                return 'short'; // short-int
+            } else if ($val < 4294967296) {
+                return 'long'; // long-int
+            } else {
+                return 'longlong'; // long-long-int
+            }
+        } else if (is_string($val)) {
+            return (strlen($val) < 255) ?
+                'shortstr' // short-string
+                : 'longstr'; // long-string
+        } else if (is_array($val) || $val instanceof Table) {
+            return 'table';
+        }
+        return null;
+    }
+}
+
+
+class Reader extends Protocol
+{
+    private $bin;
     private $p = 0;
+    private $binPackOffset = 0;
+    private $binBuffer;
 
-    function __construct($buff = '') {
-        $this->buff = $buff;
-        $this->len = strlen($this->buff);
+    function __construct ($bin) { $this->bin = $bin; }
+
+    /** Read the given type from the local buffer and return a PHP conversion */
+    function read ($type, $tableField=false) {
+        $implType = ($tableField) ?
+            $this->getImplForTableType($type)
+            : $this->getImplForXmlType($type);
+        if (! $implType) {
+            trigger_error("Warning: no type mapping found for input type or value - nothing read", E_USER_WARNING);
+            return;
+        }
+        $r = $this->{"read$implType"}();
+        if ($implType === 'Boolean') {
+            if ($this->binPackOffset++ > 6) {
+                $this->binPackOffset = 0;
+            }
+        } else {
+            $this->binPackOffset = 0;
+        }
+        return $r;
     }
-    /** Read from current position and return up to $n bytes, advances the internal pointer by N
-        bytes wjere N is strlen(<return value>) */
-    function read($n) {
-        $ret = substr($this->buff, $this->p, $n);
-        $this->p += $n;
-        return $ret;
+
+
+
+
+    private function readTable () {
+        // TODO!
     }
-    /** Insert the given text in to buffer at current position, advances the internal pointer by
-        N bytes where N = strlen(<input data>) */
-    function write($buff) {
-        $this->buff = substr($this->buff, 0, $this->p) . $buff . substr($this->buff, $this->p);
-        $l = strlen($buff);
+
+    private function readBoolean () {
+        // Buffer 8 bits at a time.
+        if ($this->binPackOffset == 0) {
+            $this->binBuffer = array_pop(unpack('C', substr($this->bin, $this->p++, 1)));
+        }
+        return ($this->binBuffer & (1 << $this->binPackOffset)) ? 1 : 0;
+    }
+
+    private function readShortShortInt () {
+        $i = array_pop(unpack('c', substr($this->bin, $this->p++, 1)));
+        return $i;
+    }
+
+    private function readShortShortUInt () {
+        $i = array_pop(unpack('C', substr($this->bin, $this->p++, 1)));
+        return $i;
+    }
+
+    private function readShortInt () {
+        $i = array_pop(unpack('s', substr($this->bin, $this->p, 1)));
+        $this->p += 2;
+        return $i;
+    }
+
+    private function readShortUInt () {
+        $i = array_pop(unpack('n', substr($this->bin, $this->p, 1)));
+        $this->p += 2;
+        return $i;
+    }
+
+    private function readLongInt () {
+        $i = array_pop(unpack('L', substr($this->bin, $this->p, 1)));
+        $this->p += 4;
+        return $i;
+    }
+
+    private function readLongUInt () {
+        $i = array_pop(unpack('N', substr($this->bin, $this->p, 1)));
+        $this->p += 4;
+        return $i;
+    }
+
+    private function readLongLongInt () {
+        error("Unimplemented read method %s", __METHOD__);
+    }
+
+    private function readLongLongUInt () {
+        error("Unimplemented read method %s", __METHOD__);
+    }
+
+    private function readFloat () {
+        error("Unimplemented read method %s", __METHOD__);
+    }
+
+    private function readDouble () {
+        error("Unimplemented read method %s", __METHOD__);
+    }
+
+    private function readDecimalValue () {
+        error("Unimplemented read method %s", __METHOD__);
+    }
+
+    private function readShortString () {
+        $l = $this->readShortShortUInt();
+        $s = substr($this->bin, $this->p, $l);
         $this->p += $l;
-        return $l;
+        return $s;
     }
 
-    function getOffset() { return $this->p; }
-
-    function setOffset($p) {
-        $this->p = (int) $p;
+    private function readLongString () {
+        $l = $this->readLongUInt();
+        $s = substr($this->bin, $this->p, $l);
+        $this->p += $l;
+        return $s;
     }
 
-    function setOffsetEnd() {
-        $this->p = strlen($this->buff);
+    private function readFieldArray () {
+        error("Unimplemented read method %s", __METHOD__);
     }
 
-    function getBuffer() { return $this->buff; }
+    private function readTimestamp () {
+        error("Unimplemented read method %s", __METHOD__);
+    }
 
-    function getLength() { return strlen($this->buff); }
+
+    private function packInt64 ($n) {
+        static $lbMask = null;
+        if (is_null($lbMask)) {
+            $lbMask = (pow(2, 32) - 1);
+        }
+        $hb = $n >> 16;
+        $lb = $n & $lbMask;
+        return pack('N', $hb) . pack('N', $lb);
+    }
+
+    private function unpackInt64 ($pInt) {
+        $plb = substr($pInt, 0, 2);
+        $phb = substr($pInt, 2, 2);
+        $lb = (int) array_shift(unpack('N', $plb));
+        $hb = (int) array_shift(unpack('N', $phb));
+        return (int) $hb + (((int) $lb) << 16);
+    }
 }
 
 
 
-class AmqpTableField
+class Writer extends Protocol
 {
-    private static $MethodMap = array(
-                                      't' => 'Boolean',
-                                      'b' => 'ShortShortInt',
-                                      'B' => 'ShortShortUInt',
-                                      'U' => 'ShortInt',
-                                      'u' => 'ShortUInt',
-                                      'I' => 'LongInt',
-                                      'i' => 'LongUInt',
-                                      'L' => 'LongLongInt',
-                                      'l' => 'LongLongUInt',
-                                      'f' => 'Float',
-                                      'd' => 'Double',
-                                      'D' => 'DecimalValue',
-                                      's' => 'ShortString',
-                                      'S' => 'LongString',
-                                      'A' => 'FieldArray',
-                                      'T' => 'Timestamp',
-                                      'F' => 'Table'
-                                      );
+    private $bin;
+    private $binPackOffset = 0;
+
+    /** Write the given PHP variable to the local buffer using the given
+        Amqp type mapping. */
+    function write ($value, $type, $tableField=false) {
+        $implType = ($tableField) ?
+            $this->getImplForTableType($type)
+            : $this->getImplForXmlType($type);
+        if (! $implType) {
+            trigger_error(sprintf("Warning: Unknown Amqp type: %s", $type), E_USER_WARNING);
+            $implType = ($tableField) ?
+                $this->getTableTypeForValue($value)
+                : $this->getXmlTypeForValue($value);
+            if (! $implType) {
+                trigger_error("Warning: no type mapping found for input type or value - nothing written", E_USER_WARNING);
+                return;
+            }
+        }
+        $r = $this->{"write$implType"}($value);
+        if ($implType === 'Boolean') {
+            $this->binPackOffset++;
+        } else {
+            $this->binPackOffset = 0;
+        }
+    }
+
+    function getBuffer() { return $this->bin; }
+
+
+
+
+    private function writeTable (AmqpTable $val) {
+        $p = strlen($this->bin); // Rewind to here and write in the table length
+        foreach ($val as $tf) {
+        }
+    }
+
+    private function writeBoolean ($val) {
+        if ($this->binPackOffset == 0) {
+            if ($val) {
+                $this->bin .= pack('C', 1);
+            } else {
+                $this->bin .= pack('C', 0);
+            }
+        } else {
+            $b = array_pop(unpack('C', substr($this->bin, -1)));
+            if ($val) {
+                $b += pow(2, $this->binPackOffset);
+            }
+            if ($this->binPackOffset > 6) {
+                $this->binPackOffset = -1;
+            }
+            $this->bin = substr($this->bin, 0, -1) . pack('C', $b);
+        }
+    }
+
+    private function writeShortShortInt ($val) {
+        $this->bin .= pack('c', (int) $val);
+    }
+
+    private function writeShortShortUInt ($val) {
+        $this->bin .= pack('C', (int) $val);
+    }
+
+    private function writeShortInt ($val) {
+        $this->bin .= pack('s', (int) $val);
+    }
+
+    private function writeShortUInt ($val) {
+        $this->bin .= pack('n', (int) $val);
+    }
+
+    private function writeLongInt ($val) {
+        $this->bin .= pack('L', (int) $val);
+    }
+
+    private function writeLongUInt ($val) {
+        $this->bin .= pack('N', (int) $val);
+    }
+
+    private function writeLongLongInt ($val) {
+        error("Unimplemented *write* method %s", __METHOD__);
+    }
+
+    private function writeLongLongUInt ($val) {
+        error("Unimplemented *write* method %s", __METHOD__);
+    }
+
+    private function writeFloat ($val) {
+        error("Unimplemented *write* method %s", __METHOD__);
+    }
+
+    private function writeDouble ($val) {
+        error("Unimplemented *write* method %s", __METHOD__);
+    }
+
+    private function writeDecimalValue ($val) {
+        error("Unimplemented *write* method %s", __METHOD__);
+    }
+
+    private function writeShortString ($val) {
+        $this->writeShortShortUInt(strlen($val));
+        $this->bin .= $val;
+    }
+
+    private function writeLongString ($val) {
+        $this->writeLongUInt(strlen($val));
+        $this->bin .= $val;
+    }
+
+    private function writeFieldArray ($val) {
+        error("Unimplemented *write* method %s", __METHOD__);
+    }
+
+    private function writeTimestamp ($val) {
+        error("Unimplemented *write* method %s", __METHOD__);
+    }
+}
+
+
+
+function packInt64($n) {
+    static $lbMask = null;
+    if (is_null($lbMask)) {
+        $lbMask = (pow(2, 32) - 1);
+    }
+    $hb = $n >> 16;
+    $lb = $n & $lbMask;
+    return pack('N', $hb) . pack('N', $lb);
+}
+
+function unpackInt64($pInt) {
+    $plb = substr($pInt, 0, 2);
+    $phb = substr($pInt, 2, 2);
+    $lb = (int) array_shift(unpack('N', $plb));
+    $hb = (int) array_shift(unpack('N', $phb));
+    return (int) $hb + (((int) $lb) << 16);
+}
+
+
+
+class TableField extends Protocol
+{
     protected $val; // PHP native
     protected $type;  // Amqp type
 
-    function __construct($val, $type) {
+    /** Implement type guessing, i.e. PHP -> Amqp table mapping */
+    function __construct($val, $type=false) {
         $this->val = $val;
-        $this->type = $type;
+        $this->type = ($type === false) ? $this->getTableTypeForValue($val) : $type;
     }
     function getValue() { return $this->val; }
     function setValue($val) { $this->val = $val; }
     function getType() { return $this->type; }
     function __toString() { return (string) $this->val; }
-
-    final function readValue(AmqpMessageBuffer $c) {
-        if (isset(self::$MethodMap[$this->type])) {
-            $this->val = call_user_func(__NAMESPACE__ . '\\read' . self::$MethodMap[$this->type], $c);
-        } else {
-            throw new \Exception(sprintf("Unknown parameter field type %s", $this->type), 986);
-        }
-    }
-
-    final function writeValue(AmqpMessageBuffer $c) {
-        if (isset(self::$MethodMap[$this->type])) {
-            return call_user_func(__NAMESPACE__ . '\\write' . self::$MethodMap[$this->type], $c, $this->val);
-        } else {
-            throw new \Exception(sprintf("Unknown parameter field type %s", $type), 7547);
-        }
-
-    }
 }
 
 
-class AmqpTable implements \ArrayAccess, \Iterator
+class Table implements \ArrayAccess, \Iterator
 {
     const ITER_MODE_SIMPLE = 1;
     const ITER_MODE_TYPED = 2;
@@ -140,10 +490,10 @@ class AmqpTable implements \ArrayAccess, \Iterator
 
     // TODO: Implement a type guess mechanism so that $v can be raw php type
     function offsetSet($k, $v) {
-        if (! ($v instanceof AmqpTableField)) {
-            throw new \Exception("Table data must already be boxed", 7355);
-        } else if ( ! self::IsValidKey($k)) {
+        if ( ! self::IsValidKey($k)) {
             throw new \Exception("Invalid table key", 7255);
+        } else if (! ($v instanceof TableField)) {
+            $v = new TableField($v);
         }
         $this->data[$k] = $v;
     }
@@ -186,529 +536,62 @@ class AmqpTable implements \ArrayAccess, \Iterator
     }
 }
 
+// Test Code.
 
+t2();
 
-/**
- * Stateless low level read / write routines - all content is written and
- * read using the AmqpMessageBuffer object.
- */
-// type 'F'
-function readTable(AmqpMessageBuffer $msg) {
-    $tableLen = readLongUInt($msg);
-    $tableEnd = $msg->getOffset() + $tableLen;
-    $table = new AmqpTable;
-    while ($msg->getOffset() < $tableEnd) {
-        $k = readShortString($msg);
-        $t = chr(readShortShortUInt($msg));
-        $v = new AmqpTableField(null, $t);
-        $v->readValue($msg);
-        $table[$k] = $v;
-    }
-    return $table;
-}
-
-function writeTable(AmqpMessageBuffer $msg, AmqpTable $val) {
-    $orig = $msg->getOffset();
-    foreach ($val as $fName => $fVal) {
-        writeShortString($msg, $fName);
-        writeShortShortUInt($msg, ord($fVal->getType()));
-        $fVal->writeValue($msg);
-    }
-    $new = $msg->getOffset();
-    $msg->setOffset($orig);
-    writeLongUInt($msg, ($new - $orig));
-    $msg->setOffsetEnd();
+function t1() {
+    $aTable = array("Foo" => "Bar");
+    $table = new Table($aTable);
+    $table['bigfoo'] = 'B' . str_repeat('b', 256) . 'ar!';
+    $table['num'] = 2;
+    $table['bignum'] = 259;
+    $table['negnum'] = -2;
+    $table['bignegnum'] = -259;
+    var_dump($table);
 }
 
 
+// Write stuff then read it back again
+function t2() {
+    $w = new Writer;
+    $w->write('I ATE ', 'shortstr');
+    $w->write(3, 'octet');
+    $w->write(' GOATS', 'shortstr');
+    $w->write(0, 'bit');//1
+    $w->write(1, 'bit');//2
+    $w->write(0, 'bit');//3
+    $w->write(1, 'bit');//4
+    $w->write(0, 'bit');//5
+    $w->write(1, 'bit');//6
+    $w->write(0, 'bit');//7
+    $w->write(0, 'bit');//8
+    $w->write(0, 'bit');//9
 
+    echo $w->getBuffer();
 
-// type 't'
-function readBoolean(AmqpMessageBuffer $msg) {
-    $i = array_pop(unpack('C', $msg->read(1)));
-    return ($i !== 0);
-}
-function writeBoolean(AmqpMessageBuffer $msg, $val) {
-    if ($val) {
-        $msg->write(pack('C', 1));
-    } else {
-        $msg->write(pack('C', 0));
-    }
-}
-
-// type 'b'
-function readShortShortInt(AmqpMessageBuffer $msg) {
-    $i = array_pop(unpack('c', $msg->read(1)));
-    return $i;
-}
-function writeShortShortInt(AmqpMessageBuffer $msg, $val) {
-    $msg->write(pack('c', (int) $val));
-}
-
-// type 'B'
-function readShortShortUInt(AmqpMessageBuffer $msg) {
-    $i = array_pop(unpack('C', $msg->read(1)));
-    return $i;
-}
-function writeShortShortUInt(AmqpMessageBuffer $msg, $val) {
-    $msg->write(pack('C', (int) $val));
-}
-
-// type 'U'
-function readShortInt(AmqpMessageBuffer $msg) {
-    $i = array_pop(unpack('s', $msg->read(2)));
-    return $i;
-}
-function writeShortInt(AmqpMessageBuffer $msg, $val) {
-    $msg->write(pack('s', (int) $val));
-}
-
-
-// type 'u'
-function readShortUInt(AmqpMessageBuffer $msg) {
-    $i = array_pop(unpack('n', $msg->read(2)));
-    return $i;
-}
-function writeShortUInt(AmqpMessageBuffer $msg, $val) {
-    $msg->write(pack('n', (int) $val));
-}
-
-// type 'I'
-function readLongInt(AmqpMessageBuffer $msg) {
-    $i = array_pop(unpack('L', $msg->read(4)));
-    return $i;
-}
-function writeLongInt(AmqpMessageBuffer $msg, $val) {
-    $msg->write(pack('L', (int) $val));
-}
-
-// type 'i'
-function readLongUInt(AmqpMessageBuffer $msg) {
-    $i = array_pop(unpack('N', $msg->read(4)));
-    return $i;
-}
-function writeLongUInt(AmqpMessageBuffer $msg, $val) {
-    $msg->write(pack('N', (int) $val));
-}
-
-// type 'L'
-function readLongLongInt(AmqpMessageBuffer $msg) {
-    error("Unimplemented read method %s", __METHOD__);
-}
-function writeLongLongInt(AmqpMessageBuffer $msg, $val) {
-    error("Unimplemented *write* method %s", __METHOD__);
-}
-
-// type 'l'
-function readLongLongUInt(AmqpMessageBuffer $msg) {
-    error("Unimplemented read method %s", __METHOD__);
-}
-function writeLongLongUInt(AmqpMessageBuffer $msg, $val) {
-    error("Unimplemented *write* method %s", __METHOD__);
-}
-
-// type 'f'
-function readFloat(AmqpMessageBuffer $msg) {
-    error("Unimplemented read method %s", __METHOD__);
-}
-function writeFloat(AmqpMessageBuffer $msg, $val) {
-    error("Unimplemented *write* method %s", __METHOD__);
-}
-
-// type 'd'
-function readDouble(AmqpMessageBuffer $msg) {
-    error("Unimplemented read method %s", __METHOD__);
-}
-function writeDouble(AmqpMessageBuffer $msg, $val) {
-    error("Unimplemented *write* method %s", __METHOD__);
-}
-
-// type 'D'
-function readDecimalValue(AmqpMessageBuffer $msg) {
-    error("Unimplemented read method %s", __METHOD__);
-}
-function writeDecimalValue(AmqpMessageBuffer $msg, $val) {
-    error("Unimplemented *write* method %s", __METHOD__);
-}
-
-// type 's'
-function readShortString(AmqpMessageBuffer $msg) {
-    $l = readShortShortUInt($msg);
-    return $msg->read($l);
-}
-function writeShortString(AmqpMessageBuffer $msg, $val) {
-    writeShortShortUInt($msg, strlen($val));
-    $msg->write($val);
-}
-
-// type 'S'
-function readLongString(AmqpMessageBuffer $msg) {
-    $l = readLongUInt($msg);
-    return $msg->read($l);
-}
-function writeLongString(AmqpMessageBuffer $msg, $val) {
-    writeLongUInt($msg, strlen($val));
-    $msg->write($val);
-}
-
-// type 'A'
-function readFieldArray(AmqpMessageBuffer $msg) {
-    error("Unimplemented read method %s", __METHOD__);
-}
-function writeFieldArray(AmqpMessageBuffer $msg, $val) {
-    error("Unimplemented *write* method %s", __METHOD__);
-}
-
-// type 'T'
-function readTimestamp(AmqpMessageBuffer $msg) {
-    error("Unimplemented read method %s", __METHOD__);
-}
-function writeTimestamp(AmqpMessageBuffer $msg, $val) {
-    error("Unimplemented *write* method %s", __METHOD__);
-}
-
-
-function packInt64($n) {
-    static $lbMask = null;
-    if (is_null($lbMask)) {
-        $lbMask = (pow(2, 32) - 1);
-    }
-    $hb = $n >> 16;
-    $lb = $n & $lbMask;
-    return pack('N', $hb) . pack('N', $lb);
-}
-
-function unpackInt64($pInt) {
-    $plb = substr($pInt, 0, 2);
-    $phb = substr($pInt, 2, 2);
-    $lb = (int) array_shift(unpack('N', $plb));
-    $hb = (int) array_shift(unpack('N', $phb));
-    return (int) $hb + (((int) $lb) << 16);
+    echo "\n-Regurgitate-\n";
+    $r = new Reader($w->getBuffer());
+    echo $r->read('shortstr') . $r->read('octet') . $r->read('shortstr') .
+        ' ' . $r->read('bit') . ' ' . $r->read('bit') . ' ' . $r->read('bit') .
+        ' ' . $r->read('bit') . ' ' . $r->read('bit') . ' ' . $r->read('bit') .
+        ' ' . $r->read('bit') . ' ' . $r->read('bit') . ' ' . $r->read('bit');
 }
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// New superclass for generated fundamental domains
-class AmqpMessageBufferNew
-{
-    private $buff = '';
-    private $p = 0;
-
-
-
-    function __construct($buff = '') {
-        $this->buff = $buff;
-    }
-
-
-    final function write($type, $value) {
-        $m = "write{$type}";
-        return $this->{$m}($value);
-    }
-    final function read($type) {
-        $m = "read{$type}";
-        return $this->{$m}();
-    }
-
-    function readTable() {
-        $tableLen = $this->readLongUInt();
-        $tableEnd = $this->getOffset() + $tableLen;
-        $table = new AmqpTable;
-        while ($this->getOffset() < $tableEnd) {
-            $k = $this->readShortString();
-            $t = chr($this->readShortShortUInt());
-            $v = new AmqpTableField(null, $t);
-            $v->readValue($this);
-            $table[$k] = $v;
-        }
-        return $table;
-    }
-
-    function writeTable(AmqpTable $val) {
-        $orig = $this->getOffset();
-        foreach ($val as $fName => $fVal) {
-            $this->writeShortString($fName);
-            $this->writeShortShortUInt(ord($fVal->getType()));
-            $fVal->writeValue($this);
-        }
-        $new = $this->getOffset();
-        $this->setOffset($orig);
-        $this->writeLongUInt($msg, ($new - $orig));
-        $this->setOffsetEnd();
-    }
-
-
-
-
-    // type 't'
-    function readBoolean() {
-        $i = array_pop(unpack('C', $this->_read(1)));
-        return ($i !== 0);
-    }
-    function writeBoolean($val) {
-        if ($val) {
-            $this->_write(pack('C', 1));
-        } else {
-            $this->_write(pack('C', 0));
-        }
-    }
-
-    // type 'b'
-    function readShortShortInt() {
-        $i = array_pop(unpack('c', $this->_read(1)));
-        return $i;
-    }
-    function writeShortShortInt($val) {
-        $this->_write(pack('c', (int) $val));
-    }
-
-    // type 'B'
-    function readShortShortUInt() {
-        $i = array_pop(unpack('C', $this->_read(1)));
-        return $i;
-    }
-    function writeShortShortUInt($val) {
-        $this->_write(pack('C', (int) $val));
-    }
-
-    // type 'U'
-    function readShortInt() {
-        $i = array_pop(unpack('s', $this->_read(2)));
-        return $i;
-    }
-    function writeShortInt($val) {
-        $this->_write(pack('s', (int) $val));
-    }
-
-
-    // type 'u'
-    function readShortUInt($msg) {
-        $i = array_pop(unpack('n', $this->_read(2)));
-        return $i;
-    }
-    function writeShortUInt($val) {
-        $this->_write(pack('n', (int) $val));
-    }
-
-    // type 'I'
-    function readLongInt() {
-        $i = array_pop(unpack('L', $this->_read(4)));
-        return $i;
-    }
-    function writeLongInt($val) {
-        $this->_write(pack('L', (int) $val));
-    }
-
-    // type 'i'
-    function readLongUInt() {
-        $i = array_pop(unpack('N', $this->_read(4)));
-        return $i;
-    }
-    function writeLongUInt($val) {
-        $this->_write(pack('N', (int) $val));
-    }
-
-    // type 'L'
-    function readLongLongInt() {
-        error("Unimplemented read method %s", __METHOD__);
-    }
-    function writeLongLongInt($val) {
-        error("Unimplemented *write* method %s", __METHOD__);
-    }
-
-    // type 'l'
-    function readLongLongUInt() {
-        error("Unimplemented read method %s", __METHOD__);
-    }
-    function writeLongLongUInt($val) {
-        error("Unimplemented *write* method %s", __METHOD__);
-    }
-
-    // type 'f'
-    function readFloat(AmqpMessageBuffer $msg) {
-        error("Unimplemented read method %s", __METHOD__);
-    }
-    function writeFloat($val) {
-        error("Unimplemented *write* method %s", __METHOD__);
-    }
-
-    // type 'd'
-    function readDouble(AmqpMessageBuffer $msg) {
-        error("Unimplemented read method %s", __METHOD__);
-    }
-    function writeDouble($val) {
-        error("Unimplemented *write* method %s", __METHOD__);
-    }
-
-    // type 'D'
-    function readDecimalValue(AmqpMessageBuffer $msg) {
-        error("Unimplemented read method %s", __METHOD__);
-    }
-    function writeDecimalValue($val) {
-        error("Unimplemented *write* method %s", __METHOD__);
-    }
-
-    // type 's'
-    function readShortString(AmqpMessageBuffer $msg) {
-        $l = readShortShortUInt($msg);
-        return $msg->read($l);
-    }
-    function writeShortString($val) {
-        writeShortShortUInt($msg, strlen($val));
-        $msg->write($val);
-    }
-
-    // type 'S'
-    function readLongString(AmqpMessageBuffer $msg) {
-        $l = readLongUInt($msg);
-        return $msg->read($l);
-    }
-    function writeLongString($val) {
-        writeLongUInt($msg, strlen($val));
-        $msg->write($val);
-    }
-
-    // type 'A'
-    function readFieldArray(AmqpMessageBuffer $msg) {
-        error("Unimplemented read method %s", __METHOD__);
-    }
-    function writeFieldArray($val) {
-        error("Unimplemented *write* method %s", __METHOD__);
-    }
-
-    // type 'T'
-    function readTimestamp(AmqpMessageBuffer $msg) {
-        error("Unimplemented read method %s", __METHOD__);
-    }
-    function writeTimestamp($val) {
-        error("Unimplemented *write* method %s", __METHOD__);
-    }
-
-
-    function packInt64($n) {
-        static $lbMask = null;
-        if (is_null($lbMask)) {
-            $lbMask = (pow(2, 32) - 1);
-        }
-        $hb = $n >> 16;
-        $lb = $n & $lbMask;
-        return pack('N', $hb) . pack('N', $lb);
-    }
-
-    function unpackInt64($pInt) {
-        $plb = substr($pInt, 0, 2);
-        $phb = substr($pInt, 2, 2);
-        $lb = (int) array_shift(unpack('N', $plb));
-        $hb = (int) array_shift(unpack('N', $phb));
-        return (int) $hb + (((int) $lb) << 16);
-    }
-
-
-
-
-    /** Read from current position and return up to $n bytes, advances the internal pointer by N
-        bytes wjere N is strlen(<return value>) */
-    function _read($n) {
-        $ret = substr($this->buff, $this->p, $n);
-        $this->p += $n;
-        return $ret;
-    }
-    /** Insert the given text in to buffer at current position, advances the internal pointer by
-        N bytes where N = strlen(<input data>) */
-    function _write($buff) {
-        $this->buff = substr($this->buff, 0, $this->p) . $buff . substr($this->buff, $this->p);
-        $l = strlen($buff);
-        $this->p += $l;
-        return $l;
-    }
-
-    function getOffset() { return $this->p; }
-
-    function setOffset($p) {
-        $this->p = (int) $p;
-    }
-
-    function setOffsetEnd() {
-        $this->p = strlen($this->buff);
-    }
-
-    function getBuffer() { return $this->buff; }
-
-    function getLength() { return strlen($this->buff); }
-}
-
-
-
-class AmqpTableFieldNew
-{
-    private static $MethodMap = array(
-                                      't' => 'Boolean',
-                                      'b' => 'ShortShortInt',
-                                      'B' => 'ShortShortUInt',
-                                      'U' => 'ShortInt',
-                                      'u' => 'ShortUInt',
-                                      'I' => 'LongInt',
-                                      'i' => 'LongUInt',
-                                      'L' => 'LongLongInt',
-                                      'l' => 'LongLongUInt',
-                                      'f' => 'Float',
-                                      'd' => 'Double',
-                                      'D' => 'DecimalValue',
-                                      's' => 'ShortString',
-                                      'S' => 'LongString',
-                                      'A' => 'FieldArray',
-                                      'T' => 'Timestamp',
-                                      'F' => 'Table'
-                                      );
-    protected $val; // PHP native
-    protected $type;  // Amqp type
-
-    function __construct($val, $type) {
-        $this->val = $val;
-        $this->type = $type;
-    }
-    function getValue() { return $this->val; }
-    function setValue($val) { $this->val = $val; }
-    function getType() { return $this->type; }
-    function __toString() { return (string) $this->val; }
-
-    final function readValue(AmqpMessageBuffer $c) {
-        if (isset(self::$MethodMap[$this->type])) {
-            $m = 'read' . self::$MethodMap[$this->type];
-            $this->val = $c->{$m}();
-        } else {
-            throw new \Exception(sprintf("Unknown parameter field type %s", $this->type), 986);
-        }
-    }
-
-    final function writeValue(AmqpMessageBuffer $c) {
-        if (isset(self::$MethodMap[$this->type])) {
-            $m = 'write' . self::$MethodMap[$this->type];
-            return $c->{$m}($this->val);
-        } else {
-            throw new \Exception(sprintf("Unknown parameter field type %s", $type), 7547);
-        }
-
-    }
+// Bools
+function t3() {
+    $w = new Writer;
+    $w->write('2 bools next:', 'shortstr');
+    $w->write(0, 'bit');//1
+    $w->write(0, 'bit');//2
+    $w->write(0, 'bit');//3
+    $w->write(0, 'bit');//4
+    $w->write(0, 'bit');//5
+    $w->write(0, 'bit');//6
+    $w->write(0, 'bit');//7
+    $w->write(1, 'bit');//8
+    $w->write(1, 'bit');//9
+    echo $w->getBuffer();
 }
