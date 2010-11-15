@@ -7,6 +7,13 @@ namespace amqp_091\wire;
  *    into one or more octets, starting from the low bit in each octet.
  */
 
+/**
+ * TODO:
+ * (1) Consider adding a new Protocol ImplType for table booleans - I don't think
+ *     the these should share the plain Amqp packing behaviour.
+ * (2) Implement unimplemented types
+ */
+
 const HELLO = "AMQP\x00\x00\x09\x01"; // Hello text to spit down a freshly opened socket
 const FRME = "\xCE"; // Frame end marker
 
@@ -33,8 +40,7 @@ abstract class Protocol
                                       'FieldArray',
                                       'Timestamp');
 
-    private static $XmlTypesMap = array(
-                                        'bit' => 'Boolean',
+    private static $XmlTypesMap = array('bit' => 'Boolean',
                                         'octet' => 'ShortShortUInt',
                                         'short' => 'ShortUInt',
                                         'long' => 'LongUInt',
@@ -45,8 +51,7 @@ abstract class Protocol
                                         'table' => 'Table');
 
 
-    private static $AmqpTableMap = array(
-                                         't' => 'Boolean',
+    private static $AmqpTableMap = array('t' => 'Boolean',
                                          'b' => 'ShortShortInt',
                                          'B' => 'ShortShortUInt',
                                          'U' => 'ShortInt',
@@ -116,6 +121,19 @@ abstract class Protocol
             return (strlen($val) < 255) ?
                 's' // short-string
                 : 'S'; // long-string
+        } else if (is_array($val)) {
+            // If $val is integer keyed, assume an array type, otherwise a table
+            $isArray = false;
+            foreach (array_keys($val) as $k) {
+                if (is_int($k)) {
+                    $isArray = true;
+                    break;
+                }
+            }
+            return $isArray ? 'A' : 't';
+        } else if ($val instanceof Decimal) {
+            //'D' => 'DecimalValue',
+            return 'D';
         }
         return null;
     }
@@ -177,10 +195,16 @@ class Reader extends Protocol
     }
 
 
-
-
     private function readTable () {
-        // TODO!
+        $tLen = $this->readLongUInt();
+        $tEnd = $this->p + $tLen;
+        $t = new Table;
+        while ($this->p < $tEnd) {
+            $fName = $this->readShortString();
+            $fType = chr($this->readShortShortUInt());
+            $t[$fName] = new TableField($this->read($fType, true), $fType);
+        }
+        return $t;
     }
 
     private function readBoolean () {
@@ -202,25 +226,25 @@ class Reader extends Protocol
     }
 
     private function readShortInt () {
-        $i = array_pop(unpack('s', substr($this->bin, $this->p, 1)));
+        $i = array_pop(unpack('s', substr($this->bin, $this->p, 2)));
         $this->p += 2;
         return $i;
     }
 
     private function readShortUInt () {
-        $i = array_pop(unpack('n', substr($this->bin, $this->p, 1)));
+        $i = array_pop(unpack('n', substr($this->bin, $this->p, 2)));
         $this->p += 2;
         return $i;
     }
 
     private function readLongInt () {
-        $i = array_pop(unpack('L', substr($this->bin, $this->p, 1)));
+        $i = array_pop(unpack('L', substr($this->bin, $this->p, 4)));
         $this->p += 4;
         return $i;
     }
 
     private function readLongUInt () {
-        $i = array_pop(unpack('N', substr($this->bin, $this->p, 1)));
+        $i = array_pop(unpack('N', substr($this->bin, $this->p, 4)));
         $this->p += 4;
         return $i;
     }
@@ -230,7 +254,12 @@ class Reader extends Protocol
     }
 
     private function readLongLongUInt () {
-        error("Unimplemented read method %s", __METHOD__);
+        $byte = substr($this->bin, $this->p++, 1);
+        $ret = ord($byte);
+        for ($i = 1; $i < 8; $i++) {
+            $ret = ($ret << 8) + ord(substr($this->bin, $this->p++, 1));
+        }
+        return $ret;
     }
 
     private function readFloat () {
@@ -242,7 +271,9 @@ class Reader extends Protocol
     }
 
     private function readDecimalValue () {
-        error("Unimplemented read method %s", __METHOD__);
+        $scale = $this->readShortShortUInt();
+        $unscaled = $this->readLongUInt();
+        return new Decimal($unscaled, $scale);
     }
 
     private function readShortString () {
@@ -260,7 +291,16 @@ class Reader extends Protocol
     }
 
     private function readFieldArray () {
-        error("Unimplemented read method %s", __METHOD__);
+        $aLen = $this->readLongUInt();
+        $aEnd = $this->p + $aLen;
+        $a = array();
+        while ($this->p < $aEnd) {
+            $t = chr($this->readShortShortUInt());
+            $a[] = $this->read($t, true);
+        }
+        //        echo "Built array?!\n";
+        //        var_dump($a);
+        return $a;
     }
 
     private function readTimestamp () {
@@ -320,14 +360,49 @@ class Writer extends Protocol
 
     function getBuffer() { return $this->bin; }
 
-
-
-
-    private function writeTable (AmqpTable $val) {
-        $p = strlen($this->bin); // Rewind to here and write in the table length
-        foreach ($val as $tf) {
+    /** @arg  mixed   $val   Either a pre-built Table or an array - arrays are used
+        to construct a table to write. */
+    private function writeTable ($val) {
+        if (is_array($val)) {
+            $val = new Table($val);
+        } else if (! ($val instanceof Table)) {
+            trigger_error("Invalid table, cannot write", E_USER_WARNING);
+            return;
         }
+        $p = strlen($this->bin); // Rewind to here and write in the table length
+        foreach ($val as $fName => $field) {
+            $this->writeShortString($fName);
+            $this->writeShortShortUInt(ord($field->getType()));
+            $this->write($field->getValue(), $field->getType(), true);
+        }
+        // Switcheroo the bin buffer so we cn re-use the native long u-int implementation
+        $p2 = strlen($this->bin);
+        $binSav = $this->bin;
+        $this->bin = '';
+        $this->writeLongUInt($p2 - $p);
+        $binLen = $this->bin;
+        $this->bin = substr($binSav, 0, $p) . $binLen . substr($binSav, $p);
     }
+
+
+    private function writeFieldArray (array $arr) {
+        $p = strlen($this->bin);
+        foreach ($arr as $item) {
+            if (! ($item instanceof TableField)) {
+                $item = new TableField($item);
+            }
+            $this->writeShortShortUInt(ord($item->getType()));
+            $this->write($item->getValue(), $item->getType(), true);
+        }
+        // Switcheroo the bin buffer so we cn re-use the native long u-int implementation
+        $p2 = strlen($this->bin);
+        $binSav = $this->bin;
+        $this->bin = '';
+        $this->writeLongUInt($p2 - $p);
+        $binLen = $this->bin;
+        $this->bin = substr($binSav, 0, $p) . $binLen . substr($binSav, $p);
+    }
+
 
     private function writeBoolean ($val) {
         if ($this->binPackOffset == 0) {
@@ -377,7 +452,14 @@ class Writer extends Protocol
     }
 
     private function writeLongLongUInt ($val) {
-        error("Unimplemented *write* method %s", __METHOD__);
+        $tmp = array();
+        for ($i = 0; $i < 8; $i++) {
+            $tmp[] = $val & 255;
+            $val = ($val >> 8);
+        }
+        foreach (array_reverse($tmp) as $octet) {
+            $this->bin .= chr($octet);
+        }
     }
 
     private function writeFloat ($val) {
@@ -389,7 +471,11 @@ class Writer extends Protocol
     }
 
     private function writeDecimalValue ($val) {
-        error("Unimplemented *write* method %s", __METHOD__);
+        if (! ($val instanceof Decimal)) {
+            $val = new Decimal($val);
+        }
+        $this->writeShortShortUInt($val->getScale());
+        $this->writeLongUInt($val->getUnscaled());
     }
 
     private function writeShortString ($val) {
@@ -402,16 +488,31 @@ class Writer extends Protocol
         $this->bin .= $val;
     }
 
-    private function writeFieldArray ($val) {
-        error("Unimplemented *write* method %s", __METHOD__);
-    }
-
     private function writeTimestamp ($val) {
         error("Unimplemented *write* method %s", __METHOD__);
     }
 }
 
 
+
+// Prolly useful.
+function getIntSize() {
+    // Choose between 32 and 64 only
+    return (gettype(pow(2, 31)) == 'integer') ? 64 : 32;
+}
+
+
+
+/*
+function my_bytesplit($x, $bytes) {
+    $ret = array();
+    for ($i = 0; $i < $bytes; $i++) {
+        $ret[] = $x & 255;
+        $x = ($x >> 8);
+    }
+    return array_reverse($ret);
+}
+*/
 
 function packInt64($n) {
     static $lbMask = null;
@@ -435,7 +536,7 @@ function unpackInt64($pInt) {
 
 class TableField extends Protocol
 {
-    protected $val; // PHP native
+    protected $val; // PHP native / Impl mixed
     protected $type;  // Amqp type
 
     /** Implement type guessing, i.e. PHP -> Amqp table mapping */
@@ -447,6 +548,57 @@ class TableField extends Protocol
     function setValue($val) { $this->val = $val; }
     function getType() { return $this->type; }
     function __toString() { return (string) $this->val; }
+}
+
+/** V. Similar to php-amqplib's AMQPDecimal */
+class Decimal
+{
+    const BC_SCALE_DEFAULT = 8;
+    private $unscaled;
+    private $scale;
+    private $bcScale = self::BC_SCALE_DEFAULT;
+
+    /** Support a mixed construction capability, can pass a float type
+        or the unscaled and scale parts.  The latter is probably more reliable */
+    function __construct($unscaled, $scale=false) {
+        if ($scale !== false) {
+            // Construct directly from unscaled and scale int args
+            if ($scale < 0 || $scale > 255) {
+                throw new \Exception("Scale out of range", 9876);
+            }
+            $this->unscaled = (string) $unscaled;
+            $this->scale = (string) $scale;
+        } else if (is_float($unscaled)) {
+            // Interpret from PHP float, convert to scale, unscaled.
+            list($whole, $frac) = explode('.', (string) $unscaled);
+            $frac = rtrim($frac, '0');
+            $this->unscaled = $whole . $frac;
+            $this->scale = strlen($frac);
+        } else if (is_int($unscaled)) {
+            $this->unscaled = $unscaled;
+            $this->scale = 0;
+        } else {
+            throw new \Exception("Unable to construct a decimal", 48943);
+        }
+        if ($this->scale > 255) {
+            throw new \Exception("Decimal scale is out of range", 7843);
+        }
+    }
+    function getUnscaled() { return $this->unscaled; }
+    function getScale() { return $this->scale; }
+    function setBcScale($i) {
+        $this->bcScale = (int) $i;
+    }
+
+    function toBcString() {
+        return bcdiv($this->unscaled, bcpow('10', $this->scale, $this->bcScale), $this->bcScale);
+    }
+
+    function toFloat() {
+        return (float) $this->toBcString();
+    }
+
+    function __toString() { return $this->toBcString(); }
 }
 
 
@@ -488,7 +640,6 @@ class Table implements \ArrayAccess, \Iterator
         return $this->data[$n];
     }
 
-    // TODO: Implement a type guess mechanism so that $v can be raw php type
     function offsetSet($k, $v) {
         if ( ! self::IsValidKey($k)) {
             throw new \Exception("Invalid table key", 7255);
@@ -538,7 +689,7 @@ class Table implements \ArrayAccess, \Iterator
 
 // Test Code.
 
-t2();
+t1();
 
 function t1() {
     $aTable = array("Foo" => "Bar");
@@ -548,7 +699,32 @@ function t1() {
     $table['bignum'] = 259;
     $table['negnum'] = -2;
     $table['bignegnum'] = -259;
-    var_dump($table);
+    $table['array1'] = array('String element', 1, -2, array('sub1', 'sub2'));
+    $table['littlestring'] = 'Eeek';
+    $table['Decimal'] = new Decimal(1234567, 3);
+    $table['longlong'] = new TableField(100000034000001, 'l');
+    //    var_dump($table);
+
+    $w = new Writer;
+    $w->write('a table:', 'shortstr');
+    $w->write($table, 'table');
+    $w->write('phew!', 'shortstr');
+    echo $w->getBuffer();
+    die;
+    echo "\n-Regurgitate-\n";
+
+    $r = new Reader($w->getBuffer());
+    echo $r->read('shortstr') . "\n";
+    echo "Table:\n";
+    foreach ($r->read('table') as $fName => $tField) {
+        $value = $tField->getValue();
+        if (is_array($value)) {
+            printf(" [name=%s,type=%s] %s\n", $fName, $tField->getType(), implode(', ', $value));
+        } else {
+            printf(" [name=%s,type=%s] %s\n", $fName, $tField->getType(), $value);
+        }
+    }
+    echo $r->read('shortstr') . "\n";
 }
 
 
@@ -567,7 +743,6 @@ function t2() {
     $w->write(0, 'bit');//7
     $w->write(0, 'bit');//8
     $w->write(0, 'bit');//9
-
     echo $w->getBuffer();
 
     echo "\n-Regurgitate-\n";
@@ -594,4 +769,12 @@ function t3() {
     $w->write(1, 'bit');//8
     $w->write(1, 'bit');//9
     echo $w->getBuffer();
+}
+
+function t4() {
+    $d1 = new Decimal(100, 4);
+    $d2 = new Decimal(100, 10);
+    $d3 = new Decimal(69, 2);
+    var_dump($d2);
+    printf("Convert to string BC: (\$d1, \$d2, \$d3) = (%s, %s, %s)\n", $d1->toBcString(), $d2->toBcString(), $d3->toBcString());
 }
