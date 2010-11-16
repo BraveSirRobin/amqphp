@@ -6,7 +6,7 @@ $tests = array(0,1,2,3,4,5);
 //echo "It is..." . array_reduce($tests, function ($a, $b) { printf("Look for %d, %d\n", $a, $b); return 1; });
 
 echo $bn = getNByteInt(25, 4);
-echo pack('N', 25);
+echo pack('i', -2);
 //printf("Read back binary int: %d\n", readNByteInt($bn, 8));
 //echo getIntSize();
 
@@ -14,29 +14,10 @@ echo pack('N', 25);
 
 
 
-function writeLongLongUInt ($val) {
-    $tmp = array();
-    for ($i = 0; $i < 8; $i++) {
-        $tmp[] = $val & 255;
-        $val = ($val >> 8);
-    }
-    foreach (array_reverse($tmp) as $octet) {
-        $this->bin .= chr($octet);
-    }
+
+function getSignedNByteInt($i, $nBytes) {
+    //
 }
-
-
-function readLongLongUInt () {
-    $byte = substr($this->bin, $p++, 1);
-    $ret = ord($byte);
-    for ($i = 1; $i < 8; $i++) {
-        $ret = ($ret << 8) + ord(substr($this->bin, $i++, 1));
-    }
-    return $ret;
-}
-
-
-
 
 
 // Convert $i to a binary ($nBytes)-byte integer

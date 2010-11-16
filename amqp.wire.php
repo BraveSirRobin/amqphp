@@ -47,7 +47,7 @@ abstract class Protocol
                                         'longlong' => 'LongLongUInt',
                                         'shortstr' => 'ShortString',
                                         'longstr' => 'LongString',
-                                        'timestamp' => 'Timestamp',
+                                        'timestamp' => 'LongLongUInt',
                                         'table' => 'Table');
 
 
@@ -66,7 +66,7 @@ abstract class Protocol
                                          's' => 'ShortString',
                                          'S' => 'LongString',
                                          'A' => 'FieldArray',
-                                         'T' => 'Timestamp',
+                                         'T' => 'LongLongUInt', // timestamp
                                          'F' => 'Table');
 
     static function GetXmlTypes () { return self::$XmlTypesMap; }
@@ -250,7 +250,7 @@ class Reader extends Protocol
     }
 
     private function readLongLongInt () {
-        error("Unimplemented read method %s", __METHOD__);
+        trigger_error("Unimplemented read method %s", __METHOD__);
     }
 
     private function readLongLongUInt () {
@@ -263,11 +263,15 @@ class Reader extends Protocol
     }
 
     private function readFloat () {
-        error("Unimplemented read method %s", __METHOD__);
+        $i = array_pop(unpack('f', substr($this->bin, $this->p, 4)));
+        $this->p += 4;
+        return $i;
     }
 
     private function readDouble () {
-        error("Unimplemented read method %s", __METHOD__);
+        $i = array_pop(unpack('d', substr($this->bin, $this->p, 8)));
+        $this->p += 8;
+        return $i;
     }
 
     private function readDecimalValue () {
@@ -298,15 +302,8 @@ class Reader extends Protocol
             $t = chr($this->readShortShortUInt());
             $a[] = $this->read($t, true);
         }
-        //        echo "Built array?!\n";
-        //        var_dump($a);
         return $a;
     }
-
-    private function readTimestamp () {
-        error("Unimplemented read method %s", __METHOD__);
-    }
-
 
     private function packInt64 ($n) {
         static $lbMask = null;
@@ -463,11 +460,11 @@ class Writer extends Protocol
     }
 
     private function writeFloat ($val) {
-        error("Unimplemented *write* method %s", __METHOD__);
+        $this->bin .= pack('f', (float) $val);
     }
 
     private function writeDouble ($val) {
-        error("Unimplemented *write* method %s", __METHOD__);
+        $this->bin .= pack('d', (float) $val);
     }
 
     private function writeDecimalValue ($val) {
@@ -488,9 +485,6 @@ class Writer extends Protocol
         $this->bin .= $val;
     }
 
-    private function writeTimestamp ($val) {
-        error("Unimplemented *write* method %s", __METHOD__);
-    }
 }
 
 
@@ -703,14 +697,18 @@ function t1() {
     $table['littlestring'] = 'Eeek';
     $table['Decimal'] = new Decimal(1234567, 3);
     $table['longlong'] = new TableField(100000034000001, 'l');
+    $table['float'] = new TableField(1.23, 'f');
+    $table['double'] = new TableField(453245476568.2342, 'd');
+    $table['timestamp'] = new TableField(14, 'T');
     //    var_dump($table);
 
     $w = new Writer;
     $w->write('a table:', 'shortstr');
     $w->write($table, 'table');
     $w->write('phew!', 'shortstr');
-    echo $w->getBuffer();
-    die;
+    $w->write(pow(2, 62), 'longlong');
+    //    echo $w->getBuffer();
+    //    die;
     echo "\n-Regurgitate-\n";
 
     $r = new Reader($w->getBuffer());
@@ -724,7 +722,7 @@ function t1() {
             printf(" [name=%s,type=%s] %s\n", $fName, $tField->getType(), $value);
         }
     }
-    echo $r->read('shortstr') . "\n";
+    echo $r->read('shortstr') . "\n" . $r->read('longlong') . "\n";
 }
 
 
