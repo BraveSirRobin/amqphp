@@ -25,24 +25,6 @@
   <xsl:output method="text"/>
 
 
-
-  <!-- Embedded elementary domain lookup map -->
-  <bl:elk>
-    <bl:map version="0.9.1">
-      <bl:domain name="bit" type="Boolean" />
-      <bl:domain name="octet" type="ShortShortUInt" />
-      <bl:domain name="short" type="ShortUInt" />
-      <bl:domain name="long" type="LongUInt" />
-      <bl:domain name="longlong" type="LongLongUInt" />
-      <bl:domain name="shortstr" type="ShortString"/>
-      <bl:domain name="longstr" type="LongString" />
-      <bl:domain name="timestamp" type="Timestamp" />
-      <bl:domain name="table" type="Table" />
-    </bl:map>
-  </bl:elk>
-
-
-
   <xsl:template match="/">
     <xsl:call-template name="output-global-code"/>
     <xsl:apply-templates select="/amqp/class" mode="output-class-classes"/>
@@ -59,7 +41,7 @@ require 'amqp.protocol.abstrakt.php';
 use <xsl:value-of select="$_WIRE_NS"/> as wire;
 <!-- Output constants -->
 <xsl:for-each select="/amqp/constant"> <!-- TODO: Convert to hex consts -->
-const <xsl:value-of select="bl:convertToConst(@name)"/> = <xsl:value-of select="@value"/>;</xsl:for-each>
+const <xsl:value-of select="bl:convertToConst(@name)"/> = &quot;<xsl:value-of select="bl:intToPHPHexLiteral(@value)"/>&quot;;</xsl:for-each>
 
 <!-- Output method lookup factory -->
 class ClassFactory extends \<xsl:value-of select="bl:getPhpParentNs()"/>\ClassFactory
@@ -106,20 +88,11 @@ class <xsl:value-of select="bl:getPhpClassName('Domain')"/> extends <xsl:value-o
 
   <!-- Output classes for fundamental domains, these use the internal protocol mappinging functions -->
   <xsl:template match="domain" mode="output-fundamental-domain-class">
-    <xsl:variable name="proto" select="bl:getElementaryDomainType(@type)"/>
-    <xsl:choose>
-      <xsl:when test="$proto = ''"><xsl:message terminate="yes">Unmapped fundamental domain: '<xsl:value-of select="@type"/>'</xsl:message></xsl:when>
-      <xsl:otherwise>
 class <xsl:value-of select="bl:getPhpClassName('Domain')"/> extends \<xsl:value-of select="bl:getPhpParentNs()"/>\XmlSpecDomain
 {
     protected $name = '<xsl:value-of select="@name"/>';
     protected $protocolType = '<xsl:value-of select="@type"/>';
-    function validate($subject) { return wire\validate<xsl:value-of select="$proto"/>($subject); }
-    function read($mBuff) { return wire\read<xsl:value-of select="$proto"/>($mBuff); }
-    function write($mBuff, $subject) { return wire\write<xsl:value-of select="$proto"/>($mBuff, $subject); }
 }
-      </xsl:otherwise>
-    </xsl:choose>
   </xsl:template>
 
 
@@ -401,13 +374,6 @@ class <xsl:value-of select="bl:getPhpClassName('Field')"/> extends \<xsl:value-o
   </func:function>
 
 
-  <func:function name="bl:getElementaryDomainType">
-    <xsl:param name="domain"/>
-    <func:result select="document('')//bl:elk/bl:map[@version=$VERSION_STRING]/bl:domain[@name=$domain]/@type"/>
-  </func:function>
-
-
-
 
 <!--
 Refactor to always output fully qualified class names, allow for optional namespace
@@ -512,5 +478,57 @@ getFQPhpClassName($amqpClass, $amqpName, $append = '', $asLiteral=false)
     </xsl:choose>
   </func:function>
 
+  <!-- Converts an integer to PHP hex literal -->
+  <func:function name="bl:intToPHPHexLiteral">
+    <xsl:param name="i" select="0"/>
+    <xsl:param name="ret" select="''"/>
 
+    <xsl:choose>
+      <xsl:when test="$i = 0">
+	<!-- Recursion ends -->
+	<xsl:choose>
+	  <xsl:when test="(string-length($ret) &gt; 0) and ((string-length($ret) mod 2) = 0)">
+	    <func:result select="bl:makeHexDuplets(string($ret))"/>
+	  </xsl:when>
+	  <xsl:when test="(string-length($ret) &gt; 0)">
+	    <func:result select="bl:makeHexDuplets(concat(string($ret), '0'))"/>
+	  </xsl:when>
+	  <xsl:otherwise>
+	    <func:result select="'\x00'"/>
+	  </xsl:otherwise>
+	</xsl:choose>
+      </xsl:when>
+      <xsl:otherwise>
+	<xsl:variable name="tmp" select="$i div 16"/>
+	<xsl:variable name="newI" select="floor($i div 16)"/>
+	<xsl:variable name="dec" select="($tmp - $newI) * 16"/>
+	<xsl:variable name="newDec">
+	  <xsl:choose>
+	    <xsl:when test="$dec > 9">
+	      <xsl:if test="$dec = 10">A</xsl:if>
+	      <xsl:if test="$dec = 11">B</xsl:if>
+	      <xsl:if test="$dec = 12">C</xsl:if>
+	      <xsl:if test="$dec = 13">D</xsl:if>
+	      <xsl:if test="$dec = 14">E</xsl:if>
+	      <xsl:if test="$dec = 15">F</xsl:if>
+	    </xsl:when>
+	    <xsl:otherwise>
+	      <xsl:value-of select="$dec"/>
+	    </xsl:otherwise>
+	  </xsl:choose>
+	</xsl:variable>
+	<!-- Recurses -->
+	<func:result select="bl:intToPHPHexLiteral($newI, concat($ret, $newDec))"/>
+      </xsl:otherwise>
+    </xsl:choose>
+  </func:function>
+
+
+  <func:function name="bl:makeHexDuplets">
+    <xsl:param name="s"/>
+    
+    <xsl:if test="$s and ((string-length($s) mod 2) = 0)">
+      <func:result select="concat('\x', substring($s, string-length($s), 1), substring($s, string-length($s) - 1, 1), bl:makeHexDuplets(substring($s, 1, string-length($s) - 2)))"/>
+    </xsl:if>
+  </func:function>
 </xsl:stylesheet>

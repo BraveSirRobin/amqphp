@@ -17,6 +17,12 @@ namespace amqp_091\wire;
 const HELLO = "AMQP\x00\x00\x09\x01"; // Hello text to spit down a freshly opened socket
 const FRME = "\xCE"; // Frame end marker
 
+// (octet, short, long)
+function GetFrameBin($type, $channel, $size) {
+    /** TODO: Implement a helper to return the binary giff for an Amqp frame */
+}
+
+
 
 // Protocol as in PDF / BNF type
 abstract class Protocol

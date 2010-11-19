@@ -47,8 +47,7 @@ abstract class DomainFactory
         return static::GetDomain($dName)->validate($val);
     }
 }
-/** Generate one per domain, input elementary domain list with external file and use xslt:document()
-    Input document will list mappings from elementary domain names to (unwritten) protocol validation functions */
+
 // GLOBAL [many]
 abstract class XmlSpecDomain
 {
@@ -61,11 +60,7 @@ abstract class XmlSpecDomain
     final function getSpecDomainType() {
         return $this->domainType;
     }
-    /* Implementations always proxy to (unwritten!) protocol validation funcs,
-       optionally contain additional xml-generated validation routines */
-    abstract function validate($subject);
-    abstract function read($mBuff);
-    abstract function write($mBuff, $val);
+    function validate($subject) { return true; };
 }
 
 // PER-NS [many]
