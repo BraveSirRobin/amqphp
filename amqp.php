@@ -1,225 +1,305 @@
 <?php
 
 namespace amqp_091;
-
+require 'amqp.protocol.abstrakt.php';
 require 'amqp.wire.php';
 require 'gencode/amqp.0_9_1.php';
-
 use amqp_091\wire;
-use amqp_091\protocol;
-
-
-const HEXDUMP_BIN = '/usr/bin/hexdump -C';
-
-
-const PROTO_HEADER = wire\HELLO;
-const PROTO_FRME = wire\FRME;
 
 
 
 
-abstract class AmqpMessage
+
+const DEBUG = true;
+
+
+/**
+ * Class to create connections to a single RabbitMQ endpoint.  If connections
+ * to multiple servers are required, use multiple factories
+ */
+class ConnectionFactory
 {
+    private $host = 'localhost'; // cannot vary after instantiation
+    private $port = 5672; // cannot vary after instantiation
+    private $username = 'guest';
+    private $userpass = 'guest';
+    private $vhost = '/';
+    private $sReadTimeoutUSecs = 500;
+    private $sReadTimeoutSecs = 2;
 
-    const TYPE_METHOD = protocol\FRAME_METHOD;
-    const TYPE_HEADER = protocol\FRAME_HEADER;
-    const TYPE_BODY = protocol\FRAME_BODY;
-    const TYPE_HEARTBEAT = protocol\FRAME_HEARTBEAT;
-    /**
-     * Factory methods
-     */
-    private function __construct () {}
-    static function FromMessage ($binStr) {
-        $buff = new wire\AmqpMessageBuffer($binStr);
-        $type = wire\readShortShortUInt($buff);
-        $chan = wire\readShortUInt($buff);
-        $len = wire\readLongUInt($buff);
-        $m = self::_New($type);
-        $m->chan = $chan;
-        $m->len = $len;
-        $m->buff = $buff;
-        return $m;
-    }
-    static function NewMessage ($type, $chan) {
-        $m = self::_New($type);
-        $m->type = $type;
-        $m->chan = $chan;
-        $m->buff = new wire\AmqpMessageBuffer('');
-        return $m;
-    }
-    private static function _New ($type) {
-        switch ($type) {
-        case self::TYPE_METHOD:
-            $ret = new AmqpMethod;
-            break;
-        case self::TYPE_HEADER:
-            $ret = new AmqpHeader;
-            break;
-        case self::TYPE_BODY:
-            $ret = new AmqpBody;
-            break;
-        case self::TYPE_HEARTBEAT:
-            $ret = new AmqpHeartbeat;
-            break;
-        default:
-            throw new \Exception("Bad message type", 9864);
+
+    function __construct (array $params = array()) {
+        foreach ($params as $pname => $pval) {
+            switch ($pname) {
+            case 'host':
+            case 'port':
+            case 'username':
+            case 'userpass':
+            case 'vhost':
+            case 'sReadTimeoutSecs':
+            case 'sReadTimeoutUSecs':
+                $this->{$pname} = $pval;
+            default:
+                throw new \Exception("Invalid connection factory parameter", 8654);
+            }
         }
-        $ret->type = $type;
+    }
+
+    function newConnection () {
+        if (! ($sock = socket_create(AF_INET, SOCK_STREAM, SOL_TCP))) {
+            throw new \Exception("Failed to create inet socket", 7895);
+        } else if (! socket_connect($sock, $this->host, $this->port)) {
+            throw new \Exception("Failed to connect inet socket {$sock}, {$this->host}, {$this->port}", 7564);
+        }
+        if (false === socket_set_option($sock, SOL_SOCKET, SO_RCVTIMEO,
+                                        array('sec' => $this->sReadTimeoutSecs, 'usec'=> $this->sReadTimeoutUSecs))) {
+            throw new Exception("Failed to set read timeout on socket", 9756);
+        }
+        return new RabbitConnection($sock, $this->username, $this->userpass, $this->vhost);
+    }
+}
+
+class Connection
+{
+    const READ_LEN = 1024;
+    private $sock; // TCP socket
+    private $bw = 0;
+    private $br = 0;
+
+    private $chans = array(); // Format: array(<chan-id> => RabbitChannel)
+    private $nextChan = 1;
+    private $chanMax; // Set during setup.
+    private $frameMax; // Set during setup.
+
+
+    private $username;
+    private $userpass;
+    private $vhost;
+
+    function __construct ($sock, $username, $userpass, $vhost) {
+        $this->sock = $sock;
+        $this->username = $username;
+        $this->userpass = $userpass;
+        $this->vhost = $vhost;
+        $this->initConnection();
+    }
+
+    /** TODO: Un-hard code the setup and use the request/response features of the
+        protocol layer to manage the setup. */
+    private function initConnection () {
+        if (DEBUG) {
+            echo "\nCreate new RabbitConnection object.\n-----------------------------------\n";
+        }
+        // Perform initial Amqp connection negotiation
+        $this->write(\amqp_091\PROTO_HEADER);
+
+        // Read connection.start from wire
+        $resp = $this->read();
+        $msg = \amqp_091\AmqpMessage::FromMessage($resp);
+        $msg->parseMessage();
+        if (! $msg || 
+            $msg->getType() != \amqp_091\AmqpMessage::TYPE_METHOD ||
+            $msg->getClassId() != 10 ||
+            $msg->getMethodId() != 10) {
+            throw new \Exception("Unexpected server response during connection setup", 964);
+        }
+
+        if (DEBUG) {
+            debugShowMethod($msg, '[recv] ');
+        }
+
+        // Write connection.start-ok to wire.
+        $msg = \amqp_091\AmqpMessage::NewMessage(\amqp_091\AmqpMessage::TYPE_METHOD, 0);
+        $msg->setClassId(10);
+        $msg->setMethodId(11);
+        $t = new \amqp_091\wire\AmqpTable;
+        $t['product'] = new \amqp_091\wire\AmqpTableField('My Amqp/Rmq implementation', 'S');
+        $t['version'] = new \amqp_091\wire\AmqpTableField('0.01', 'S');
+        $t['platform'] = new \amqp_091\wire\AmqpTableField('Linux baby', 'S');
+        $t['copyright'] = new \amqp_091\wire\AmqpTableField('Copyright (c) 2010 Robin Harvey (harvey.robin@gmail.com)', 'S');
+        $t['information'] = new \amqp_091\wire\AmqpTableField('Property of Robin Harvey', 'S');
+        $msg['client-properties'] = $t;
+        $msg['mechanism'] = 'AMQPLAIN';
+        $msg['response'] = $this->saslHack();
+        $msg['locale'] = 'en_US';
+        if (DEBUG) {
+            debugShowMethod($msg, '[send] ');
+        }
+        $this->write($msg->flush());
+
+        // Read connection.tune
+        $resp = $this->read();
+        $msg = \amqp_091\AmqpMessage::FromMessage($resp);
+        $msg->parseMessage();
+        if (DEBUG) {
+            debugShowMethod($msg, '[recv] ');
+        }
+        $this->chanMax = $msg['channel-max'];
+        $this->frameMax = $msg['frame-max'];
+
+        // write connection.tune-ok
+        $msg = \amqp_091\AmqpMessage::NewMessage(\amqp_091\AmqpMessage::TYPE_METHOD, 0);
+        $msg->setClassName('connection');
+        $msg->setMethodName('tune-ok');
+        $msg['channel-max'] = $this->chanMax;
+        $msg['frame-max'] = $this->frameMax;
+        $msg['heartbeat'] = 0;
+        if (DEBUG) {
+            debugShowMethod($msg, '[send] ');
+        }
+        $this->write($msg->flush());
+
+        // Write connection.open
+        $msg = \amqp_091\AmqpMessage::NewMessage(\amqp_091\AmqpMessage::TYPE_METHOD, 0);
+        $msg->setClassName('connection');
+        $msg->setMethodName('open');
+        $msg['virtual-host'] = $this->vhost;
+        $msg['reserved-1'] = '';
+        $msg['reserved-2'] = '';
+        if (DEBUG) {
+            debugShowMethod($msg, '[send] ');
+        }
+        $b = $msg->flush();
+        echo \amqp_091\hexdump($b);
+        $this->write($msg->flush());
+
+        // Read ...
+        $resp = $this->read();
+        $msg = \amqp_091\AmqpMessage::FromMessage($resp);
+        $msg->parseMessage();
+        if (DEBUG) {
+            debugShowMethod($msg, '[recv] ');
+        }
+
+        if (DEBUG) {
+            echo "\nRabbitConnection setup complete\n";
+        }
+    }
+
+    private function saslHack() {
+        $t = new \amqp_091\wire\AmqpTable();
+        $t['LOGIN'] = new \amqp_091\wire\AmqpTableField($this->username, 'S');
+        $t['PASSWORD'] = new \amqp_091\wire\AmqpTableField($this->userpass, 'S');
+        $buff = new \amqp_091\wire\AmqpMessageBuffer('');
+        \amqp_091\wire\writeTable($buff, $t);
+        return substr($buff->getBuffer(), 4);
+    }
+
+
+    function getChannel ($num = false) {
+        return ($num === false) ? $this->initNewChannel() : $this->chans[$num];
+    }
+
+    private function initNewChannel () {
+        $newChan = $this->nextChan++;
+        if ($this->chanMax > 0 && $newChan > $this->chanMax) {
+            throw new \Exception("Channels are exhausted!", 23756);
+        }
+        return ($this->chans[$newChan] = new RabbitChannel($this, $newChan));
+    }
+
+
+    private function read () {
+        $ret = '';
+        while ($tmp = socket_read($this->sock, self::READ_LEN)) {
+            $ret .= $tmp;
+            $this->br += strlen($tmp);
+            if (substr($tmp, -1) === \amqp_091\PROTO_FRME) {
+                break;
+            }
+        }
         return $ret;
     }
-    /**
-     * Message content handling
-     */
-    private $buff;
-    private $type;
-    private $len;
-    private $chan;
-
-    function getBuffer () { return $this->buff; }
-    function getType () { return $this->type; }
-    function getLength () { return $this->len; }
-    function getChannel () { return $this->chan; }
-    function setChannel ($chan) { $this->chan = $chan; }
-
-
-    function flush() {
-        $this->buff = new wire\AmqpMessageBuffer('');
-        static::flushMessage(); // Copy message contents from child class
-        $len = $this->buff->getLength();
-        wire\writeShortShortUInt($this->buff, 206);
-        $this->buff->setOffset(0);
-        echo "  [AmqpMessage->flush] len = $len, type = {$this->type}, channel = {$this->chan}\n";
-        wire\writeShortShortUInt($this->buff, $this->type);
-        wire\writeShortUInt($this->buff, $this->chan);
-        wire\writeLongUInt($this->buff, $len);
-
-        $b = $this->buff->getBuffer();
-        //        echo hexdump($b);
-        return $b;
-    }
-
-    // Subclasses can implement so that their content can be added to the message
-    function flushMessage() {}
-}
-
-
-class AmqpMethod extends AmqpMessage implements \ArrayAccess {
-    private $cache; // PHP version of underlying method fields
-    private $classId;
-    private $methodId;
-    private $className;
-    private $methodName;
-
-    function setClassId ($id) { $this->classId = $id; }
-    function setClassName ($name) { $this->className = $name; }
-    function getClassId () { return $this->classId; }
-    function getClassName () { return $this->className; }
-
-    function setMethodId ($id) { $this->methodId = $id; }
-    function setMethodName ($name) { $this->methodName = $name; }
-    function getMethodId () { return $this->methodId; }
-    function getMethodName () { return $this->methodName; }
-
-
-    /** Copies data from underlying message in to PHP data cache  */
-    function parseMessage () {
-        if ($this->cache) {
-            return $this->cache;
-        }
-        $buff = $this->getBuffer();
-        $this->classId = wire\readShortUInt($buff);
-        $this->methodId = wire\readShortUInt($buff);
-        // Look up the method prototype object
-        list($classProto, $methProto) = $this->getPrototypes();
-        // Copy field data in to cache
-        foreach ($methProto->getFields() as $f) {
-            $this->cache[$f->getSpecFieldName()] = $f->read($buff);
-            // $this->cache[$f->getSpecFieldName()] = $buff->read($f);
-        }
-    }
-
-    /** Copies data from cache to the underlying message, returns number of bytes copied
-        NOTE: this does not copy the message level parameters (type, channel, length) */
-    function flushMessage () {
-        if (! $this->cache) {
-            return 0;
-        }
-        $buff = $this->getBuffer();
-        // Look up the method prototype object
-        list($classProto, $methProto) = $this->getPrototypes();
-        $ret = 0;
-        // Write the class and method numbers in to the buffer
-        wire\writeShortUInt($buff, $classProto->getSpecIndex());
-        wire\writeShortUInt($buff, $methProto->getSpecIndex());
-        foreach ($methProto->getFields() as $f) {
-            //echo "  Process field {$f->getSpecFieldName()}: " .
-            //"({$this->cache[$f->getSpecFieldName()]})-[" . get_class($f) . "]\n";
-            if (! isset($this->cache[$f->getSpecFieldName()])) {
-                throw new \Exception("Missing field {$f->getSpecFieldName()} of method {$methProto->getSpecName()}", 98765);
+    private function write ($buff) {
+        $bw = 0;
+        $contentLength = strlen($buff);
+        while ($bw < $contentLength) {
+            if (($tmp = socket_write($this->sock, $buff, $contentLength)) === false) {
+                throw new \Exception(sprintf("\nSocket write failed: %s\n",
+                                            socket_strerror(socket_last_error())), 7854);
             }
-            $f->write($buff, $this->cache[$f->getSpecFieldName()]);
-            // $buff->write($f, $this->cache[$f->getSpecFieldName()]);
+            $bw += $tmp;
+            $this->bw += $tmp;
         }
     }
-    /** Lookup method allows mixed usage of method / class names / numbers.  Numbers are preferred */
-    private function getPrototypes () {
-        if (! is_null($this->classId)) {
-            $classProto = protocol\ClassFactory::GetClassByIndex($this->classId);
-        } else if (! is_null($this->className)) {
-            $classProto = protocol\ClassFactory::GetClassByName($this->className);
-        } else {
-            throw new \Exception("Unknown class index", 98532);
-        }
-
-        if (! is_null($this->methodId)) {
-            $methProto = $classProto->getMethodByIndex($this->methodId);
-        } else if (! is_null($this->methodName)) {
-            $methProto = $classProto->getMethodByName($this->methodName);
-        } else {
-            throw new \Exception("Unknown method index", 8529);
-        }
-        return array($classProto, $methProto);
+    function getBytesWritten () {
+        return $this->bw;
+    }
+    function getBytesRead () {
+        return $this->br;
     }
 
+    /** KISS: Send $meth as wait for and return it's response (if any)  */
+    function sendMessage(wire\Method $meth) {
+        $mBuff = $meth->toBin();
+    }
 
-    function offsetExists ($offset) { return isset($this->cache[$offset]); }
-    function offsetGet ($offset) { return $this->cache[$offset]; }
-    function offsetSet ($offset, $value) { $this->cache[$offset] = $value; }
-    function offsetUnset ($offset) { unset($this->cache[$offset]); }
+}
 
-    function getMethodData() {
-        return $this->cache;
+
+function debugShowMethod ($msg, $sr) {
+    $s = sprintf("$sr, Method: (%s, %s, %d, %d):", $msg->getClassName(), $msg->getMethodName(),
+                 $msg->getClassId(), $msg->getMethodId());
+    printf("\n%s\n%s\n", $s, str_repeat('-', strlen($s)));
+    foreach ($msg->getMethodData() as $k => $v) {
+        if ($v instanceof \amqp_091\wire\AmqpTable) {
+            echo "$k (table)\n";
+            foreach ($v as $sk => $sv) {
+                echo "  $sk = $sv\n";
+            }
+        } else {
+            echo "$k = $v\n";
+        }
     }
 }
-class AmqpHeader extends AmqpMessage {}
-class AmqpBody extends AmqpMessage {}
-class AmqpHeartbeat extends AmqpMessage {}
+
+class Channel
+{
+    const FLOW_OPEN = 1;
+    const FLOW_SHUT = 2;
+
+    private $myConn;
+    private $chanId;
+    private $flow = self::FLOW_OPEN;
+
+    function __construct (RabbitConnection $rConn, $chanId) {
+        $this->myConn = $rConn;
+        $this->chanId = $chanId;
+
+        if (DEBUG) {
+            echo "\nRabbitChannel setup\n-------------------\n";
+        }
+        // write channel.open
+        $msg = \amqp_091\AmqpMessage::NewMessage(\amqp_091\AmqpMessage::TYPE_METHOD, 0);
+        $msg->setClassName('channel');
+        $msg->setMethodName('open');
+        $msg->setChannel($this->chanId);
+        $msg['reserved-1'] = '';
+        if (DEBUG) {
+            debugShowMethod($msg, '[send] ');
+        }
+        $this->myConn->write($msg->flush());
+
+        // read channel.open-ok
+        $resp = $this->myConn->read();
+        $msg = \amqp_091\AmqpMessage::FromMessage($resp);
+        $msg->parseMessage();
+        if (DEBUG) {
+            debugShowMethod($msg, '[recv] ');
+        }
 
 
-
-
-function hexdump($subject) {
-    if ($subject === '') {
-        return "00000000\n";
     }
-    $pDesc = array(
-                   array('pipe', 'r'),
-                   array('pipe', 'w'),
-                   array('pipe', 'r')
-                   );
-    $pOpts = array('binary_pipes' => true);
-    if (($proc = proc_open(HEXDUMP_BIN, $pDesc, $pipes, null, null, $pOpts)) === false) {
-        throw new \Exception("Failed to open hexdump proc!", 675);
+
+    function exchange () {
     }
-    fwrite($pipes[0], $subject);
-    fclose($pipes[0]);
-    $ret = stream_get_contents($pipes[1]);
-    fclose($pipes[1]);
-    $errs = stream_get_contents($pipes[2]);
-    fclose($pipes[2]);
-    if ($errs) {
-        printf("[ERROR] Stderr content from hexdump pipe: %s\n", $errs);
+
+    function basic () {
     }
-    proc_close($proc);
-    return $ret;
+
+    function queue () {
+    }
+
+    function tx () {
+    }
 }

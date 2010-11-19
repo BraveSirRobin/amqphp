@@ -37,7 +37,6 @@
     <exsl:document href="{$file-name}" method="text" omit-xml-declaration="yes">&lt;?php
 namespace <xsl:value-of select="bl:getPhpNamespace()"/>;
 /** Ampq binding code, generated from doc version <xsl:value-of select="$VERSION_STRING"/> */
-require 'amqp.protocol.abstrakt.php';
 use <xsl:value-of select="$_WIRE_NS"/> as wire;
 <!-- Output constants -->
 <xsl:for-each select="/amqp/constant"> <!-- TODO: Convert to hex consts -->
@@ -139,6 +138,7 @@ abstract class FieldFactory  extends \<xsl:value-of select="bl:getPhpParentNs()"
   <xsl:template match="method" mode="output-method-classes">
 class <xsl:value-of select="bl:getPhpClassName('Method')"/> extends \<xsl:value-of select="bl:getPhpParentNs()"/>\XmlSpecMethod
 {
+    protected $class = '<xsl:value-of select="../@name"/>';
     protected $name = '<xsl:value-of select="@name"/>';
     protected $index = <xsl:value-of select="@index"/>;
     protected $synchronous = <xsl:choose><xsl:when test="@synchronous">true</xsl:when><xsl:otherwise>false</xsl:otherwise></xsl:choose>;
@@ -146,6 +146,8 @@ class <xsl:value-of select="bl:getPhpClassName('Method')"/> extends \<xsl:value-
     protected $fields = array(<xsl:for-each select="./field">'<xsl:value-of select="@name"/>'<xsl:if test="position() != last()">, </xsl:if></xsl:for-each>);
     protected $methFact = '\\<xsl:value-of select="bl:getPhpNamespace(../@name, true())"/>\\MethodFactory';
     protected $fieldFact = '\\<xsl:value-of select="bl:getPhpNamespace(../@name, true())"/>\\FieldFactory';
+    protected $classFact = '\\<xsl:value-of select="str:replace($_NS_PREPEND, '\', '\\')"/>\\ClassFactory';
+    protected $content = <xsl:choose><xsl:when test="@content">true</xsl:when><xsl:otherwise>false</xsl:otherwise></xsl:choose>;
 }
   </xsl:template>
 

@@ -58,9 +58,9 @@ abstract class XmlSpecDomain
         return $this->name;
     }
     final function getSpecDomainType() {
-        return $this->domainType;
+        return $this->protocolType;
     }
-    function validate($subject) { return true; };
+    function validate($subject) { return true; }
 }
 
 // PER-NS [many]
@@ -173,6 +173,7 @@ abstract class MethodFactory
 // PER-NS [many]
 abstract class XmlSpecMethod
 {
+    protected $class;
     protected $name;
     protected $index;
     protected $synchronous;
@@ -180,7 +181,12 @@ abstract class XmlSpecMethod
     protected $fields;
     protected $methFact;
     protected $fieldFact;
+    protected $classFact;
+    protected $content;
 
+    final function getSpecClass() {
+        return $this->class;
+    }
     final function getSpecName() {
         return $this->name;
     }
@@ -196,6 +202,9 @@ abstract class XmlSpecMethod
     final function getSpecFields() {
         return $this->fields;
     }
+    final function getSpecHasContent() {
+        return $this->content;
+    }
     final function getFields() {
         return call_user_func(array($this->fieldFact, 'GetFieldsForMethod'), $this->name);
     }
@@ -206,6 +215,9 @@ abstract class XmlSpecMethod
     }
     final function getResponses() {
         return call_user_func(array($this->methFact, 'GetMethodsByName'), $this->responseMethods);
+    }
+    final function getClass() {
+        return call_user_func(array($this->classFact, 'GetClassByName'), $this->class);
     }
 }
 
@@ -245,14 +257,14 @@ abstract class FieldFactory
         return $r;
     }
     final static function GetFieldsForMethod($mName) {
-        // Return all field for the given method, including common fields at the class level
         $r = array();
         foreach (static::$Cache as $f) {
             if ($f[1] === $mName) {
                 $r[] = static::GetField($f[0], $mName);
             }
         }
-        return array_merge(static::GetClassFields(), $r);
+        return $r;
+        //return array_merge(static::GetClassFields(), $r);
     }
     final static function Validate($val, $fName, $mName = '') {
         return static::GetField($fName, $mName)->validate($val);

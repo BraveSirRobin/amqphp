@@ -1,12 +1,44 @@
 <?php
 
-require_once 'amqp.php';
-require_once 'rabbit.php';
-
+//require_once 'amqp.php';
+//require_once 'rabbit.php';
 use amqp_091 as amqp;
+use amqp_091\protocol;
+use amqp_091\wire;
+
+require('amqp.wire.php');
+require('amqp.protocol.abstrakt.php');
+require('gencode/amqp.0_9_1.php');
 
 
-test3();
+
+
+test4();
+
+//
+// NEW TESTS
+//
+
+function test4() {
+    // Method.
+    $m = new wire\Method(new wire\Writer, protocol\ClassFactory::GetClassByName('connection')->getMethodByName('start-ok'));
+    //    var_Dump($m);
+    $props = new wire\Table;
+    $props['library'] = 'Refactored sex shiznit';
+    $props['version'] = '0.1';
+    $m->setField($props, 'client-properties');
+    $m->setField('mech here', 'mechanism');
+    $m->setField('response here', 'response');
+    $m->setField('en_US', 'locale');
+    echo $m->toBin();
+}
+
+
+
+
+//
+// OLD TESTS
+//
 
 function test1() {
     // Test creating a simple message.
