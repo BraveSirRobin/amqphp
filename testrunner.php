@@ -6,14 +6,12 @@ use amqp_091 as amqp;
 use amqp_091\protocol;
 use amqp_091\wire;
 
-require('amqp.wire.php');
-require('amqp.protocol.abstrakt.php');
-require('gencode/amqp.0_9_1.php');
+require('amqp.php');
 
 
 
 
-test4();
+test5();
 
 //
 // NEW TESTS
@@ -23,9 +21,10 @@ function test4() {
     // Method.
     $m = new wire\Method(new wire\Writer, protocol\ClassFactory::GetClassByName('connection')->getMethodByName('start-ok'));
     //    var_Dump($m);
-    $props = new wire\Table;
+    /*$props = new wire\Table;
     $props['library'] = 'Refactored sex shiznit';
-    $props['version'] = '0.1';
+    $props['version'] = '0.1';*/
+    $props = array('library' => 'Refactored sex shiznit', 'version' => '0.1');
     $m->setField($props, 'client-properties');
     $m->setField('mech here', 'mechanism');
     $m->setField('response here', 'response');
@@ -34,6 +33,19 @@ function test4() {
 }
 
 
+function test5() {
+    $connFact = new amqp\ConnectionFactory;
+    $conn = $connFact->newConnection();
+    //$chan = $conn->getChannel();
+}
+
+
+
+function test6() {
+    // What gets returned for bad reads?
+    $r = new wire\Reader('');
+    $r->read('octet');
+}
 
 
 //

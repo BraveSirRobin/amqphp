@@ -5,12 +5,89 @@ $tests = array(0,1,2,3,4,5);
 
 //echo "It is..." . array_reduce($tests, function ($a, $b) { printf("Look for %d, %d\n", $a, $b); return 1; });
 
-echo $bn = getNByteInt(25, 4);
-echo pack('i', -2);
+//echo $bn = getNByteInt(25, 4);
+//echo pack('i', -2);
 //printf("Read back binary int: %d\n", readNByteInt($bn, 8));
 //echo getIntSize();
 
 //echo pack('N', 257);
+
+
+
+// Multiplexing connections
+class MplxConnection
+{
+    const READ_LEN = 1024;
+    private $sock; // TCP socket
+    private $bw = 0;
+    private $br = 0;
+
+    private $chans = array(); // Format: array(<chan-id> => RabbitChannel)
+    private $nextChan = 1;
+    private $chanMax; // Set during setup.
+    private $frameMax; // Set during setup.
+
+
+    private $username;
+    private $userpass;
+    private $vhost;
+
+    private $recvQ = array();
+    private $sendQ = array();
+
+
+    // Does Amqp connection negotiation
+    private function initConnection() {
+        $this->write(wire\PROTOCOL_HEADER);
+        if ($tmp = $this->readFrame()) {
+            list($type, $chan, $size, $r) = $tmp;
+            $meth = new wire\Method($tmp);
+        } else {
+            throw new \Exception("Connection initialisation failed (1)", 9875);
+        }
+    }
+
+
+
+    // Suck a frame from the wire and extract the top level fram elements
+    private function readFrame() {
+        if ($buff = $this->read()) {
+            $r = new wire\Reader($buff);
+            if (! ($type = $r->read('octet'))) {
+                trigger_error('Failed to read type from frame', E_USER_WARNING);
+            } else if (! ($chan = $r->read('short'))) {
+                trigger_error('Failed to read channel from frame', E_USER_WARNING);
+            } else if (! ($size = $r->read('long'))) {
+                trigger_error('Failed to read size from frame', E_USER_WARNING);
+            } else {
+                return array($type, $chan, $size, $r);
+            }
+        } else {
+            trigger_error('No Frame was read', E_USER_WARNING);
+        }
+        return null;
+    }
+
+    private function read() {
+        // Low level - read a single frame from the wire
+    }
+
+    private function write() {
+        // Low level - write raw content to the wire.
+    }
+
+
+    function send(wire\Method $meth) {
+        $this->sendQ[] = $meth;
+        $this->write($meth->toBin());
+    }
+
+    function recv(protocol\XmlSpecMethod $methProto) {
+        $ths->recvQ[] = $methProto;
+    }
+}
+
+
 
 
 

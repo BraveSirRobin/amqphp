@@ -1,6 +1,10 @@
 <?php
 namespace amqp_091\wire;
 
+use amqp_091\protocol as proto; // Alias avoids name clash with class of same name
+use amqp_091\protocol\abstrakt;
+
+const PROTOCOL_HEADER = "AMQP\x00\x00\x09\x01";
 const HEXDUMP_BIN = '/usr/bin/hexdump -C';
 
 /**
@@ -17,13 +21,38 @@ const HEXDUMP_BIN = '/usr/bin/hexdump -C';
  */
 
 
-/** Helper function return a bin string for a frame header */
-function GetFrameBin($type, $channel, $size) {
+/** Helper: return a bin string for a complete frame */
+function GetFrameBin ($type, $channel, Method $m) {
+    // Why no read based equiv?
     $w = new Writer;
+    $mb = $m->toBin();
+    //printf("  Frame payload length: %d\n", strlen($mb));
     $w->write($type, 'octet');
     $w->write($channel, 'short');
-    $w->write($size, 'long');
-    return $w->getBuffer();
+    $w->write(strlen($mb), 'long');
+    $dbg = $w->getBuffer() . $mb . proto\FRAME_END;
+    //    echo $dbg;
+    //    die;
+    return $dbg;
+}
+
+/**
+ * Helper: strip the protocol header from the given binary string.
+ * The reader which is returned contains the full frame content.
+ * @return   array     Format: array(<type>, <channel>, <size>, <Reader reader>)
+ */
+function ExtractFrame ($bin) {
+    $r = new Reader($bin);
+    if (null === ($type = $r->read('octet'))) {
+        trigger_error('Failed to read type from frame', E_USER_WARNING);
+    } else if (null === ($chan = $r->read('short'))) {
+        trigger_error('Failed to read channel from frame', E_USER_WARNING);
+    } else if (null === ($size = $r->read('long'))) {
+        trigger_error('Failed to read size from frame', E_USER_WARNING);
+    } else {
+        return array($type, $chan, $size, $r);
+    }
+    return null;
 }
 
 
@@ -673,7 +702,7 @@ class Method
     private $classFields = array();
     private $content;
 
-    function __construct(Protocol $src, \amqp_091\protocol\abstrakt\XmlSpecMethod $methProto = null) {
+    function __construct (Protocol $src, abstrakt\XmlSpecMethod $methProto = null) {
         if ($src instanceof Writer) {
             if (! $methProto) {
                 throw new Exception("Write mode method must specify a prototype", 8483);
@@ -692,56 +721,76 @@ class Method
     }
 
     /** Helper: parse the incoming message from $this->src */
-    private function readContruct() {
-        // TODO
+    private function readContruct () {
+        if (null === ($this->classId = $this->src->read('short'))) {
+            throw new \Exception("Failed to read class ID from frame", 87694);
+        }
+        if (null === ($this->methodId = $this->src->read('short'))) {
+            throw new \Exception("Failed to read method ID from frame", 6547);
+        }
+        // Look up the method prototype object
+        if (! ($this->classProto = proto\ClassFactory::GetClassByIndex($this->classId))) {
+            throw new \Exception("Failed to construct class prototype", 9875);
+        }
+        if (! ($this->methProto = $this->classProto->getMethodByIndex($this->methodId))) {
+            throw new \Exception("Failed to construct method prototype", 5645);
+        }
+        // Copy field data in to cache
+        foreach ($this->methProto->getFields() as $f) {
+            $this->fields[$f->getSpecFieldName()] = $this->src->read($f->getSpecDomainType());
+        }
     }
 
-    function setField($val, $name) {
+    function setField ($val, $name) {
         if ($this->mode === 'read') {
             trigger_error('Setting field value for read constructed method', E_USER_WARNING);
         }
         $this->fields[$name] = $val;
     }
 
-    function getField($name) {
+    function getField ($name) {
         return isset($this->fields[$name]) ? $this->fields[$name] : null;
     }
 
-    function setClassField($val, $name) {
+    function setClassField ($val, $name) {
         if ($this->mode === 'read') {
             trigger_error('Setting field value for read constructed method', E_USER_WARNING);
         }
         $this->classFields[$name] = $val;
     }
 
-    function getClassField($name) {
+    function getClassField ($name) {
         return isset($this->classFields[$name]) ? $this->classFields[$name] : null;
     }
 
-    function setContent($content) {
+    function setContent ($content) {
         if ($this->mode === 'read') {
             trigger_error('Setting content value for read constructed method', E_USER_WARNING);
         }
         $this->content = $content;
     }
 
-    function getContent() {
+    function getContent () {
         return $this->content;
     }
 
-    function toBin() {
+
+    function getMethodProto () { return $this->methProto; }
+    function getClassProto () { return $this->classProto; }
+
+
+    function toBin () {
         if ($this->mode === 'read') {
             return $this->src->getBuffer();
         }
+        $this->src->write($this->classProto->getSpecIndex(), 'short');
+        $this->src->write($this->methProto->getSpecIndex(), 'short');
         // TODO: Write class fields!!!!
         foreach ($this->methProto->getFields() as $f) {
             if (! isset($this->fields[$f->getSpecFieldName()])) {
-                throw new \Exception("Missing field {$f->getSpecFieldName()} of method {$methProto->getSpecName()}", 98765);
+                throw new \Exception("Missing field {$f->getSpecFieldName()} of method {$this->methProto->getSpecName()}", 98765);
             }
-            //echo "{$f->getSpecDomainName()}, {$f->getSpecDomainType()}\n";
-            //die;
             $this->src->write($this->fields[$f->getSpecFieldName()], $f->getSpecDomainType());
-            // $buff->write($f, $this->cache[$f->getSpecFieldName()]);
         }
         return $this->src->getBuffer();
     }

@@ -1,11 +1,13 @@
 <?php
 
 namespace amqp_091;
-require 'amqp.protocol.abstrakt.php';
-require 'amqp.wire.php';
-require 'gencode/amqp.0_9_1.php';
+
+use amqp_091\protocol;
 use amqp_091\wire;
 
+require('amqp.wire.php');
+require('amqp.protocol.abstrakt.php');
+require('gencode/amqp.0_9_1.php');
 
 
 
@@ -55,18 +57,25 @@ class ConnectionFactory
                                         array('sec' => $this->sReadTimeoutSecs, 'usec'=> $this->sReadTimeoutUSecs))) {
             throw new Exception("Failed to set read timeout on socket", 9756);
         }
-        return new RabbitConnection($sock, $this->username, $this->userpass, $this->vhost);
+        return new Connection($sock, $this->username, $this->userpass, $this->vhost);
     }
 }
 
 class Connection
 {
     const READ_LEN = 1024;
+
+    private static $ClientProperties = array('product' => 'My Amqp implementation',
+                                             'version' => '0.01',
+                                             'platform' => 'Linux baby!',
+                                             'copyright' => 'Copyright (c) 2010 Robin Harvey (harvey.robin@gmail.com)',
+                                             'information' => 'Property of Robin Harvey');
+
     private $sock; // TCP socket
     private $bw = 0;
     private $br = 0;
 
-    private $chans = array(); // Format: array(<chan-id> => RabbitChannel)
+    private $chans = array(); // Format: array(<chan-id> => Channel)
     private $nextChan = 1;
     private $chanMax; // Set during setup.
     private $frameMax; // Set during setup.
@@ -84,105 +93,97 @@ class Connection
         $this->initConnection();
     }
 
-    /** TODO: Un-hard code the setup and use the request/response features of the
-        protocol layer to manage the setup. */
-    private function initConnection () {
-        if (DEBUG) {
-            echo "\nCreate new RabbitConnection object.\n-----------------------------------\n";
+    private function initConnection() {
+        if (! ($this->write(wire\PROTOCOL_HEADER))) {
+            // No bytes written?
+            throw new \Exception("Connection initialisation failed (1)", 9873);
         }
-        // Perform initial Amqp connection negotiation
-        $this->write(\amqp_091\PROTO_HEADER);
-
-        // Read connection.start from wire
-        $resp = $this->read();
-        $msg = \amqp_091\AmqpMessage::FromMessage($resp);
-        $msg->parseMessage();
-        if (! $msg || 
-            $msg->getType() != \amqp_091\AmqpMessage::TYPE_METHOD ||
-            $msg->getClassId() != 10 ||
-            $msg->getMethodId() != 10) {
-            throw new \Exception("Unexpected server response during connection setup", 964);
+        if (! ($raw = $this->read())) {
+            throw new \Exception("Connection initialisation failed (2)", 9874);
         }
-
-        if (DEBUG) {
-            debugShowMethod($msg, '[recv] ');
+        if (substr($raw, 0, 4) == 'AMQP' && $raw !== wire\PROTOCOL_HEADER) {
+            // Unexpected AMQP version
+            throw new \Exception("Connection initialisation failed (3)", 9875);
+        }
+        if ($tmp = wire\ExtractFrame($raw)) {
+            list($type, $chan, $size, $r) = $tmp;
+            $meth = new wire\Method($r);
+        } else {
+            throw new \Exception("Connection initialisation failed (4)", 9876);
         }
 
-        // Write connection.start-ok to wire.
-        $msg = \amqp_091\AmqpMessage::NewMessage(\amqp_091\AmqpMessage::TYPE_METHOD, 0);
-        $msg->setClassId(10);
-        $msg->setMethodId(11);
-        $t = new \amqp_091\wire\AmqpTable;
-        $t['product'] = new \amqp_091\wire\AmqpTableField('My Amqp/Rmq implementation', 'S');
-        $t['version'] = new \amqp_091\wire\AmqpTableField('0.01', 'S');
-        $t['platform'] = new \amqp_091\wire\AmqpTableField('Linux baby', 'S');
-        $t['copyright'] = new \amqp_091\wire\AmqpTableField('Copyright (c) 2010 Robin Harvey (harvey.robin@gmail.com)', 'S');
-        $t['information'] = new \amqp_091\wire\AmqpTableField('Property of Robin Harvey', 'S');
-        $msg['client-properties'] = $t;
-        $msg['mechanism'] = 'AMQPLAIN';
-        $msg['response'] = $this->saslHack();
-        $msg['locale'] = 'en_US';
-        if (DEBUG) {
-            debugShowMethod($msg, '[send] ');
+        // Expect start
+        if ($meth->getMethodProto()->getSpecIndex() == 10 && $meth->getClassProto()->getSpecIndex() == 10) {
+            $resp = $meth->getMethodProto()->getResponses();
+            $meth = new wire\Method(new wire\Writer(), $resp[0]);
+        } else {
+            throw new \Exception("Connection initialisation failed (5)", 9877);
         }
-        $this->write($msg->flush());
-
-        // Read connection.tune
-        $resp = $this->read();
-        $msg = \amqp_091\AmqpMessage::FromMessage($resp);
-        $msg->parseMessage();
-        if (DEBUG) {
-            debugShowMethod($msg, '[recv] ');
-        }
-        $this->chanMax = $msg['channel-max'];
-        $this->frameMax = $msg['frame-max'];
-
-        // write connection.tune-ok
-        $msg = \amqp_091\AmqpMessage::NewMessage(\amqp_091\AmqpMessage::TYPE_METHOD, 0);
-        $msg->setClassName('connection');
-        $msg->setMethodName('tune-ok');
-        $msg['channel-max'] = $this->chanMax;
-        $msg['frame-max'] = $this->frameMax;
-        $msg['heartbeat'] = 0;
-        if (DEBUG) {
-            debugShowMethod($msg, '[send] ');
-        }
-        $this->write($msg->flush());
-
-        // Write connection.open
-        $msg = \amqp_091\AmqpMessage::NewMessage(\amqp_091\AmqpMessage::TYPE_METHOD, 0);
-        $msg->setClassName('connection');
-        $msg->setMethodName('open');
-        $msg['virtual-host'] = $this->vhost;
-        $msg['reserved-1'] = '';
-        $msg['reserved-2'] = '';
-        if (DEBUG) {
-            debugShowMethod($msg, '[send] ');
-        }
-        $b = $msg->flush();
-        echo \amqp_091\hexdump($b);
-        $this->write($msg->flush());
-
-        // Read ...
-        $resp = $this->read();
-        $msg = \amqp_091\AmqpMessage::FromMessage($resp);
-        $msg->parseMessage();
-        if (DEBUG) {
-            debugShowMethod($msg, '[recv] ');
+        $meth->setField($this->getClientProperties(), 'client-properties');
+        $meth->setField('AMQPLAIN', 'mechanism');
+        $meth->setField($this->saslHack(), 'response');
+        $meth->setField('en_US', 'locale');
+        // Send start-ok
+        if (! ($this->write(wire\GetFrameBin(1, 0, $meth)))) {
+            throw new \Exception("Connection initialisation failed (6)", 9878);
         }
 
-        if (DEBUG) {
-            echo "\nRabbitConnection setup complete\n";
+        if (! ($raw = $this->read())) {
+            throw new \Exception("Connection initialisation failed (7)", 9879);
+        }
+        if ($tmp = wire\ExtractFrame($raw)) {
+            list($type, $chan, $size, $r) = $tmp;
+            $meth = new wire\Method($r);
+        } else {
+            throw new \Exception("Connection initialisation failed (8)", 9880);
+        }
+        $this->chanMax = $meth->getField('channel-max');
+        $this->frameMax = $meth->getField('frame-max');
+        //printf("Got  channel %d, frameMax %d\n", $this->chanMax, $this->frameMax);
+
+
+        // Expect tune
+        if ($meth->getMethodProto()->getSpecIndex() == 30 && $meth->getClassProto()->getSpecIndex() == 10) {
+            $resp = $meth->getMethodProto()->getResponses();
+            $meth = new wire\Method(new wire\Writer(), $resp[0]);
+        } else {
+            throw new \Exception("Connection initialisation failed (9)", 9881);
+        }
+        $meth->setField($this->chanMax, 'channel-max');
+        $meth->setField($this->frameMax, 'frame-max');
+        $meth->setField(0, 'heartbeat');
+        // Send tune-ok
+        if (! ($this->write(wire\GetFrameBin(1, 0, $meth)))) {
+            throw new \Exception("Connection initialisation failed (10)", 9882);
+        }
+
+        // Now call connection.open
+        $meth = new wire\Method(new wire\Writer, protocol\ClassFactory::GetClassByName('connection')->getMethodByName('open'));
+        $meth->setField($this->vhost, 'virtual-host');
+        $meth->setField('', 'reserved-1');
+        $meth->setField('', 'reserved-2');
+
+        if (! ($this->write(wire\GetFrameBin(1, 0, $meth)))) {
+            throw new \Exception("Connection initialisation failed (10)", 9882);
         }
     }
 
+    private function getClientProperties() {
+        /* Build table to use long strings - RMQ seems to require this. */
+        $t = new wire\Table;
+        foreach (self::$ClientProperties as $pn => $pv) {
+            $t[$pn] = new wire\TableField($pv, 'S');
+        }
+        return $t;
+    }
+
     private function saslHack() {
-        $t = new \amqp_091\wire\AmqpTable();
-        $t['LOGIN'] = new \amqp_091\wire\AmqpTableField($this->username, 'S');
-        $t['PASSWORD'] = new \amqp_091\wire\AmqpTableField($this->userpass, 'S');
-        $buff = new \amqp_091\wire\AmqpMessageBuffer('');
-        \amqp_091\wire\writeTable($buff, $t);
-        return substr($buff->getBuffer(), 4);
+        $t = new wire\Table();
+        $t['LOGIN'] = new wire\TableField($this->username, 'S');
+        $t['PASSWORD'] = new wire\TableField($this->userpass, 'S');
+        $w = new wire\Writer();
+        $w->write($t, 'table');
+        return substr($w->getBuffer(), 4);
     }
 
 
@@ -195,8 +196,9 @@ class Connection
         if ($this->chanMax > 0 && $newChan > $this->chanMax) {
             throw new \Exception("Channels are exhausted!", 23756);
         }
-        return ($this->chans[$newChan] = new RabbitChannel($this, $newChan));
+        return ($this->chans[$newChan] = new Channel($this, $newChan));
     }
+
 
 
     private function read () {
@@ -204,7 +206,7 @@ class Connection
         while ($tmp = socket_read($this->sock, self::READ_LEN)) {
             $ret .= $tmp;
             $this->br += strlen($tmp);
-            if (substr($tmp, -1) === \amqp_091\PROTO_FRME) {
+            if (substr($tmp, -1) === protocol\FRAME_END) {
                 break;
             }
         }
@@ -221,6 +223,7 @@ class Connection
             $bw += $tmp;
             $this->bw += $tmp;
         }
+        return $bw;
     }
     function getBytesWritten () {
         return $this->bw;
@@ -262,12 +265,12 @@ class Channel
     private $chanId;
     private $flow = self::FLOW_OPEN;
 
-    function __construct (RabbitConnection $rConn, $chanId) {
+    function __construct (Connection $rConn, $chanId) {
         $this->myConn = $rConn;
         $this->chanId = $chanId;
 
         if (DEBUG) {
-            echo "\nRabbitChannel setup\n-------------------\n";
+            echo "\Channel setup\n-------------------\n";
         }
         // write channel.open
         $msg = \amqp_091\AmqpMessage::NewMessage(\amqp_091\AmqpMessage::TYPE_METHOD, 0);
