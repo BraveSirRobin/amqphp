@@ -166,6 +166,20 @@ class Connection
         if (! ($this->write(wire\GetFrameBin(1, 0, $meth)))) {
             throw new \Exception("Connection initialisation failed (10)", 9882);
         }
+
+        // Expect open-ok
+        if (! ($raw = $this->read())) {
+            throw new \Exception("Connection initialisation failed (11)", 9883);
+        }
+        if ($tmp = wire\ExtractFrame($raw)) {
+            list($type, $chan, $size, $r) = $tmp;
+            $meth = new wire\Method($r);
+        } else {
+            throw new \Exception("Connection initialisation failed (12)", 9884);
+        }
+        if (! ($meth->getMethodProto()->getSpecIndex() == 41 && $meth->getClassProto()->getSpecIndex() == 10)) {
+            throw new \Exception("Connection initialisation failed (13)", 9885);
+        }
     }
 
     private function getClientProperties() {
@@ -233,8 +247,21 @@ class Connection
     }
 
     /** KISS: Send $meth as wait for and return it's response (if any)  */
-    function sendMessage(wire\Method $meth) {
-        $mBuff = $meth->toBin();
+    function sendMethod(wire\Method $meth, $chan) {
+        if (! ($this->write(wire\GetFrameBin(1, $chan, $meth)))) {
+            throw new \Exception("Send message failed (1)", 5623);
+        }
+
+        if (! ($raw = $this->read())) {
+            throw new \Exception("Send message failed (2)", 5624);
+        }
+        if ($tmp = wire\ExtractFrame($raw)) {
+            list($type, $chan, $size, $r) = $tmp;
+            $meth = new wire\Method($r);
+        } else {
+            throw new \Exception("Send message failed (3)", 5625);
+        }
+        return $meth;
     }
 
 }
@@ -264,34 +291,33 @@ class Channel
     private $myConn;
     private $chanId;
     private $flow = self::FLOW_OPEN;
+    private $ticket;
 
     function __construct (Connection $rConn, $chanId) {
         $this->myConn = $rConn;
         $this->chanId = $chanId;
 
-        if (DEBUG) {
-            echo "\Channel setup\n-------------------\n";
+        $meth = new wire\Method(new wire\Writer, protocol\ClassFactory::GetClassByName('channel')->getMethodByName('open'));
+        $meth->setField('', 'reserved-1');
+        $resp = $this->myConn->sendMethod($meth, $this->chanId);
+        if (! $meth->isResponse($resp)) {
+            throw new \Exception("Channel setup failed (1)", 9856);
         }
-        // write channel.open
-        $msg = \amqp_091\AmqpMessage::NewMessage(\amqp_091\AmqpMessage::TYPE_METHOD, 0);
-        $msg->setClassName('channel');
-        $msg->setMethodName('open');
-        $msg->setChannel($this->chanId);
-        $msg['reserved-1'] = '';
-        if (DEBUG) {
-            debugShowMethod($msg, '[send] ');
+        $meth = new wire\Method(new wire\Writer, protocol\ClassFactory::GetClassByName('access')->getMethodByName('request'));
+        $meth->setField('/data', 'realm');
+        $meth->setField(false, 'exclusive');
+        $meth->setField(true, 'passive');
+        $meth->setField(true, 'active');
+        $meth->setField(true, 'write');
+        $meth->setField(true, 'read');
+
+        $resp = $this->myConn->sendMethod($meth, $this->chanId);
+        if (! $meth->isResponse($resp)) {
+            throw new \Exception("Channel setup failed (2)", 9857);
+        } else if (! ($this->ticket = $resp->getField('ticket'))) {
+            throw new \Exception("Channel setup failed (3)", 9858);
         }
-        $this->myConn->write($msg->flush());
-
-        // read channel.open-ok
-        $resp = $this->myConn->read();
-        $msg = \amqp_091\AmqpMessage::FromMessage($resp);
-        $msg->parseMessage();
-        if (DEBUG) {
-            debugShowMethod($msg, '[recv] ');
-        }
-
-
+        echo "Channel is set up\n";
     }
 
     function exchange () {

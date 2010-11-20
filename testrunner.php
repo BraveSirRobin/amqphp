@@ -36,7 +36,7 @@ function test4() {
 function test5() {
     $connFact = new amqp\ConnectionFactory;
     $conn = $connFact->newConnection();
-    //$chan = $conn->getChannel();
+    $chan = $conn->getChannel();
 }
 
 

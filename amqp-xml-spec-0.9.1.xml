@@ -933,6 +933,29 @@
     </method>
   </class>
 
+
+
+  <class name = "access" handler = "channel" index = "30" label = "RMQ specific methods">
+    <doc>
+      Converted from JSON by RCH.  Note to the RMQ people - pleae don't use JSON!!
+    </doc>
+    <method name = "request" synchronous = "1" index = "10" label = "Access request">
+      <response name = "request-ok" />
+      <field name = "realm" domain = "shortstr"/>
+      <field name = "exclusive" domain = "bit"/>
+      <field name = "passive" domain = "bit"/>
+      <field name = "active" domain = "bit"/>
+      <field name = "write" domain = "bit"/>
+      <field name = "read" domain = "bit"/>
+    </method>
+    <method name = "request-ok" synchronous = "1" index = "11" label = "Access request OK">
+      <field name = "ticket" domain = "short"/>
+    </method>
+  </class>
+
+
+
+
   <!-- ==  EXCHANGE  ========================================================= -->
 
   <class name = "exchange" handler = "channel" index = "40" label = "work with exchanges">
@@ -2724,25 +2747,3 @@
 
 </amqp>
 
-<!--
-
-
-	{
-	    "id": 30,
-	    "methods": [{"id": 10,
-			 "arguments": [{"type": "shortstr", "name": "realm", "default-value": "/data"},
-				       {"type": "bit", "name": "exclusive", "default-value": false},
-				       {"type": "bit", "name": "passive", "default-value": true},
-				       {"type": "bit", "name": "active", "default-value": true},
-				       {"type": "bit", "name": "write", "default-value": true},
-				       {"type": "bit", "name": "read", "default-value": true}],
-			 "name": "request",
-			 "synchronous" : true},
-			{"id": 11,
-                    "arguments": [{"type": "short", "name": "ticket", "default-value": 1}],
-			 "name": "request-ok"}],
-	    "name": "access"
-	},
-
-
--->

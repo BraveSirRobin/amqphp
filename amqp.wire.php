@@ -721,6 +721,7 @@ class Method
     }
 
     /** Helper: parse the incoming message from $this->src */
+    /** TODO: Use generated validation methods??? */
     private function readContruct () {
         if (null === ($this->classId = $this->src->read('short'))) {
             throw new \Exception("Failed to read class ID from frame", 87694);
@@ -747,10 +748,10 @@ class Method
         }
         $this->fields[$name] = $val;
     }
-
     function getField ($name) {
         return isset($this->fields[$name]) ? $this->fields[$name] : null;
     }
+    function getFields() { return $this->fields; }
 
     function setClassField ($val, $name) {
         if ($this->mode === 'read') {
@@ -758,10 +759,10 @@ class Method
         }
         $this->classFields[$name] = $val;
     }
-
     function getClassField ($name) {
         return isset($this->classFields[$name]) ? $this->classFields[$name] : null;
     }
+    function getClassFields () { return $this->classFields; }
 
     function setContent ($content) {
         if ($this->mode === 'read') {
@@ -779,6 +780,7 @@ class Method
     function getClassProto () { return $this->classProto; }
 
 
+    /** TODO: Use generated validation methods!!! */
     function toBin () {
         if ($this->mode === 'read') {
             return $this->src->getBuffer();
@@ -787,12 +789,30 @@ class Method
         $this->src->write($this->methProto->getSpecIndex(), 'short');
         // TODO: Write class fields!!!!
         foreach ($this->methProto->getFields() as $f) {
-            if (! isset($this->fields[$f->getSpecFieldName()])) {
-                throw new \Exception("Missing field {$f->getSpecFieldName()} of method {$this->methProto->getSpecName()}", 98765);
+            $name = $f->getSpecFieldName();
+            $type = $f->getSpecDomainType();
+            if (! isset($this->fields[$name])) {
+                throw new \Exception("Missing field {$name} of method {$this->methProto->getSpecName()}", 98765);
+            } else if (! $f->validate($this->fields[$name])) {
+                throw new \Exception("Field {$name} of method {$this->methProto->getSpecName()} is not valid", 8765);
             }
-            $this->src->write($this->fields[$f->getSpecFieldName()], $f->getSpecDomainType());
+            $this->src->write($this->fields[$name], $type);
         }
         return $this->src->getBuffer();
+    }
+
+    /** Checks if $other is the right type to be a response to *this* method */
+    function isResponse (Method $other) {
+        if ($exp = $this->methProto->getSpecResponseMethods()) {
+            if ($this->classProto->getSpecName() != $other->classProto->getSpecName()) {
+                return false;
+            } else {
+                return in_array($other->methProto->getSpecName(), $exp);
+            }
+        } else {
+            trigger_error("Method does not expect a response", E_USER_WARNING);
+            return false;
+        }
     }
 }
 
