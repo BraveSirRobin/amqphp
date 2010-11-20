@@ -267,22 +267,6 @@ class Connection
 }
 
 
-function debugShowMethod ($msg, $sr) {
-    $s = sprintf("$sr, Method: (%s, %s, %d, %d):", $msg->getClassName(), $msg->getMethodName(),
-                 $msg->getClassId(), $msg->getMethodId());
-    printf("\n%s\n%s\n", $s, str_repeat('-', strlen($s)));
-    foreach ($msg->getMethodData() as $k => $v) {
-        if ($v instanceof \amqp_091\wire\AmqpTable) {
-            echo "$k (table)\n";
-            foreach ($v as $sk => $sv) {
-                echo "  $sk = $sv\n";
-            }
-        } else {
-            echo "$k = $v\n";
-        }
-    }
-}
-
 class Channel
 {
     const FLOW_OPEN = 1;

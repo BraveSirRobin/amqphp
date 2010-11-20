@@ -1,6 +1,8 @@
 <?xml version="1.0"?>
 <!--
    Cut'n'paste from here: http://wiki.amqp.org/chatter:amqp-0-9-1-xml
+   NOTE: RabbitMQ-specific content created in this file, converted from
+   JSON mess.
 -->
 <!-- XML Notes
 
