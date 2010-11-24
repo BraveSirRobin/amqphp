@@ -162,3 +162,105 @@ function test1() {
 }
 
  **/
+
+
+
+
+/*
+
+// Test Code - originally from amqp.wire.php
+
+t1();
+
+function t1() {
+    $aTable = array("Foo" => "Bar");
+    $table = new Table($aTable);
+    $table['bigfoo'] = 'B' . str_repeat('b', 256) . 'ar!';
+    $table['num'] = 2;
+    $table['bignum'] = 259;
+    $table['negnum'] = -2;
+    $table['bignegnum'] = -259;
+    $table['array1'] = array('String element', 1, -2, array('sub1', 'sub2'));
+    $table['littlestring'] = 'Eeek';
+    $table['Decimal'] = new Decimal(1234567, 3);
+    $table['longlong'] = new TableField(100000034000001, 'l');
+    $table['float'] = new TableField(1.23, 'f');
+    $table['double'] = new TableField(453245476568.2342, 'd');
+    $table['timestamp'] = new TableField(14, 'T');
+    //    var_dump($table);
+
+    $w = new Writer;
+    $w->write('a table:', 'shortstr');
+    $w->write($table, 'table');
+    $w->write('phew!', 'shortstr');
+    $w->write(pow(2, 62), 'longlong');
+    //    echo $w->getBuffer();
+    //    die;
+    echo "\n-Regurgitate-\n";
+
+    $r = new Reader($w->getBuffer());
+    echo $r->read('shortstr') . "\n";
+    echo "Table:\n";
+    foreach ($r->read('table') as $fName => $tField) {
+        $value = $tField->getValue();
+        if (is_array($value)) {
+            printf(" [name=%s,type=%s] %s\n", $fName, $tField->getType(), implode(', ', $value));
+        } else {
+            printf(" [name=%s,type=%s] %s\n", $fName, $tField->getType(), $value);
+        }
+    }
+    echo $r->read('shortstr') . "\n" . $r->read('longlong') . "\n";
+}
+
+
+// Write stuff then read it back again
+function t2() {
+    $w = new Writer;
+    $w->write('I ATE ', 'shortstr');
+    $w->write(3, 'octet');
+    $w->write(' GOATS', 'shortstr');
+    $w->write(0, 'bit');//1
+    $w->write(1, 'bit');//2
+    $w->write(0, 'bit');//3
+    $w->write(1, 'bit');//4
+    $w->write(0, 'bit');//5
+    $w->write(1, 'bit');//6
+    $w->write(0, 'bit');//7
+    $w->write(0, 'bit');//8
+    $w->write(0, 'bit');//9
+    echo $w->getBuffer();
+
+    echo "\n-Regurgitate-\n";
+    $r = new Reader($w->getBuffer());
+    echo $r->read('shortstr') . $r->read('octet') . $r->read('shortstr') .
+        ' ' . $r->read('bit') . ' ' . $r->read('bit') . ' ' . $r->read('bit') .
+        ' ' . $r->read('bit') . ' ' . $r->read('bit') . ' ' . $r->read('bit') .
+        ' ' . $r->read('bit') . ' ' . $r->read('bit') . ' ' . $r->read('bit');
+}
+
+
+
+// Bools
+function t3() {
+    $w = new Writer;
+    $w->write('2 bools next:', 'shortstr');
+    $w->write(0, 'bit');//1
+    $w->write(0, 'bit');//2
+    $w->write(0, 'bit');//3
+    $w->write(0, 'bit');//4
+    $w->write(0, 'bit');//5
+    $w->write(0, 'bit');//6
+    $w->write(0, 'bit');//7
+    $w->write(1, 'bit');//8
+    $w->write(1, 'bit');//9
+    echo $w->getBuffer();
+}
+
+function t4() {
+    $d1 = new Decimal(100, 4);
+    $d2 = new Decimal(100, 10);
+    $d3 = new Decimal(69, 2);
+    var_dump($d2);
+    printf("Convert to string BC: (\$d1, \$d2, \$d3) = (%s, %s, %s)\n", $d1->toBcString(), $d2->toBcString(), $d3->toBcString());
+}
+*/

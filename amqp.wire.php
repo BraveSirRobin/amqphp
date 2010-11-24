@@ -21,38 +21,18 @@ const HEXDUMP_BIN = '/usr/bin/hexdump -C';
  */
 
 
-/** Helper: return a bin string for a complete frame */
-function GetFrameBin ($type, $channel, Method $m) {
-    // Why no read based equiv?
+// DEPRECATED - move this in to the method class
+function GetFrameBin ($type, Method $m) {
     $w = new Writer;
     $mb = $m->toBin();
     //printf("  Frame payload length: %d\n", strlen($mb));
     $w->write($type, 'octet');
-    $w->write($channel, 'short');
+    $w->write($m->getWireChannel(), 'short');
     $w->write(strlen($mb), 'long');
     $dbg = $w->getBuffer() . $mb . proto\FRAME_END;
     //    echo $dbg;
     //    die;
     return $dbg;
-}
-
-/**
- * Helper: strip the protocol header from the given binary string.
- * The reader which is returned contains the full frame content.
- * @return   array     Format: array(<type>, <channel>, <size>, <Reader reader>)
- */
-function ExtractFrame ($bin) {
-    $r = new Reader($bin);
-    if (null === ($type = $r->read('octet'))) {
-        trigger_error('Failed to read type from frame', E_USER_WARNING);
-    } else if (null === ($chan = $r->read('short'))) {
-        trigger_error('Failed to read channel from frame', E_USER_WARNING);
-    } else if (null === ($size = $r->read('long'))) {
-        trigger_error('Failed to read size from frame', E_USER_WARNING);
-    } else {
-        return array($type, $chan, $size, $r);
-    }
-    return null;
 }
 
 
@@ -691,54 +671,72 @@ class Table implements \ArrayAccess, \Iterator
 
 
 
-
+/** TODO: Review the read/write mode split */
 class Method
 {
-    private $src; // Protocol
     private $methProto; // XmlSpecMethod
     private $classProto; // XmlSpecClass
     private $mode; // read,write
-    private $fields = array();
-    private $classFields = array();
-    private $content;
+    private $fields = array(); // Amqp method fields
+    private $classFields = array(); // Amqp message class fields
+    private $content; // Amqp message payload
 
-    function __construct (Protocol $src, abstrakt\XmlSpecMethod $methProto = null) {
-        if ($src instanceof Writer) {
-            if (! $methProto) {
-                throw new Exception("Write mode method must specify a prototype", 8483);
-            }
-            $this->methProto = $methProto;
-            $this->classProto = $methProto->getClass();
-            $this->src = $src;
+    private $wireType; // Amqp wire frame type
+    private $wireChannel; // Amqp channel
+    private $wireSize; // Amqp frame size
+
+
+    /**
+     * @param mixed   $src    String = A complete Amqp frame = read mode
+     *                        XmlSpecMethod = The type of message this should be = write mode
+     * @param int     $chan   Target channel - required for write mode only
+     */
+    function __construct ($src, $chan = 0) {
+        if ($src instanceof abstrakt\XmlSpecMethod) {
+            $this->methProto = $src;
+            $this->classProto = $this->methProto->getClass();
             $this->mode = 'write';
-        } else if ($src instanceof Reader) {
-            $this->src = $src;
+            $this->wireChannel = $chan;
+        } else if (is_string($src)) { // instanceof Reader
             $this->mode = 'read';
-            $this->readContruct();
+            $this->readContruct($src);
         } else {
             throw new \Exception("Unsupported source type", 87423);
         }
     }
 
-    /** Helper: parse the incoming message from $this->src */
+    /** Helper: parse the incoming message from $src */
     /** TODO: Use generated validation methods??? */
-    private function readContruct () {
-        if (null === ($this->classId = $this->src->read('short'))) {
-            throw new \Exception("Failed to read class ID from frame", 87694);
+    /** TODO: Deal with frame header, body content */
+    /** TODO: Validate frame size */
+    private function readContruct ($bin) {
+        $src = new Reader($bin);
+        if (null === ($this->wireType = $src->read('octet'))) {
+            throw new \Exception('Failed to read type from frame', 875);
+        } else if (null === ($this->wireChannel = $src->read('short'))) {
+            throw new \Exception('Failed to read channel from frame', 9874);
+        } else if (null === ($this->wireSize = $src->read('long'))) {
+            throw new \Exception('Failed to read size from frame', 8715);
         }
-        if (null === ($this->methodId = $this->src->read('short'))) {
-            throw new \Exception("Failed to read method ID from frame", 6547);
-        }
-        // Look up the method prototype object
-        if (! ($this->classProto = proto\ClassFactory::GetClassByIndex($this->classId))) {
-            throw new \Exception("Failed to construct class prototype", 9875);
-        }
-        if (! ($this->methProto = $this->classProto->getMethodByIndex($this->methodId))) {
-            throw new \Exception("Failed to construct method prototype", 5645);
-        }
-        // Copy field data in to cache
-        foreach ($this->methProto->getFields() as $f) {
-            $this->fields[$f->getSpecFieldName()] = $this->src->read($f->getSpecDomainType());
+        switch ($this->wireType) {
+        case 1:
+            // Load in method and method fields
+            if (null === ($this->classId = $src->read('short'))) {
+                throw new \Exception("Failed to read class ID from frame", 87694);
+            } else if (null === ($this->methodId = $src->read('short'))) {
+                throw new \Exception("Failed to read method ID from frame", 6547);
+            } else if (! ($this->classProto = proto\ClassFactory::GetClassByIndex($this->classId))) {
+                throw new \Exception("Failed to construct class prototype", 9875);
+            } else if (! ($this->methProto = $this->classProto->getMethodByIndex($this->methodId))) {
+                throw new \Exception("Failed to construct method prototype", 5645);
+            }
+            // Copy field data in to cache
+            foreach ($this->methProto->getFields() as $f) {
+                $this->fields[$f->getSpecFieldName()] = $src->read($f->getSpecDomainType());
+            }
+            break;
+        case 2:
+            // Load
         }
     }
 
@@ -778,15 +776,20 @@ class Method
 
     function getMethodProto () { return $this->methProto; }
     function getClassProto () { return $this->classProto; }
+    function getWireType () { return $this->wireType; }
+    function getWireChannel () { return $this->wireChannel; }
+    function getWireSize () { return $this->wireSize; }
 
 
-    /** TODO: Use generated validation methods!!! */
+    /** TODO: Test generated validation methods!!! */
     function toBin () {
         if ($this->mode === 'read') {
-            return $this->src->getBuffer();
+            // TODO: Brokenz?
+            return null;//$this->src->getBuffer();
         }
-        $this->src->write($this->classProto->getSpecIndex(), 'short');
-        $this->src->write($this->methProto->getSpecIndex(), 'short');
+        $src = new Writer;
+        $src->write($this->classProto->getSpecIndex(), 'short');
+        $src->write($this->methProto->getSpecIndex(), 'short');
         // TODO: Write class fields!!!!
         foreach ($this->methProto->getFields() as $f) {
             $name = $f->getSpecFieldName();
@@ -796,9 +799,18 @@ class Method
             } else if (! $f->validate($this->fields[$name])) {
                 throw new \Exception("Field {$name} of method {$this->methProto->getSpecName()} is not valid", 8765);
             }
-            $this->src->write($this->fields[$name], $type);
+            $src->write($this->fields[$name], $type);
         }
-        return $this->src->getBuffer();
+        return $src->getBuffer();
+    }
+
+    function getMethodBin () {
+    }
+
+    function getHeaderBin () {
+    }
+
+    function getContentBin () {
     }
 
     /** Checks if $other is the right type to be a response to *this* method */
@@ -815,344 +827,3 @@ class Method
         }
     }
 }
-
-
-
-
-//
-// Brought in from old amqp.php
-//
-
-
-
-
-
-/*
-abstract class AmqpMessage
-{
-
-    const TYPE_METHOD = protocol\FRAME_METHOD;
-    const TYPE_HEADER = protocol\FRAME_HEADER;
-    const TYPE_BODY = protocol\FRAME_BODY;
-    const TYPE_HEARTBEAT = protocol\FRAME_HEARTBEAT;
-
-     // Factory methods
-
-    private function __construct () {}
-    static function FromMessage ($binStr) {
-        $buff = new wire\AmqpMessageBuffer($binStr);
-        $type = wire\readShortShortUInt($buff);
-        $chan = wire\readShortUInt($buff);
-        $len = wire\readLongUInt($buff);
-        $m = self::_New($type);
-        $m->chan = $chan;
-        $m->len = $len;
-        $m->buff = $buff;
-        return $m;
-    }
-    static function NewMessage ($type, $chan) {
-        $m = self::_New($type);
-        $m->type = $type;
-        $m->chan = $chan;
-        $m->buff = new wire\AmqpMessageBuffer('');
-        return $m;
-    }
-    private static function _New ($type) {
-        switch ($type) {
-        case self::TYPE_METHOD:
-            $ret = new AmqpMethod;
-            break;
-        case self::TYPE_HEADER:
-            $ret = new AmqpHeader;
-            break;
-        case self::TYPE_BODY:
-            $ret = new AmqpBody;
-            break;
-        case self::TYPE_HEARTBEAT:
-            $ret = new AmqpHeartbeat;
-            break;
-        default:
-            throw new \Exception("Bad message type", 9864);
-        }
-        $ret->type = $type;
-        return $ret;
-    }
-    // Message content handling
-
-    private $buff;
-    private $type;
-    private $len;
-    private $chan;
-
-    function getBuffer () { return $this->buff; }
-    function getType () { return $this->type; }
-    function getLength () { return $this->len; }
-    function getChannel () { return $this->chan; }
-    function setChannel ($chan) { $this->chan = $chan; }
-
-
-    function flush() {
-        $this->buff = new wire\AmqpMessageBuffer('');
-        static::flushMessage(); // Copy message contents from child class
-        $len = $this->buff->getLength();
-        wire\writeShortShortUInt($this->buff, 206);
-        $this->buff->setOffset(0);
-        echo "  [AmqpMessage->flush] len = $len, type = {$this->type}, channel = {$this->chan}\n";
-        wire\writeShortShortUInt($this->buff, $this->type);
-        wire\writeShortUInt($this->buff, $this->chan);
-        wire\writeLongUInt($this->buff, $len);
-
-        $b = $this->buff->getBuffer();
-        //        echo hexdump($b);
-        return $b;
-    }
-
-    // Subclasses can implement so that their content can be added to the message
-    function flushMessage() {}
-}
-
-
-class AmqpMethod extends AmqpMessage implements \ArrayAccess {
-    private $cache; // PHP version of underlying method fields
-    private $classId;
-    private $methodId;
-    private $className;
-    private $methodName;
-
-    function setClassId ($id) { $this->classId = $id; }
-    function setClassName ($name) { $this->className = $name; }
-    function getClassId () { return $this->classId; }
-    function getClassName () { return $this->className; }
-
-    function setMethodId ($id) { $this->methodId = $id; }
-    function setMethodName ($name) { $this->methodName = $name; }
-    function getMethodId () { return $this->methodId; }
-    function getMethodName () { return $this->methodName; }
-
-
-    // Copies data from underlying message in to PHP data cache  
-    function parseMessage () {
-        if ($this->cache) {
-            return $this->cache;
-        }
-        $buff = $this->getBuffer();
-        $this->classId = wire\readShortUInt($buff);
-        $this->methodId = wire\readShortUInt($buff);
-        // Look up the method prototype object
-        list($classProto, $methProto) = $this->getPrototypes();
-        // Copy field data in to cache
-        foreach ($methProto->getFields() as $f) {
-            $this->cache[$f->getSpecFieldName()] = $f->read($buff);
-            // $this->cache[$f->getSpecFieldName()] = $buff->read($f);
-        }
-    }
-
-    //Copies data from cache to the underlying message, returns number of bytes copied
-    //NOTE: this does not copy the message level parameters (type, channel, length) 
-    function flushMessage () {
-        if (! $this->cache) {
-            return 0;
-        }
-        $buff = $this->getBuffer();
-        // Look up the method prototype object
-        list($classProto, $methProto) = $this->getPrototypes();
-        $ret = 0;
-        // Write the class and method numbers in to the buffer
-        wire\writeShortUInt($buff, $classProto->getSpecIndex());
-        wire\writeShortUInt($buff, $methProto->getSpecIndex());
-        foreach ($methProto->getFields() as $f) {
-            //echo "  Process field {$f->getSpecFieldName()}: " .
-            //"({$this->cache[$f->getSpecFieldName()]})-[" . get_class($f) . "]\n";
-            if (! isset($this->cache[$f->getSpecFieldName()])) {
-                throw new \Exception("Missing field {$f->getSpecFieldName()} of method {$methProto->getSpecName()}", 98765);
-            }
-            $f->write($buff, $this->cache[$f->getSpecFieldName()]);
-            // $buff->write($f, $this->cache[$f->getSpecFieldName()]);
-        }
-    }
-    // Lookup method allows mixed usage of method / class names / numbers.  Numbers are preferred
-    private function getPrototypes () {
-        if (! is_null($this->classId)) {
-            $classProto = protocol\ClassFactory::GetClassByIndex($this->classId);
-        } else if (! is_null($this->className)) {
-            $classProto = protocol\ClassFactory::GetClassByName($this->className);
-        } else {
-            throw new \Exception("Unknown class index", 98532);
-        }
-
-        if (! is_null($this->methodId)) {
-            $methProto = $classProto->getMethodByIndex($this->methodId);
-        } else if (! is_null($this->methodName)) {
-            $methProto = $classProto->getMethodByName($this->methodName);
-        } else {
-            throw new \Exception("Unknown method index", 8529);
-        }
-        return array($classProto, $methProto);
-    }
-
-
-    function offsetExists ($offset) { return isset($this->cache[$offset]); }
-    function offsetGet ($offset) { return $this->cache[$offset]; }
-    function offsetSet ($offset, $value) { $this->cache[$offset] = $value; }
-    function offsetUnset ($offset) { unset($this->cache[$offset]); }
-
-    function getMethodData() {
-        return $this->cache;
-    }
-}
-class AmqpHeader extends AmqpMessage {}
-class AmqpBody extends AmqpMessage {}
-class AmqpHeartbeat extends AmqpMessage {}
-
-
-
-
-function hexdump($subject) {
-    if ($subject === '') {
-        return "00000000\n";
-    }
-    $pDesc = array(
-                   array('pipe', 'r'),
-                   array('pipe', 'w'),
-                   array('pipe', 'r')
-                   );
-    $pOpts = array('binary_pipes' => true);
-    if (($proc = proc_open(HEXDUMP_BIN, $pDesc, $pipes, null, null, $pOpts)) === false) {
-        throw new \Exception("Failed to open hexdump proc!", 675);
-    }
-    fwrite($pipes[0], $subject);
-    fclose($pipes[0]);
-    $ret = stream_get_contents($pipes[1]);
-    fclose($pipes[1]);
-    $errs = stream_get_contents($pipes[2]);
-    fclose($pipes[2]);
-    if ($errs) {
-        printf("[ERROR] Stderr content from hexdump pipe: %s\n", $errs);
-    }
-    proc_close($proc);
-    return $ret;
-}
-
-*/
-
-
-
-
-
-//
-// End old amqp import
-//
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/*
-
-// Test Code.
-
-t1();
-
-function t1() {
-    $aTable = array("Foo" => "Bar");
-    $table = new Table($aTable);
-    $table['bigfoo'] = 'B' . str_repeat('b', 256) . 'ar!';
-    $table['num'] = 2;
-    $table['bignum'] = 259;
-    $table['negnum'] = -2;
-    $table['bignegnum'] = -259;
-    $table['array1'] = array('String element', 1, -2, array('sub1', 'sub2'));
-    $table['littlestring'] = 'Eeek';
-    $table['Decimal'] = new Decimal(1234567, 3);
-    $table['longlong'] = new TableField(100000034000001, 'l');
-    $table['float'] = new TableField(1.23, 'f');
-    $table['double'] = new TableField(453245476568.2342, 'd');
-    $table['timestamp'] = new TableField(14, 'T');
-    //    var_dump($table);
-
-    $w = new Writer;
-    $w->write('a table:', 'shortstr');
-    $w->write($table, 'table');
-    $w->write('phew!', 'shortstr');
-    $w->write(pow(2, 62), 'longlong');
-    //    echo $w->getBuffer();
-    //    die;
-    echo "\n-Regurgitate-\n";
-
-    $r = new Reader($w->getBuffer());
-    echo $r->read('shortstr') . "\n";
-    echo "Table:\n";
-    foreach ($r->read('table') as $fName => $tField) {
-        $value = $tField->getValue();
-        if (is_array($value)) {
-            printf(" [name=%s,type=%s] %s\n", $fName, $tField->getType(), implode(', ', $value));
-        } else {
-            printf(" [name=%s,type=%s] %s\n", $fName, $tField->getType(), $value);
-        }
-    }
-    echo $r->read('shortstr') . "\n" . $r->read('longlong') . "\n";
-}
-
-
-// Write stuff then read it back again
-function t2() {
-    $w = new Writer;
-    $w->write('I ATE ', 'shortstr');
-    $w->write(3, 'octet');
-    $w->write(' GOATS', 'shortstr');
-    $w->write(0, 'bit');//1
-    $w->write(1, 'bit');//2
-    $w->write(0, 'bit');//3
-    $w->write(1, 'bit');//4
-    $w->write(0, 'bit');//5
-    $w->write(1, 'bit');//6
-    $w->write(0, 'bit');//7
-    $w->write(0, 'bit');//8
-    $w->write(0, 'bit');//9
-    echo $w->getBuffer();
-
-    echo "\n-Regurgitate-\n";
-    $r = new Reader($w->getBuffer());
-    echo $r->read('shortstr') . $r->read('octet') . $r->read('shortstr') .
-        ' ' . $r->read('bit') . ' ' . $r->read('bit') . ' ' . $r->read('bit') .
-        ' ' . $r->read('bit') . ' ' . $r->read('bit') . ' ' . $r->read('bit') .
-        ' ' . $r->read('bit') . ' ' . $r->read('bit') . ' ' . $r->read('bit');
-}
-
-
-
-// Bools
-function t3() {
-    $w = new Writer;
-    $w->write('2 bools next:', 'shortstr');
-    $w->write(0, 'bit');//1
-    $w->write(0, 'bit');//2
-    $w->write(0, 'bit');//3
-    $w->write(0, 'bit');//4
-    $w->write(0, 'bit');//5
-    $w->write(0, 'bit');//6
-    $w->write(0, 'bit');//7
-    $w->write(1, 'bit');//8
-    $w->write(1, 'bit');//9
-    echo $w->getBuffer();
-}
-
-function t4() {
-    $d1 = new Decimal(100, 4);
-    $d2 = new Decimal(100, 10);
-    $d3 = new Decimal(69, 2);
-    var_dump($d2);
-    printf("Convert to string BC: (\$d1, \$d2, \$d3) = (%s, %s, %s)\n", $d1->toBcString(), $d2->toBcString(), $d3->toBcString());
-}
-*/

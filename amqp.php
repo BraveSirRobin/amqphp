@@ -1,5 +1,13 @@
 <?php
 
+
+/**
+ * This library is intended to be as "procedural" as possible - all
+ * methods return just like regular functions, including those which
+ * carry content.
+ */
+
+
 namespace amqp_091;
 
 use amqp_091\protocol;
@@ -105,17 +113,12 @@ class Connection
             // Unexpected AMQP version
             throw new \Exception("Connection initialisation failed (3)", 9875);
         }
-        if ($tmp = wire\ExtractFrame($raw)) {
-            list($type, $chan, $size, $r) = $tmp;
-            $meth = new wire\Method($r);
-        } else {
-            throw new \Exception("Connection initialisation failed (4)", 9876);
-        }
+        $meth = new wire\Method($raw);
 
         // Expect start
         if ($meth->getMethodProto()->getSpecIndex() == 10 && $meth->getClassProto()->getSpecIndex() == 10) {
             $resp = $meth->getMethodProto()->getResponses();
-            $meth = new wire\Method(new wire\Writer(), $resp[0]);
+            $meth = new wire\Method($resp[0]);
         } else {
             throw new \Exception("Connection initialisation failed (5)", 9877);
         }
@@ -124,19 +127,15 @@ class Connection
         $meth->setField($this->saslHack(), 'response');
         $meth->setField('en_US', 'locale');
         // Send start-ok
-        if (! ($this->write(wire\GetFrameBin(1, 0, $meth)))) {
+        if (! ($this->write(wire\GetFrameBin(1, $meth)))) {
             throw new \Exception("Connection initialisation failed (6)", 9878);
         }
 
         if (! ($raw = $this->read())) {
             throw new \Exception("Connection initialisation failed (7)", 9879);
         }
-        if ($tmp = wire\ExtractFrame($raw)) {
-            list($type, $chan, $size, $r) = $tmp;
-            $meth = new wire\Method($r);
-        } else {
-            throw new \Exception("Connection initialisation failed (8)", 9880);
-        }
+        $meth = new wire\Method($raw);
+
         $this->chanMax = $meth->getField('channel-max');
         $this->frameMax = $meth->getField('frame-max');
         //printf("Got  channel %d, frameMax %d\n", $this->chanMax, $this->frameMax);
@@ -145,7 +144,7 @@ class Connection
         // Expect tune
         if ($meth->getMethodProto()->getSpecIndex() == 30 && $meth->getClassProto()->getSpecIndex() == 10) {
             $resp = $meth->getMethodProto()->getResponses();
-            $meth = new wire\Method(new wire\Writer(), $resp[0]);
+            $meth = new wire\Method($resp[0]);
         } else {
             throw new \Exception("Connection initialisation failed (9)", 9881);
         }
@@ -153,17 +152,17 @@ class Connection
         $meth->setField($this->frameMax, 'frame-max');
         $meth->setField(0, 'heartbeat');
         // Send tune-ok
-        if (! ($this->write(wire\GetFrameBin(1, 0, $meth)))) {
+        if (! ($this->write(wire\GetFrameBin(1, $meth)))) {
             throw new \Exception("Connection initialisation failed (10)", 9882);
         }
 
         // Now call connection.open
-        $meth = new wire\Method(new wire\Writer, protocol\ClassFactory::GetClassByName('connection')->getMethodByName('open'));
+        $meth = new wire\Method(protocol\ClassFactory::GetClassByName('connection')->getMethodByName('open'));
         $meth->setField($this->vhost, 'virtual-host');
         $meth->setField('', 'reserved-1');
         $meth->setField('', 'reserved-2');
 
-        if (! ($this->write(wire\GetFrameBin(1, 0, $meth)))) {
+        if (! ($this->write(wire\GetFrameBin(1, $meth)))) {
             throw new \Exception("Connection initialisation failed (10)", 9882);
         }
 
@@ -171,12 +170,7 @@ class Connection
         if (! ($raw = $this->read())) {
             throw new \Exception("Connection initialisation failed (11)", 9883);
         }
-        if ($tmp = wire\ExtractFrame($raw)) {
-            list($type, $chan, $size, $r) = $tmp;
-            $meth = new wire\Method($r);
-        } else {
-            throw new \Exception("Connection initialisation failed (12)", 9884);
-        }
+        $meth = new wire\Method($raw);
         if (! ($meth->getMethodProto()->getSpecIndex() == 41 && $meth->getClassProto()->getSpecIndex() == 10)) {
             throw new \Exception("Connection initialisation failed (13)", 9885);
         }
@@ -214,7 +208,9 @@ class Connection
     }
 
 
-
+    /** In the general sense, this method is broken, because there could be many
+        frame reads in a single 'session'.  For example, receiving a message with
+        basic.consume which has been broken in to many frames. */
     private function read () {
         $ret = '';
         while ($tmp = socket_read($this->sock, self::READ_LEN)) {
@@ -246,22 +242,45 @@ class Connection
         return $this->br;
     }
 
-    /** KISS: Send $meth as wait for and return it's response (if any)  */
-    function sendMethod(wire\Method $meth, $chan) {
-        if (! ($this->write(wire\GetFrameBin(1, $chan, $meth)))) {
+    /**
+     * Once implemented, this will be the method of delivering 'unsolicited' content
+     * in the procedural model.  'Unsolicited' means "wire content which is read during 
+     * a method invokation but is not directly related to the invoked
+     * methods' response"
+     */
+    private $inconvenients = array();
+    function unexpected($meth) {
+        trigger_error("\n\nI found an inconvience!\n\n", E_USER_WARNING);
+        var_dump($meth);
+        $this->inconvenients[] = $meth;
+    }
+
+    /**
+     * Write the given method to the wire and loop waiting for the response.
+     */
+    function sendMethod(wire\Method $meth) {
+        if (! ($this->write(wire\GetFrameBin(1, $meth)))) {
             throw new \Exception("Send message failed (1)", 5623);
         }
-
-        if (! ($raw = $this->read())) {
-            throw new \Exception("Send message failed (2)", 5624);
-        }
-        if ($tmp = wire\ExtractFrame($raw)) {
-            list($type, $chan, $size, $r) = $tmp;
-            $meth = new wire\Method($r);
+        if ($rTypes = $meth->getMethodProto()->getSpecResponseMethods()) {
+            // Allow other traffic through - content, heartbeats, etc.
+            while (true) { // TODO: Limit counter?
+                if (! ($raw = $this->read())) {
+                    throw new \Exception("Send message failed (2)", 5624);
+                }
+                $newMeth = new wire\Method($raw);
+                if (! in_array($newMeth->getWireType(), array(1,2))
+                    || $newMeth->getWireChannel() != $meth->getWireChannel()) {
+                    $this->unexpected($newMeth);
+                    continue;
+                } else if ($meth->isResponse($newMeth)) {
+                    return $newMeth;
+                }
+                throw new Exception("Unexpected method type", 9874);
+            }
         } else {
-            throw new \Exception("Send message failed (3)", 5625);
+            return null;
         }
-        return $meth;
     }
 
 }
@@ -281,13 +300,11 @@ class Channel
         $this->myConn = $rConn;
         $this->chanId = $chanId;
 
-        $meth = new wire\Method(new wire\Writer, protocol\ClassFactory::GetClassByName('channel')->getMethodByName('open'));
+        $meth = new wire\Method(protocol\ClassFactory::GetClassByName('channel')->getMethodByName('open'), $this->chanId);
         $meth->setField('', 'reserved-1');
-        $resp = $this->myConn->sendMethod($meth, $this->chanId);
-        if (! $meth->isResponse($resp)) {
-            throw new \Exception("Channel setup failed (1)", 9856);
-        }
-        $meth = new wire\Method(new wire\Writer, protocol\ClassFactory::GetClassByName('access')->getMethodByName('request'));
+        $resp = $this->myConn->sendMethod($meth);
+
+        $meth = new wire\Method(protocol\ClassFactory::GetClassByName('access')->getMethodByName('request'), $this->chanId);
         $meth->setField('/data', 'realm');
         $meth->setField(false, 'exclusive');
         $meth->setField(true, 'passive');
@@ -295,10 +312,8 @@ class Channel
         $meth->setField(true, 'write');
         $meth->setField(true, 'read');
 
-        $resp = $this->myConn->sendMethod($meth, $this->chanId);
-        if (! $meth->isResponse($resp)) {
-            throw new \Exception("Channel setup failed (2)", 9857);
-        } else if (! ($this->ticket = $resp->getField('ticket'))) {
+        $resp = $this->myConn->sendMethod($meth);
+        if (! ($this->ticket = $resp->getField('ticket'))) {
             throw new \Exception("Channel setup failed (3)", 9858);
         }
         echo "Channel is set up\n";
