@@ -1,0 +1,255 @@
+<amqpDefaults targetImpl="RabbitMQ 0.9.1">
+  <class name="connection" id="10">
+    <method name="start" id="10">
+      <field name="version-major" default-value="0"/>
+      <field name="version-minor" default-value="9"/>
+      <field name="server properties" default-value=""/>
+      <field name="mechanisms" default-value="PLAIN"/>
+      <field name="locales" default-value="en_US"/>
+    </method>
+    <method name="start-ok" id="11">
+      <field name="client-properties" default-value=""/>
+      <field name="mechanism" default-value="PLAIN"/>
+      <field name="response" default-value=""/>
+      <field name="locale" default-value="en_US"/>
+    </method>
+    <method name="secure" id="20">
+      <field name="challenge" default-value=""/>
+    </method>
+    <method name="secure-ok" id="21">
+      <field name="response" default-value=""/>
+    </method>
+    <method name="tune" id="30">
+      <field name="channel-max" default-value="0"/>
+      <field name="frame-max" default-value="0"/>
+      <field name="heartbeat" default-value="0"/>
+    </method>
+    <method name="tune-ok" id="31">
+      <field name="channel-max" default-value="0"/>
+      <field name="frame-max" default-value="0"/>
+      <field name="heartbeat" default-value="0"/>
+    </method>
+    <method name="open" id="40">
+      <field name="virtual-host" default-value="/"/>
+      <field name="capabilities" default-value=""/>
+      <field name="insist" default-value=""/>
+    </method>
+    <method name="open-ok" id="41">
+      <field name="known-hosts" default-value=""/>
+    </method>
+    <method name="close" id="50">
+      <field name="reply-code" default-value=""/>
+      <field name="reply-text" default-value=""/>
+      <field name="class-id" default-value=""/>
+      <field name="method-id" default-value=""/>
+    </method>
+    <method name="close-ok" id="51"/>
+  </class>
+  <class name="channel" id="20">
+    <method name="open" id="10">
+      <field name="out-of-band" default-value=""/>
+    </method>
+    <method name="open-ok" id="11">
+      <field name="channel-id" default-value=""/>
+    </method>
+    <method name="flow" id="20">
+      <field name="active" default-value=""/>
+    </method>
+    <method name="flow-ok" id="21">
+      <field name="active" default-value=""/>
+    </method>
+    <method name="close" id="40">
+      <field name="reply-code" default-value=""/>
+      <field name="reply-text" default-value=""/>
+      <field name="class-id" default-value=""/>
+      <field name="method-id" default-value=""/>
+    </method>
+    <method name="close-ok" id="41"/>
+  </class>
+  <class name="access" id="30">
+    <method name="request" id="10">
+      <field name="realm" default-value="/data"/>
+      <field name="exclusive" default-value=""/>
+      <field name="passive" default-value="1"/>
+      <field name="active" default-value="1"/>
+      <field name="write" default-value="1"/>
+      <field name="read" default-value="1"/>
+    </method>
+    <method name="request-ok" id="11">
+      <field name="ticket" default-value="1"/>
+    </method>
+  </class>
+  <class name="exchange" id="40">
+    <method name="declare" id="10">
+      <field name="ticket" default-value="0"/>
+      <field name="exchange" default-value=""/>
+      <field name="type" default-value="direct"/>
+      <field name="passive" default-value=""/>
+      <field name="durable" default-value=""/>
+      <field name="auto-delete" default-value=""/>
+      <field name="internal" default-value=""/>
+      <field name="nowait" default-value=""/>
+      <field name="arguments" default-value=""/>
+    </method>
+    <method name="declare-ok" id="11"/>
+    <method name="delete" id="20">
+      <field name="ticket" default-value="0"/>
+      <field name="exchange" default-value=""/>
+      <field name="if-unused" default-value=""/>
+      <field name="nowait" default-value=""/>
+    </method>
+    <method name="delete-ok" id="21"/>
+  </class>
+  <class name="queue" id="50">
+    <method name="declare" id="10">
+      <field name="ticket" default-value="0"/>
+      <field name="queue" default-value=""/>
+      <field name="passive" default-value=""/>
+      <field name="durable" default-value=""/>
+      <field name="exclusive" default-value=""/>
+      <field name="auto-delete" default-value=""/>
+      <field name="nowait" default-value=""/>
+      <field name="arguments" default-value=""/>
+    </method>
+    <method name="declare-ok" id="11">
+      <field name="queue" default-value=""/>
+      <field name="message-count" default-value=""/>
+      <field name="consumer-count" default-value=""/>
+    </method>
+    <method name="bind" id="20">
+      <field name="ticket" default-value="0"/>
+      <field name="queue" default-value=""/>
+      <field name="exchange" default-value=""/>
+      <field name="routing-key" default-value=""/>
+      <field name="nowait" default-value=""/>
+      <field name="arguments" default-value=""/>
+    </method>
+    <method name="bind-ok" id="21"/>
+    <method name="purge" id="30">
+      <field name="ticket" default-value="0"/>
+      <field name="queue" default-value=""/>
+      <field name="nowait" default-value=""/>
+    </method>
+    <method name="purge-ok" id="31">
+      <field name="message-count" default-value=""/>
+    </method>
+    <method name="delete" id="40">
+      <field name="ticket" default-value="0"/>
+      <field name="queue" default-value=""/>
+      <field name="if-unused" default-value=""/>
+      <field name="if-empty" default-value=""/>
+      <field name="nowait" default-value=""/>
+    </method>
+    <method name="delete-ok" id="41">
+      <field name="message-count" default-value=""/>
+    </method>
+    <method name="unbind" id="50">
+      <field name="ticket" default-value="0"/>
+      <field name="queue" default-value=""/>
+      <field name="exchange" default-value=""/>
+      <field name="routing-key" default-value=""/>
+      <field name="arguments" default-value=""/>
+    </method>
+    <method name="unbind-ok" id="51"/>
+  </class>
+  <class name="basic" id="60">
+    <field name="content-type"/>
+    <field name="content-encoding"/>
+    <field name="headers"/>
+    <field name="delivery-mode"/>
+    <field name="priority"/>
+    <field name="correlation-id"/>
+    <field name="reply-to"/>
+    <field name="expiration"/>
+    <field name="message-id"/>
+    <field name="timestamp"/>
+    <field name="type"/>
+    <field name="user-id"/>
+    <field name="app-id"/>
+    <field name="cluster-id"/>
+    <method name="qos" id="10">
+      <field name="prefetch-size" default-value="0"/>
+      <field name="prefetch-count" default-value="0"/>
+      <field name="global" default-value=""/>
+    </method>
+    <method name="qos-ok" id="11"/>
+    <method name="consume" id="20">
+      <field name="ticket" default-value="0"/>
+      <field name="queue" default-value=""/>
+      <field name="consumer-tag" default-value=""/>
+      <field name="no-local" default-value=""/>
+      <field name="no-ack" default-value=""/>
+      <field name="exclusive" default-value=""/>
+      <field name="nowait" default-value=""/>
+      <field name="filter" default-value=""/>
+    </method>
+    <method name="consume-ok" id="21">
+      <field name="consumer-tag" default-value=""/>
+    </method>
+    <method name="cancel" id="30">
+      <field name="consumer-tag" default-value=""/>
+      <field name="nowait" default-value=""/>
+    </method>
+    <method name="cancel-ok" id="31">
+      <field name="consumer-tag" default-value=""/>
+    </method>
+    <method name="publish" id="40">
+      <field name="ticket" default-value="0"/>
+      <field name="exchange" default-value=""/>
+      <field name="routing-key" default-value=""/>
+      <field name="mandatory" default-value=""/>
+      <field name="immediate" default-value=""/>
+    </method>
+    <method name="return" id="50">
+      <field name="reply-code" default-value=""/>
+      <field name="reply-text" default-value=""/>
+      <field name="exchange" default-value=""/>
+      <field name="routing-key" default-value=""/>
+    </method>
+    <method name="deliver" id="60">
+      <field name="consumer-tag" default-value=""/>
+      <field name="delivery-tag" default-value=""/>
+      <field name="redelivered" default-value=""/>
+      <field name="exchange" default-value=""/>
+      <field name="routing-key" default-value=""/>
+    </method>
+    <method name="get" id="70">
+      <field name="ticket" default-value="0"/>
+      <field name="queue" default-value=""/>
+      <field name="no-ack" default-value=""/>
+    </method>
+    <method name="get-ok" id="71">
+      <field name="delivery-tag" default-value=""/>
+      <field name="redelivered" default-value=""/>
+      <field name="exchange" default-value=""/>
+      <field name="routing-key" default-value=""/>
+      <field name="message-count" default-value=""/>
+    </method>
+    <method name="get-empty" id="72">
+      <field name="cluster-id" default-value=""/>
+    </method>
+    <method name="ack" id="80">
+      <field name="delivery-tag" default-value="0"/>
+      <field name="multiple" default-value=""/>
+    </method>
+    <method name="reject" id="90">
+      <field name="delivery-tag" default-value=""/>
+      <field name="requeue" default-value="1"/>
+    </method>
+    <method name="recover-async" id="100">
+      <field name="requeue" default-value=""/>
+    </method>
+    <method name="recover" id="110">
+      <field name="requeue" default-value=""/>
+    </method>
+    <method name="recover-ok" id="111"/>
+  </class>
+  <class name="tx" id="90">
+    <method name="select" id="10"/>
+    <method name="select-ok" id="11"/>
+    <method name="commit" id="20"/>
+    <method name="commit-ok" id="21"/>
+    <method name="rollback" id="30"/>
+    <method name="rollback-ok" id="31"/>
+  </class>
+</amqpDefaults>

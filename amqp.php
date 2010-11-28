@@ -49,6 +49,7 @@ class ConnectionFactory
             case 'sReadTimeoutSecs':
             case 'sReadTimeoutUSecs':
                 $this->{$pname} = $pval;
+                break;
             default:
                 throw new \Exception("Invalid connection factory parameter", 8654);
             }
@@ -122,12 +123,12 @@ class Connection
         } else {
             throw new \Exception("Connection initialisation failed (5)", 9877);
         }
-        $meth->setField($this->getClientProperties(), 'client-properties');
-        $meth->setField('AMQPLAIN', 'mechanism');
-        $meth->setField($this->saslHack(), 'response');
-        $meth->setField('en_US', 'locale');
+        $meth->setField('client-properties', $this->getClientProperties());
+        $meth->setField('mechanism', 'AMQPLAIN');
+        $meth->setField('response', $this->saslHack());
+        $meth->setField('locale', 'en_US');
         // Send start-ok
-        if (! ($this->write(wire\GetFrameBin(1, $meth)))) {
+        if (! ($this->write($meth->toBin()))) {
             throw new \Exception("Connection initialisation failed (6)", 9878);
         }
 
@@ -148,21 +149,21 @@ class Connection
         } else {
             throw new \Exception("Connection initialisation failed (9)", 9881);
         }
-        $meth->setField($this->chanMax, 'channel-max');
-        $meth->setField($this->frameMax, 'frame-max');
-        $meth->setField(0, 'heartbeat');
+        $meth->setField('channel-max', $this->chanMax);
+        $meth->setField('frame-max', $this->frameMax);
+        $meth->setField('heartbeat', 0);
         // Send tune-ok
-        if (! ($this->write(wire\GetFrameBin(1, $meth)))) {
+        if (! ($this->write($meth->toBin()))) {
             throw new \Exception("Connection initialisation failed (10)", 9882);
         }
 
         // Now call connection.open
         $meth = new wire\Method(protocol\ClassFactory::GetClassByName('connection')->getMethodByName('open'));
-        $meth->setField($this->vhost, 'virtual-host');
-        $meth->setField('', 'reserved-1');
-        $meth->setField('', 'reserved-2');
+        $meth->setField('virtual-host', $this->vhost);
+        $meth->setField('reserved-1', '');
+        $meth->setField('reserved-2', '');
 
-        if (! ($this->write(wire\GetFrameBin(1, $meth)))) {
+        if (! ($this->write($meth->toBin()))) {
             throw new \Exception("Connection initialisation failed (10)", 9882);
         }
 
@@ -204,7 +205,16 @@ class Connection
         if ($this->chanMax > 0 && $newChan > $this->chanMax) {
             throw new \Exception("Channels are exhausted!", 23756);
         }
-        return ($this->chans[$newChan] = new Channel($this, $newChan));
+        return ($this->chans[$newChan] = new Channel($this, $newChan, $this->vhost));
+    }
+
+
+    function getVHost() { return $this->vhost; }
+
+
+    // DELETEME!!!
+    function cheatRead() {
+        return $this->read();
     }
 
 
@@ -259,7 +269,7 @@ class Connection
      * Write the given method to the wire and loop waiting for the response.
      */
     function sendMethod(wire\Method $meth) {
-        if (! ($this->write(wire\GetFrameBin(1, $meth)))) {
+        if (! ($this->write($meth->toBin()))) {
             throw new \Exception("Send message failed (1)", 5623);
         }
         if ($rTypes = $meth->getMethodProto()->getSpecResponseMethods()) {
@@ -282,7 +292,6 @@ class Connection
             return null;
         }
     }
-
 }
 
 
@@ -301,28 +310,62 @@ class Channel
         $this->chanId = $chanId;
 
         $meth = new wire\Method(protocol\ClassFactory::GetClassByName('channel')->getMethodByName('open'), $this->chanId);
-        $meth->setField('', 'reserved-1');
+        $meth->setField('reserved-1', '');
         $resp = $this->myConn->sendMethod($meth);
 
         $meth = new wire\Method(protocol\ClassFactory::GetClassByName('access')->getMethodByName('request'), $this->chanId);
-        $meth->setField('/data', 'realm');
-        $meth->setField(false, 'exclusive');
-        $meth->setField(true, 'passive');
-        $meth->setField(true, 'active');
-        $meth->setField(true, 'write');
-        $meth->setField(true, 'read');
+        $meth->setField('realm', $this->myConn->getVHost());
+        $meth->setField('exclusive', false);
+        $meth->setField('passive', true);
+        $meth->setField('active', true);
+        $meth->setField('write', true);
+        $meth->setField('read', true);
 
         $resp = $this->myConn->sendMethod($meth);
         if (! ($this->ticket = $resp->getField('ticket'))) {
             throw new \Exception("Channel setup failed (3)", 9858);
         }
-        echo "Channel is set up\n";
     }
 
     function exchange () {
     }
 
-    function basic () {
+    /** TODO: move class/method field defaults out of here. */
+    /* Construct a wire method with default propertie for this channel */
+    function basic ($method) {
+        switch ($method) {
+        case 'publish':
+            $m = new wire\Method(protocol\ClassFactory::GetClassByName('basic')->getMethodByName('publish'), $this->chanId);
+            $cFields = array ('content-type' => 'text/plain',
+                              'content-encoding' => 'UTF-8',
+                              'headers',
+                              'delivery-mode',
+                              'priority',
+                              'correlation-id',
+                              'reply-to',
+                              'expiration',
+                              'message-id',
+                              'timestamp',
+                              'type',
+                              'user-id',
+                              'app-id',
+                              'reserved');
+            foreach ($cFields as $i => $cf) {
+                if (! is_int($i)) {
+                    $m->setClassField($i, $cf);
+                }
+            }
+            $mFields = array('reserved-1' => $this->ticket,
+                             'exchange' => '',
+                             'routing-key' => '',
+                             'mandatory' => false,
+                             'immediate' => false);
+            foreach ($mFields as $i => $mf) {
+                $m->setField($i, $mf);
+            }
+            break;
+        }
+        return $m;
     }
 
     function queue () {
@@ -330,4 +373,11 @@ class Channel
 
     function tx () {
     }
+
+
+    function invoke(wire\Method $m) {
+        $this->myConn->sendMethod($m);
+    }
+
+    function getTicket() { return $this->ticket; }
 }

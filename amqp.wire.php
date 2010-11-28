@@ -21,22 +21,6 @@ const HEXDUMP_BIN = '/usr/bin/hexdump -C';
  */
 
 
-// DEPRECATED - move this in to the method class
-function GetFrameBin ($type, Method $m) {
-    $w = new Writer;
-    $mb = $m->toBin();
-    //printf("  Frame payload length: %d\n", strlen($mb));
-    $w->write($type, 'octet');
-    $w->write($m->getWireChannel(), 'short');
-    $w->write(strlen($mb), 'long');
-    $dbg = $w->getBuffer() . $mb . proto\FRAME_END;
-    //    echo $dbg;
-    //    die;
-    return $dbg;
-}
-
-
-
 // Protocol as in PDF / BNF type
 abstract class Protocol
 {
@@ -740,22 +724,26 @@ class Method
         }
     }
 
-    function setField ($val, $name) {
+    function setField ($name, $val) {
         if ($this->mode === 'read') {
             trigger_error('Setting field value for read constructed method', E_USER_WARNING);
+        } else {
+            $this->fields[$name] = $val;
         }
-        $this->fields[$name] = $val;
     }
     function getField ($name) {
         return isset($this->fields[$name]) ? $this->fields[$name] : null;
     }
-    function getFields() { return $this->fields; }
+    function getFields () { return $this->fields; }
 
-    function setClassField ($val, $name) {
+    function setClassField ($name, $val) {
         if ($this->mode === 'read') {
-            trigger_error('Setting field value for read constructed method', E_USER_WARNING);
+            trigger_error('Setting class field value for read constructed method', E_USER_WARNING);
+        } else if (! $this->methProto->getSpecHasContent()) {
+            trigger_error('Setting class field value for a method which doesn\'t take content', E_USER_WARNING);
+        } else {
+            $this->classFields[$name] = $val;
         }
-        $this->classFields[$name] = $val;
     }
     function getClassField ($name) {
         return isset($this->classFields[$name]) ? $this->classFields[$name] : null;
@@ -765,11 +753,22 @@ class Method
     function setContent ($content) {
         if ($this->mode === 'read') {
             trigger_error('Setting content value for read constructed method', E_USER_WARNING);
+        } else if (! $this->methProto->getSpecHasContent()) {
+            trigger_error('Setting content value for a method which doesn\'t take content!', E_USER_WARNING);
+        } else {
+            $this->content = $content;
         }
-        $this->content = $content;
     }
 
+
     function getContent () {
+        if ($this->mode == 'read') {
+            trigger_error('Invalid serialize operation on a read mode method', E_USER_WARNING);
+            return '';
+        } else if (! $this->methProto->getSpecHasContent()) {
+            trigger_error('Invalid serialize operation on a method which doesn\'t take content', E_USER_WARNING);
+            return '';
+        }
         return $this->content;
     }
 
@@ -782,36 +781,125 @@ class Method
 
 
     /** TODO: Test generated validation methods!!! */
+    /** Generate complete payload set, possibly including content header and body */
     function toBin () {
-        if ($this->mode === 'read') {
-            // TODO: Brokenz?
-            return null;//$this->src->getBuffer();
+        if ($this->mode == 'read') {
+            trigger_error('Invalid serialize operation on a read mode method', E_USER_WARNING);
+            return '';
+        }
+        $buff = '';
+        // Create the method message
+        $w = new Writer;
+        $tmp = $this->getMethodBin();
+        $w->write(1, 'octet');
+        $w->write($this->wireChannel, 'short');
+        $w->write(strlen($tmp), 'long');
+        $buff = $w->getBuffer() . $tmp . proto\FRAME_END;
+
+        if ($this->methProto->getSpecHasContent()) {
+            // Create content header and body
+            $w = new Writer;
+            $tmp = $this->getContentHeaderBin();
+            $w->write(2, 'octet');
+            $w->write($this->wireChannel, 'short');
+            $w->write(strlen($tmp), 'long');
+            $buff .= $w->getBuffer() . $tmp . proto\FRAME_END;
+            // TODO: support for messages > 2^32 - this requires splitting content in to
+            // multiple sub-frames
+            $w = new Writer;
+            $tmp = $this->getContentBin();
+            $w->write(3, 'octet');
+            $w->write($this->wireChannel, 'short');
+            $w->write(strlen($tmp), 'long');
+            $buff .= $w->getBuffer() . $tmp . proto\FRAME_END;
+        }
+        return $buff;
+    }
+
+    function getMethodBin () {
+        if ($this->mode == 'read') {
+            trigger_error('Invalid serialize operation on a read mode method', E_USER_WARNING);
+            return '';
         }
         $src = new Writer;
         $src->write($this->classProto->getSpecIndex(), 'short');
         $src->write($this->methProto->getSpecIndex(), 'short');
-        // TODO: Write class fields!!!!
+
         foreach ($this->methProto->getFields() as $f) {
             $name = $f->getSpecFieldName();
             $type = $f->getSpecDomainType();
             if (! isset($this->fields[$name])) {
-                throw new \Exception("Missing field {$name} of method {$this->methProto->getSpecName()}", 98765);
+                trigger_error("Missing field {$name} of method {$this->methProto->getSpecName()}", E_USER_WARNING);
+                return '';
             } else if (! $f->validate($this->fields[$name])) {
-                throw new \Exception("Field {$name} of method {$this->methProto->getSpecName()} is not valid", 8765);
+                trigger_error("Field {$name} of method {$this->methProto->getSpecName()} is not valid", E_USER_WARNING);
+                return '';
             }
             $src->write($this->fields[$name], $type);
         }
         return $src->getBuffer();
     }
 
-    function getMethodBin () {
+    function getContentHeaderBin () {
+        if ($this->mode == 'read') {
+            trigger_error('Invalid serialize operation on a read mode method', E_USER_WARNING);
+            return '';
+        } else if (! $this->methProto->getSpecHasContent()) {
+            trigger_error('Invalid serialize operation on a method which doesn\'t take content', E_USER_WARNING);
+            return '';
+        }
+        $src = new Writer;
+        $src->write($this->classProto->getSpecIndex(), 'short');
+        $src->write(0, 'short');
+        $src->write(strlen($this->content), 'longlong');
+        $pFlags = '';
+        $pChunks = 0;
+        $pList = '';
+        $src2 = new Writer;
+        foreach ($this->classProto->getFields() as $i => $f) {
+            if (($i % 15) == 0) {
+                if ($i > 0) {
+                    /** The property flags can specify more than 16 properties. If the last bit (0) is set, this indicates that a
+                        further property flags field follows. There are many property flags fields as needed. (4.2.6.1)*/
+                    $pFlags .= '1';
+                }
+                $pChunks++;
+            }
+            $fName = $f->getSpecFieldName();
+            if (isset($this->classFields[$fName]) && 
+                ! ($f->getSpecFieldDomain() == 'bit' && ! $this->classFields[$f->getSpecFieldName()])) {
+                $pFlags .= '1';
+            } else {
+                $pFlags .= '0';
+            }
+            if (isset($this->classFields[$fName]) && $f->getSpecFieldDomain() != 'bit') {
+                $src2->write($this->classFields[$fName], $f->getSpecDomainType());
+            }
+        }
+        if ($pFlags && (strlen($pFlags) % 16) !== 0) {
+            $pFlags .= str_repeat('0', 16 - (strlen($pFlags) % 16));
+        }
+        //echo $pFlags;
+        // Assemble the flag bytes
+        $pBuff = '';
+        for ($i = 0; $i < $pChunks; $i++) {
+            $pBuff .= pack('n', bindec(substr($pFlags, $i*16, 16)));
+        }
+        //echo $pBuff;
+        //die;
+        return $src->getBuffer() . $pBuff . $src2->getBuffer();
     }
 
-    function getHeaderBin () {
-    }
 
     function getContentBin () {
+        if ($s = (string) $this->getContent()) {
+            return  $s;
+        } else {
+            return '';
+        }
     }
+
+
 
     /** Checks if $other is the right type to be a response to *this* method */
     function isResponse (Method $other) {

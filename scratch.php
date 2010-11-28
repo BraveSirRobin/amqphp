@@ -1,130 +1,122 @@
 <?php
 
-$tests = array(0,1,2,3,4,5);
+
+function writeOut($level, $args) {
+    $s = array_shift($args);
+    vprintf("[$level] {$s}\n", $args);
+}
+function info() { writeOut('info', func_get_args()); }
+function error() { writeOut('error', func_get_args()); }
 
 
-//echo "It is..." . array_reduce($tests, function ($a, $b) { printf("Look for %d, %d\n", $a, $b); return 1; });
+$host = 'localhost';
+$port = '6969';
 
-//echo $bn = getNByteInt(25, 4);
-//echo pack('i', -2);
-//printf("Read back binary int: %d\n", readNByteInt($bn, 8));
-//echo getIntSize();
-
-//echo pack('N', 257);
+if (isset($argv[1]) && strpos($argv[1], 'server') !== false) {
+    info("Running as server.");
 
 
-
-// Multiplexing connections
-class MplxConnection
-{
-    const READ_LEN = 1024;
-    private $sock; // TCP socket
-    private $bw = 0;
-    private $br = 0;
-
-    private $chans = array(); // Format: array(<chan-id> => RabbitChannel)
-    private $nextChan = 1;
-    private $chanMax; // Set during setup.
-    private $frameMax; // Set during setup.
-
-
-    private $username;
-    private $userpass;
-    private $vhost;
-
-    private $recvQ = array();
-    private $sendQ = array();
-
-
-    // Does Amqp connection negotiation
-    private function initConnection() {
-        $this->write(wire\PROTOCOL_HEADER);
-        if ($tmp = $this->readFrame()) {
-            list($type, $chan, $size, $r) = $tmp;
-            $meth = new wire\Method($tmp);
-        } else {
-            throw new \Exception("Connection initialisation failed (1)", 9875);
-        }
+    if (! ($sock = socket_create(AF_INET, SOCK_STREAM, 0))) {
+        throw new Exception('Failed to create socket', 9686);
+    } else if (! socket_set_option($sock, SOL_SOCKET, SO_REUSEADDR, 1)) {
+        throw new Exception("Failed to reuse socket address", 9662);
+    } else if (! socket_bind($sock, $host, $port)) {
+        socket_close($sock);
+        throw new Exception('Failed to bind socket', 8624);
+    } else if (! socket_listen($sock)) {
+        socket_close($sock);
+        throw new Exception('Failed to listen on socket', 6854);
+    } else if (! socket_set_nonblock($sock)) {
+        socket_close($sock);
+        throw new Exception('Failed to set socket non-blocking', 5492);
     }
+    info("Connected to $host, $port, loop waiting for a connection");
 
-
-
-    // Suck a frame from the wire and extract the top level fram elements
-    private function readFrame() {
-        if ($buff = $this->read()) {
-            $r = new wire\Reader($buff);
-            if (! ($type = $r->read('octet'))) {
-                trigger_error('Failed to read type from frame', E_USER_WARNING);
-            } else if (! ($chan = $r->read('short'))) {
-                trigger_error('Failed to read channel from frame', E_USER_WARNING);
-            } else if (! ($size = $r->read('long'))) {
-                trigger_error('Failed to read size from frame', E_USER_WARNING);
+    while (true) {
+        $read = array($sock);
+        $written = $except = null;
+        $selN = @socket_select($read, $written, $except, 3, 0);
+        if ($selN === false) {
+            $errNo = socket_last_error();
+            if ($errNo ===  SOCKET_EINTR) {
+                error("Server read select failed due to signal (?):\n%s", socket_strerror());
             } else {
-                return array($type, $chan, $size, $r);
+                error("Server read select failed:\n%s", socket_strerror());
             }
-        } else {
-            trigger_error('No Frame was read', E_USER_WARNING);
+            socket_close($sock);
+            die();
+        } else if (in_array($sock, $read)) {
+            $cSock = @socket_accept($sock);
+            if (! $cSock) {
+                error(" [%s] - Server socket is supposed to accept?!", $selN);
+                socket_close($sock);
+                die();
+            }
+            info("Got a connection, break to next loop!");
+            break;
         }
-        return null;
-    }
-
-    private function read() {
-        // Low level - read a single frame from the wire
-    }
-
-    private function write() {
-        // Low level - write raw content to the wire.
+        info("still waiting..");
     }
 
 
-    function send(wire\Method $meth) {
-        $this->sendQ[] = $meth;
-        $this->write($meth->toBin());
+    info("\nGot a single client, now wait 3 seconds and read till EOF\n");
+
+    while (true) {
+        $read = array($cSock);
+        $written = $except = null;
+        $selN = @socket_select($read, $written, $except, 3, 0);
+        if ($selN === false) {
+            $errNo = socket_last_error();
+            if ($errNo ===  SOCKET_EINTR) {
+                error("Client read select failed due to signal (?):\n%s", socket_strerror());
+            } else {
+                error("Client read select failed:\n%s", socket_strerror());
+            }
+            socket_close($sock);
+            die();
+        } else if (in_array($cSock, $read)) {
+            $buff = '';
+            while ($tmp = socket_read($cSock, 1024)) {
+                $buff .= $tmp;
+            }
+            info("Mission Complete, buffer that was read is:\n%s\n", $buff);
+         }
+        info("still waiting..");
     }
 
-    function recv(protocol\XmlSpecMethod $methProto) {
-        $ths->recvQ[] = $methProto;
+    socket_shutdown($cSock, 1); // Client connection can still read
+    usleep(100);
+    @socket_shutdown($cSock, 0); // Full disconnect
+    $errNo = socket_last_error();
+    if ($errNo) {
+        if ($errNo != SOCKET_ENOTCONN) {
+            error("[client] socket error during socket close: %s", socket_strerror($errNo));
+        }
     }
-}
+    socket_close($cSock);
+    socket_close($sock);
 
 
 
+} else {
+    info("Running as client");
 
-
-
-function getSignedNByteInt($i, $nBytes) {
-    //
-}
-
-
-// Convert $i to a binary ($nBytes)-byte integer
-function getNByteInt($i, $nBytes) {
-    return array_reduce(bytesplit($i, $nBytes), function ($buff, $item) {
-            return $buff . chr($item);
-        });
-}
-
-// Read an ($nBytes)-byte integer from $bin
-function readNByteInt($bin, $nBytes) {
-    $byte = substr($bin, 0, 1);
-    $ret = ord($byte);
-    for ($i = 1; $i < $nBytes; $i++) {
-        $ret = ($ret << 8) + ord(substr($bin, $i, 1));
+    if (! ($sock = socket_create(AF_INET, SOCK_STREAM, SOL_TCP))) {
+        throw new \Exception("Failed to create inet socket", 7895);
+    } else if (! socket_connect($sock, $host, $port)) {
+        throw new \Exception("Failed to connect inet socket {$sock}, {$host}, {$port}", 7564);
     }
-    return $ret;
-}
 
-function getIntSize() {
-    // Choose between 32 and 64 only
-    return (gettype(pow(2, 31)) == 'integer') ? 64 : 32;
-}
+    $guff = "Hi, I'm a fairly un-spectacular client...\n";
 
-function bytesplit($x, $bytes) {
-    // Needed as stand-alone func?
-    $ret = array();
-    for ($i = 0; $i < $bytes; $i++) {
-        $ret[] = $x & 255;
-        $x = ($x >> 8);
+    $bw = 0;
+    $contentLength = strlen($guff);
+    while ($bw < $contentLength) {
+        if (($tmp = socket_write($sock, $guff, $contentLength)) === false) {
+            throw new \Exception(sprintf("\nSocket write failed: %s\n",
+                                         socket_strerror(socket_last_error())), 7854);
+        }
+        $bw += $tmp;
     }
-    return array_reverse($ret);
+    info("Client is complete, %d bytes written", $bw);
 }

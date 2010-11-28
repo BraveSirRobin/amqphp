@@ -34,9 +34,22 @@ function test4() {
 
 
 function test5() {
-    $connFact = new amqp\ConnectionFactory;
+    // Whole enchilada
+    $sParams = array(
+                     'host' => 'localhost',
+                     'port' => 5672,
+                     'username' => 'guest',
+                     'userpass' => 'guest',
+                     'vhost' => '/');
+    $connFact = new amqp\ConnectionFactory($sParams);
     $conn = $connFact->newConnection();
     $chan = $conn->getChannel();
+    $basicP = $chan->basic('publish');
+    $basicP->setField('exchange', 'router');
+    $basicP->setContent('I\'m the frikkin payload missis!!!');
+    $chan->invoke($basicP);
+    $m = new wire\Method($conn->cheatRead());
+    var_dump($m);
 }
 
 
@@ -46,6 +59,48 @@ function test6() {
     $r = new wire\Reader('');
     $r->read('octet');
 }
+
+function test7() {
+    // Class Fields
+    $basicP = new wire\Method(protocol\ClassFactory::GetClassByName('basic')->getMethodByName('publish'));
+    var_Dump($basicP->getClassProto()->getSpecFields());
+    var_Dump($basicP->getClassProto()->getFields());
+}
+
+function test8() {
+    // Class Fields
+    $basicP = new wire\Method(protocol\ClassFactory::GetClassByName('basic')->getMethodByName('publish'));
+    $cFields = array ('content-type' => 'text/plain',
+                      'content-encoding' => 'UTF-8',
+                      'headers',
+                      'delivery-mode',
+                      'priority',
+                      'correlation-id',
+                      'reply-to',
+                      'expiration',
+                      'message-id',
+                      'timestamp',
+                      'type',
+                      'user-id',
+                      'app-id',
+                      'reserved');
+    foreach ($cFields as $i => $cf) {
+        if (! is_int($i)) {
+            $basicP->setClassField($i, $cf);
+        }
+    }
+    $mFields = array('reserved-1' => 2,
+                     'exchange' => 'exch',
+                     'routing-key' => '<route-key>',
+                     'mandatory' => true,
+                     'immediate' => true);
+    foreach ($mFields as $i => $mf) {
+        $basicP->setField($i, $mf);
+    }
+    $basicP->setContent('So, yeah, Jazz!');
+    echo $basicP->toBin();
+}
+
 
 
 //
