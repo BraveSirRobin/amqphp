@@ -285,6 +285,9 @@ class Connection
                     continue;
                 } else if ($meth->isResponse($newMeth)) {
                     return $newMeth;
+                } else {
+                    echo "\n\nGot One\n\n";
+                    var_dump($newMeth);
                 }
                 throw new Exception("Unexpected method type", 9874);
             }
@@ -327,53 +330,30 @@ class Channel
         }
     }
 
-    function exchange () {
-    }
+    /**
+     * Implement Amqp protocol methods with method name as Amqp class name.
+     * @arg  string   $class       Amqp class
+     * @arg  array    $_args       Format: array (<Amqp method name>, <Assoc method/class mixed field array>, <method content>)
+     */
+    function __call ($class, $_args) {
+        list($method, $args, $content) = $_args;
 
-    /** TODO: move class/method field defaults out of here. */
-    /* Construct a wire method with default propertie for this channel */
-    function basic ($method) {
-        switch ($method) {
-        case 'publish':
-            $m = new wire\Method(protocol\ClassFactory::GetClassByName('basic')->getMethodByName('publish'), $this->chanId);
-            $cFields = array ('content-type' => 'text/plain',
-                              'content-encoding' => 'UTF-8',
-                              'headers',
-                              'delivery-mode',
-                              'priority',
-                              'correlation-id',
-                              'reply-to',
-                              'expiration',
-                              'message-id',
-                              'timestamp',
-                              'type',
-                              'user-id',
-                              'app-id',
-                              'reserved');
-            foreach ($cFields as $i => $cf) {
-                if (! is_int($i)) {
-                    $m->setClassField($i, $cf);
-                }
-            }
-            $mFields = array('reserved-1' => $this->ticket,
-                             'exchange' => '',
-                             'routing-key' => '',
-                             'mandatory' => false,
-                             'immediate' => false);
-            foreach ($mFields as $i => $mf) {
-                $m->setField($i, $mf);
-            }
-            break;
+        if (! ($cls = protocol\ClassFactory::GetClassByName($class))) {
+            throw new \Exception("Invalid Amqp class or php method", 8691);
+        } else if (! ($meth = $cls->getMethodByName($method))) {
+            throw new \Exception("Invalid Amqp method", 5435);
         }
+
+        $m = new wire\Method($meth, $this->chanId);
+        foreach (array_merge(array_combine($cls->getSpecFields(), array_fill(0, count($cls->getSpecFields()), null)), $args) as $k => $v) {
+            $m->setClassField($k, $v);
+        }
+        foreach (array_merge(array_combine($meth->getSpecFields(), array_fill(0, count($meth->getSpecFields()), '')), $args) as $k => $v) {
+            $m->setField($k, $v);
+        }
+        $m->setContent($content);
         return $m;
     }
-
-    function queue () {
-    }
-
-    function tx () {
-    }
-
 
     function invoke(wire\Method $m) {
         $this->myConn->sendMethod($m);

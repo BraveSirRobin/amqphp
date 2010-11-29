@@ -893,7 +893,7 @@ class Method
 
     function getContentBin () {
         if ($s = (string) $this->getContent()) {
-            return  $s;
+            return $s;
         } else {
             return '';
         }
