@@ -44,47 +44,64 @@ function test5() {
     $connFact = new amqp\ConnectionFactory($sParams);
     $conn = $connFact->newConnection();
     $chan = $conn->getChannel();
-    /*$basicP = $chan->basic('publish');
-    $basicP->setField('exchange', 'router');
-    $basicP->setContent('I\'m the frikkin payload missis!!!');*/
 
+    $EX = 'router';
+    $Q = 'msgs';
 
+    // Declare the exchange
+    $excDecl = $chan->exchange('declare', array('reserved-1' => $chan->getTicket(),
+                                                'type' => 'direct',
+                                                'exchange' => $EX));
+    $chan->invoke($excDecl);
+
+    // Declare the queue
+    $qDecl = $chan->queue('declare', array('reserved-1' => $chan->getTicket(),
+                                           'queue' => $Q));
+    $chan->invoke($qDecl);
+
+    // Bind Q to EX
+    $qBind = $chan->queue('bind', array('reserved-1' => $chan->getTicket(),
+                                        'queue' => $Q,
+                                        'exchange' => $EX));
+    $chan->invoke($qBind);
     /*
-            $cFields = array ('content-type' => 'text/plain',
-                              'content-encoding' => 'UTF-8',
-                              'headers',
-                              'delivery-mode',
-                              'priority',
-                              'correlation-id',
-                              'reply-to',
-                              'expiration',
-                              'message-id',
-                              'timestamp',
-                              'type',
-                              'user-id',
-                              'app-id',
-                              'reserved');
-            foreach ($cFields as $i => $cf) {
-                if (! is_int($i)) {
-                    $m->setClassField($i, $cf);
-                }
-            }
-            $mFields = array('reserved-1' => $this->ticket,
-                             'exchange' => '',
-                             'routing-key' => '',
-                             'mandatory' => false,
-                             'immediate' => false)
-     */
-
+    // Pushes content to a queue
     $basicP = $chan->basic('publish', array('content-type' => 'text/plain',
                                             'content-encoding' => 'UTF-8',
                                             'reserved-1' => $chan->getTicket(),
                                             'mandatory' => false,
                                             'immediate' => false,
-                                            'exchange' => 'router'), 'I\'m the frikkin payload missis!!!');
+                                            'exchange' => $EX), 'You should help out the aged beatnik!');
+
     $chan->invoke($basicP);
-    //$m = new wire\Method($conn->cheatRead());
-    //var_dump($m);
+    */
+
+    // Pull a single message from the queue
+    $basicGet = $chan->basic('get', array('reserved-1' => $chan->getTicket(), 'queue'));
+    // Suck all content from that Q.
+    $contents = array();
+    $i = 0;
+    while (true) {
+        $getOk = $chan->invoke($basicGet);
+        if ($c = $getOk->getContent()) {
+            if (! in_array($c, $contents)) {
+                $contents[] = $c;
+            }
+        } else {
+            break;
+        }
+        if (($i++ % 10) == 0) {
+            printf("...Consumed %d messages\n", $i);
+        }
+    }
+    printf("Read %d messages, distinct versions are:\n%s", $i, implode("\n", $contents));
+    //printf("Get result method %s, content:\n%s\n", $getOk->getClassProto()->getSpecName(), $getOk->getContent());
+
+
+    $excDel = $chan->exchange('delete', array('reserved-1' => $chan->getTicket(),
+                                              'exchange' => $EX));
+    $chan->invoke($excDel);
+
 }
 
 

@@ -7,7 +7,7 @@ abstract class ClassFactory
 {
     protected static $Cache; // Format: array(array(<class-idx>, <class-name>, <fully-qualified XmlSpecMethod impl. class name>))+
 
-    final static function GetClassByIndex($index) {
+    final static function GetClassByIndex ($index) {
         foreach (static::$Cache as $cNum => $c) {
             if ($c[0] === $index) {
                 return is_string($c[2]) ?
@@ -16,12 +16,21 @@ abstract class ClassFactory
             }
         }
     }
-    final static function GetClassByName($name) {
+    final static function GetClassByName ($name) {
         foreach (static::$Cache as $cNum => $c) {
             if ($c[1] === $name) {
                 return is_string($c[2]) ?
                     (static::$Cache[$cNum][2] = new $c[2])
                     : $c[2];
+            }
+        }
+    }
+    final static function GetMethod ($c, $m) {
+        $c = is_int($c) || is_numeric($c) ? self::GetClassByIndex($c) : self::GetClassByName($c);
+        if ($c) {
+            $m = is_int($m) || is_numeric($m) ? $c->getMethodByIndex($m) : $c->getMethodByName($m);
+            if ($m) {
+                return $m;
             }
         }
     }
@@ -35,15 +44,15 @@ abstract class DomainFactory
 {
     protected static $Cache; // Map: array(<xml-domain-name> => <local XmlSpecDomain impl. class name>)
 
-    final static function IsDomain($dName) {
+    final static function IsDomain ($dName) {
         return isset(static::$Cache[$dName]);
     }
-    final static function GetDomain($dName) {
+    final static function GetDomain ($dName) {
         if (isset(static::$Cache[$dName])) {
             return (is_string(static::$Cache[$dName])) ? (static::$Cache[$dName] = new static::$Cache[$dName]) : static::$Cache[$dName];
         }
     }
-    final static function Validate($val, $dName) {
+    final static function Validate ($val, $dName) {
         return static::GetDomain($dName)->validate($val);
     }
 }
@@ -54,10 +63,10 @@ abstract class XmlSpecDomain
     protected $name;
     protected $protocolType;
 
-    final function getSpecDomainName() {
+    final function getSpecDomainName () {
         return $this->name;
     }
-    final function getSpecDomainType() {
+    final function getSpecDomainType () {
         return $this->protocolType;
     }
     function validate($subject) { return true; }
@@ -66,8 +75,8 @@ abstract class XmlSpecDomain
 // PER-NS [many]
 interface XmlSpecField
 {
-    function getSpecFieldName();
-    function getSpecFieldDomain();
+    function getSpecFieldName ();
+    function getSpecFieldDomain ();
 }
 
 
@@ -82,35 +91,35 @@ abstract class XmlSpecClass
     protected $methFact;
     protected $fieldFact;
 
-    final function getSpecName() {
+    final function getSpecName () {
         return $this->name;
     }
-    final function getSpecIndex() {
+    final function getSpecIndex () {
         return $this->index;
     }
-    final function getSpecFields() {
+    final function getSpecFields () {
         return $this->fields;
     }
-    final function getSpecMethods() {
+    final function getSpecMethods () {
         return $this->methods;
     }
-    final function getMethods() {
+    final function getMethods () {
         return call_user_func(array($this->methFact, 'GetMethodsByName'), $this->methods);
     }
-    final function getMethodByName($mName) {
+    final function getMethodByName ($mName) {
         if (in_array($mName, $this->methods)) {
             return call_user_func(array($this->methFact, 'GetMethodByName'), $mName);
         }
     }
-    final function getMethodByIndex($idx) {
+    final function getMethodByIndex ($idx) {
         if (in_array($idx, array_keys($this->methods))) {
             return call_user_func(array($this->methFact, 'GetMethodByIndex'), $idx);
         }
     }
-    final function getFields() {
+    final function getFields () {
         return call_user_func(array($this->fieldFact, 'GetClassFields'), $this->name);
     }
-    final function getFieldByName($fName) {
+    final function getFieldByName ($fName) {
         if (in_array($fName, $this->fields)) {
             return call_user_func(array($this->fieldFact, 'GetField'), $fName);
         }
@@ -123,7 +132,7 @@ abstract class MethodFactory
 {
     protected static $Cache;// Map: array(array(<xml-method-index>, <xml-method-name>, <fully-qualified XmlSpecMethod impl. class name>)+)
 
-    private static function Lookup($mName, $asName = true) {
+    private static function Lookup ($mName, $asName = true) {
         $j = ($asName) ? 1 : 0;
         foreach (static::$Cache as $i => $f) {
             if ($f[$j] === $mName) {
@@ -133,14 +142,14 @@ abstract class MethodFactory
         return false;
     }
 
-    final static function GetMethodByName($mName) {
+    final static function GetMethodByName ($mName) {
         if (false !== ($i = static::Lookup($mName))) {
             return (is_string(static::$Cache[$i][2])) ?
                 (static::$Cache[$i][2] = new static::$Cache[$i][2])
                 : static::$Cache[$i][2];
         }
     }
-    final static function GetMethodsByName(array $restrict = array()) {
+    final static function GetMethodsByName (array $restrict = array()) {
         $m = array();
         foreach (static::$Cache as $c) {
             if (! $restrict || in_array($c[1], $restrict)) {
@@ -150,14 +159,14 @@ abstract class MethodFactory
         return $m;
     }
 
-    final static function GetMethodByIndex($idx) {
+    final static function GetMethodByIndex ($idx) {
         if (false !== ($i = static::Lookup($idx, false))) {
             return (is_string(static::$Cache[$i][2])) ?
                 (static::$Cache[$i][2] = new static::$Cache[$i][2])
                 : static::$Cache[$i][2];
         }
     }
-    final static function GetMethodsByIndex(array $restrict = array()) {
+    final static function GetMethodsByIndex (array $restrict = array()) {
         $m = array();
         foreach (static::$Cache as $c) {
             if (! $restrict || in_array($c[0], $restrict)) {
@@ -184,39 +193,39 @@ abstract class XmlSpecMethod
     protected $classFact;
     protected $content;
 
-    final function getSpecClass() {
+    final function getSpecClass () {
         return $this->class;
     }
-    final function getSpecName() {
+    final function getSpecName () {
         return $this->name;
     }
-    final function getSpecIndex() {
+    final function getSpecIndex () {
         return $this->index;
     }
-    final function getSpecIsSynchronous() {
+    final function getSpecIsSynchronous () {
         return $this->synchronous;
     }
-    final function getSpecResponseMethods() {
+    final function getSpecResponseMethods () {
         return $this->responseMethods;
     }
-    final function getSpecFields() {
+    final function getSpecFields () {
         return $this->fields;
     }
-    final function getSpecHasContent() {
+    final function getSpecHasContent () {
         return $this->content;
     }
-    final function getFields() {
+    final function getFields () {
         return call_user_func(array($this->fieldFact, 'GetFieldsForMethod'), $this->name);
     }
-    final function getField($fName) {
+    final function getField ($fName) {
         if (in_array($fName, $this->fields)) {
             return call_user_func(array($this->fieldFact, 'GetField'), $fName, $this->name);
         }
     }
-    final function getResponses() {
+    final function getResponses () {
         return call_user_func(array($this->methFact, 'GetMethodsByName'), $this->responseMethods);
     }
-    final function getClass() {
+    final function getClass () {
         return call_user_func(array($this->classFact, 'GetClassByName'), $this->class);
     }
 }
@@ -227,7 +236,7 @@ abstract class FieldFactory
     protected static $Cache; // Map: array(array(<fname>, <meth>, <Fully Qualified XmlSpecField impl. class name>)+)
 
 
-    private static function Lookup($fName, $mName = '') {
+    private static function Lookup ($fName, $mName = '') {
         foreach (static::$Cache as $i => $f) {
             if ($f[0] === $fName && $f[1] === $mName) {
                 return $i;
@@ -235,10 +244,10 @@ abstract class FieldFactory
         }
         return false;
     }
-    final static function IsField($fName, $mName = '') {
+    final static function IsField ($fName, $mName = '') {
         return (static::Lookup($fName, $mName) !== false);
     }
-    final static function GetField($fName, $mName = '') {
+    final static function GetField ($fName, $mName = '') {
         if (false !== ($f = static::Lookup($fName, $mName))) {
             //            echo "  [OK] : Return field ($fName, $mName) ($f)\n";
             return is_string(static::$Cache[$f][2]) ?
@@ -246,7 +255,7 @@ abstract class FieldFactory
                 : static::$Cache[$f][2];
         }
     }
-    final static function GetClassFields() {
+    final static function GetClassFields () {
         // Return all fields that are declared at the class level
         $r = array();
         foreach (static::$Cache as $f) {
@@ -256,7 +265,7 @@ abstract class FieldFactory
         }
         return $r;
     }
-    final static function GetFieldsForMethod($mName) {
+    final static function GetFieldsForMethod ($mName) {
         $r = array();
         foreach (static::$Cache as $f) {
             if ($f[1] === $mName) {
@@ -266,7 +275,7 @@ abstract class FieldFactory
         return $r;
         //return array_merge(static::GetClassFields(), $r);
     }
-    final static function Validate($val, $fName, $mName = '') {
+    final static function Validate ($val, $fName, $mName = '') {
         return static::GetField($fName, $mName)->validate($val);
     }
 

@@ -179,7 +179,23 @@ class Reader extends Protocol
     private $binPackOffset = 0;
     private $binBuffer;
 
-    function __construct ($bin) { $this->bin = $bin; }
+    function __construct ($bin) {
+        $this->bin = $bin;
+        $this->binLen = strlen($bin);
+    }
+
+    function isSpent () {
+        //printf("Is Spent: \$p = %d, \$len = %d, remaining buffer length:%d\n", $this->p, $this->binLen, substr($this->bin, $this->p, 1) == proto\FRAME_END);
+        return ($this->p >=  ($this->binLen - 1));
+    }
+
+    function getReadPointer () { return $this->p; }
+
+    function getRemainingBuffer () {
+        $r = substr($this->bin, $this->p);
+        $this->p = $this->binLen - 1;
+        return $r;
+    }
 
     /** Read the given type from the local buffer and return a PHP conversion */
     function read ($type, $tableField=false) {
@@ -350,8 +366,10 @@ class Writer extends Protocol
         if (is_array($val)) {
             $val = new Table($val);
         } else if (! ($val instanceof Table)) {
-            trigger_error("Invalid table, cannot write", E_USER_WARNING);
-            return;
+            // WARNING!  This code means that this functions will swallow scalars
+            // and turn them in to nothing
+            //trigger_error("Invalid table, cannot write", E_USER_WARNING);
+            $val = array();
         }
         $p = strlen($this->bin); // Rewind to here and write in the table length
         foreach ($val as $fName => $field) {
@@ -665,9 +683,24 @@ class Method
     private $classFields = array(); // Amqp message class fields
     private $content; // Amqp message payload
 
-    private $wireType; // Amqp wire frame type
-    private $wireChannel; // Amqp channel
-    private $wireSize; // Amqp frame size
+    /** 
+     * @field $wireType
+     * Frame type of the first frame read by this method.  Note that in some
+     * cases more than one frame of different types will be read in to a single Method object
+     */
+    private $wireType;
+    /** @field $wireChannel  The channel for this method  */
+    private $wireChannel;
+    private $wireMethodId;
+    private $wireClassId;
+    private $contentSize;
+
+    // Dev time only!
+    function debug_TODO_deleteme () {
+        printf("Output info for method %s.%s\n", $this->classProto->getSpecName(), $this->methProto->getSpecName());
+        printf(" Wire Type: %d\n", $this->wireType);
+        printf(" strlen(this->content): %d\n (this->contentSize - 1): %d", strlen($this->content), ($this->contentSize - 1));
+    }
 
 
     /**
@@ -695,33 +728,137 @@ class Method
     /** TODO: Validate frame size */
     private function readContruct ($bin) {
         $src = new Reader($bin);
-        if (null === ($this->wireType = $src->read('octet'))) {
+
+        $hasMethod = $hasCHeader = false;
+        $first = true;
+        $FRME = 206; // TODO!!  UN-HARD CODE!!
+        while (! $src->isSpent()) {
+            list($wireType, $wireChannel, $wireSize) = $this->extractFrameHeader($src);
+            if ($first) {
+                $this->wireChannel = $wireChannel;
+                $this->wireType = $wireType;
+                $first = false;
+            }
+            switch ($wireType) {
+            case 1:
+                // Load in method and method fields
+                $this->readMethodContent($src, $wireSize);
+                break;
+            case 2:
+                // Load in content header and property flags
+                $this->readContentHeaderContent($src, $wireSize);
+                break;
+            case 3:
+                $this->readBodyContent($src, $wireSize);
+                break;
+            default:
+                throw new \Exception("Unsupported frame type!", 8674);
+            }
+            if ($src->read('octet') != $FRME) {
+                throw new \Exception("Framing exception - missed frame end", 8763);
+            }
+        }
+    }
+
+    /** Helper: extract and return a frame header */
+    private function extractFrameHeader(Reader $src) {
+        if (null === ($wireType = $src->read('octet'))) {
             throw new \Exception('Failed to read type from frame', 875);
-        } else if (null === ($this->wireChannel = $src->read('short'))) {
+        } else if (null === ($wireChannel = $src->read('short'))) {
             throw new \Exception('Failed to read channel from frame', 9874);
-        } else if (null === ($this->wireSize = $src->read('long'))) {
+        } else if (null === ($wireSize = $src->read('long'))) {
             throw new \Exception('Failed to read size from frame', 8715);
         }
-        switch ($this->wireType) {
-        case 1:
-            // Load in method and method fields
-            if (null === ($this->classId = $src->read('short'))) {
-                throw new \Exception("Failed to read class ID from frame", 87694);
-            } else if (null === ($this->methodId = $src->read('short'))) {
-                throw new \Exception("Failed to read method ID from frame", 6547);
-            } else if (! ($this->classProto = proto\ClassFactory::GetClassByIndex($this->classId))) {
-                throw new \Exception("Failed to construct class prototype", 9875);
-            } else if (! ($this->methProto = $this->classProto->getMethodByIndex($this->methodId))) {
-                throw new \Exception("Failed to construct method prototype", 5645);
-            }
-            // Copy field data in to cache
-            foreach ($this->methProto->getFields() as $f) {
-                $this->fields[$f->getSpecFieldName()] = $src->read($f->getSpecDomainType());
-            }
-            break;
-        case 2:
-            // Load
+        return array($wireType, $wireChannel, $wireSize);
+    }
+
+
+    /** Read a full method frame from $src */
+    private function readMethodContent (Reader $src, $wireSize) {
+        $st = $src->getReadPointer();
+        if (null === ($this->wireClassId = $src->read('short'))) {
+            throw new \Exception("Failed to read class ID from frame", 87694);
+        } else if (null === ($this->wireMethodId = $src->read('short'))) {
+            throw new \Exception("Failed to read method ID from frame", 6547);
+        } else if (! ($this->classProto = proto\ClassFactory::GetClassByIndex($this->wireClassId))) {
+            throw new \Exception("Failed to construct class prototype", 9875);
+        } else if (! ($this->methProto = $this->classProto->getMethodByIndex($this->wireMethodId))) {
+            throw new \Exception("Failed to construct method prototype", 5645);
         }
+        // Copy field data in to cache
+        foreach ($this->methProto->getFields() as $f) {
+            $this->fields[$f->getSpecFieldName()] = $src->read($f->getSpecDomainType());
+        }
+        $en = $src->getReadPointer();
+        if ($wireSize != ($en - $st)) {
+            throw new \Exception("Invalid message size", 9845);
+        }
+    }
+
+    /** Read a full content header frame from src */
+    private function readContentHeaderContent (Reader $src, $wireSize) {
+        $st = $src->getReadPointer();
+        if (null === ($wireClassId = $src->read('short'))) {
+            throw new \Exception("Failed to read class ID from frame", 3684);
+        }
+        if (is_null($this->wireClassId) && ! ($this->classProto = proto\ClassFactory::GetClassByIndex($this->wireClassId))) {
+            throw new \Exception("Failed to construct class prototype", 9875);
+        } else if ($wireClassId != $this->wireClassId) {
+            throw new \Exception("Unexpected class in content header", 5434);
+        }
+
+        if ($src->read('short') === null) {
+            throw new \Exception("Failed to read pointless weight header field", 3684);
+        } else if (null === ($this->contentSize = $src->read('longlong'))) {
+            throw new \Exception("Failed to read content size", 9867);
+        }
+        // Load the property flags
+        $binFlags = '';
+        while (true) {
+            if (null === ($fBlock = $src->read('short'))) {
+                throw new \Exception("Failed to read property flag block", 4548);
+            }
+            $binFlags .= decbin($fBlock);
+            if (strlen($binFlags) != 16) {
+                throw new \Exception("Unexpected message property flags", 8740);
+            }
+            if (substr($binFlags, -1) == '1') {
+                $binFlags = substr($binFlags, 0, -1);
+            } else {
+                break;
+            }
+        }
+
+        foreach ($this->classProto->getFields() as $i => $f) {
+            if ($f->getSpecFieldDomain() == 'bit') {
+                $this->classFields[$f->getSpecFieldName()] = (boolean) substr($binFlags, $i, 1);
+            } else if (substr($binFlags, $i, 1) == '1') {
+                $this->classFields[$f->getSpecFieldName()] = $src->read($f->getSpecFieldDomain());
+            } else {
+                $this->classFields[$f->getSpecFieldName()] = null;
+            }
+        }
+        $en = $src->getReadPointer();
+        if ($wireSize != ($en - $st)) {
+            throw new \Exception("Invalid message size", 2546);
+        }
+    }
+
+
+
+
+    /** Append message body content from $src */
+    private function readBodyContent (Reader $src, $wireSize) {
+        $buff = substr($src->getRemainingBuffer(), 0, -1);
+        if (strlen($buff) != $wireSize) {
+            throw new \Exception("Invalid content frame", 76585);
+        }
+        $this->content .= $buff;
+    }
+
+    /* This for content messages, has the full message been read from the wire yet?  */
+    function readConstructComplete () {
+        return ($this->wireType != 2 || ! (strlen($this->content) < ($this->contentSize - 1)));
     }
 
     function setField ($name, $val) {
@@ -740,7 +877,8 @@ class Method
         if ($this->mode === 'read') {
             trigger_error('Setting class field value for read constructed method', E_USER_WARNING);
         } else if (! $this->methProto->getSpecHasContent()) {
-            trigger_error('Setting class field value for a method which doesn\'t take content', E_USER_WARNING);
+            trigger_error('Setting class field value for a method which doesn\'t take content (' .
+                          $this->classProto->getSpecName() . '.' . $this->methProto->getSpecName() . ')', E_USER_WARNING);
         } else {
             $this->classFields[$name] = $val;
         }
@@ -754,7 +892,7 @@ class Method
         if ($this->mode === 'read') {
             trigger_error('Setting content value for read constructed method', E_USER_WARNING);
         } else if (! $this->methProto->getSpecHasContent()) {
-            trigger_error('Setting content value for a method which doesn\'t take content!', E_USER_WARNING);
+            //trigger_error('Setting content value for a method which doesn\'t take content!', E_USER_WARNING);
         } else {
             $this->content = $content;
         }
@@ -762,10 +900,7 @@ class Method
 
 
     function getContent () {
-        if ($this->mode == 'read') {
-            trigger_error('Invalid serialize operation on a read mode method', E_USER_WARNING);
-            return '';
-        } else if (! $this->methProto->getSpecHasContent()) {
+        if (! $this->methProto->getSpecHasContent()) {
             trigger_error('Invalid serialize operation on a method which doesn\'t take content', E_USER_WARNING);
             return '';
         }
@@ -779,6 +914,8 @@ class Method
     function getWireChannel () { return $this->wireChannel; }
     function getWireSize () { return $this->wireSize; }
 
+    function getWireClassId () { return $this->wireClassId; }
+    function getWireMethodId () { return $this->wireMethodId; }
 
     /** TODO: Test generated validation methods!!! */
     /** Generate complete payload set, possibly including content header and body */
@@ -914,4 +1051,36 @@ class Method
             return false;
         }
     }
+}
+
+
+
+
+
+
+
+function hexdump($subject) {
+    if ($subject === '') {
+        return "00000000\n";
+    }
+    $pDesc = array(
+                   array('pipe', 'r'),
+                   array('pipe', 'w'),
+                   array('pipe', 'r')
+                   );
+    $pOpts = array('binary_pipes' => true);
+    if (($proc = proc_open(HEXDUMP_BIN, $pDesc, $pipes, null, null, $pOpts)) === false) {
+        throw new \Exception("Failed to open hexdump proc!", 675);
+    }
+    fwrite($pipes[0], $subject);
+    fclose($pipes[0]);
+    $ret = stream_get_contents($pipes[1]);
+    fclose($pipes[1]);
+    $errs = stream_get_contents($pipes[2]);
+    fclose($pipes[2]);
+    if ($errs) {
+        printf("[ERROR] Stderr content from hexdump pipe: %s\n", $errs);
+    }
+    proc_close($proc);
+    return $ret;
 }

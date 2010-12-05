@@ -42,6 +42,12 @@ use <xsl:value-of select="$_WIRE_NS"/> as wire;
 <xsl:for-each select="/amqp/constant"> <!-- TODO: Convert to hex consts -->
 const <xsl:value-of select="bl:convertToConst(@name)"/> = &quot;<xsl:value-of select="bl:intToPHPHexLiteral(@value)"/>&quot;;</xsl:for-each>
 
+<!-- Constant lookup function -->
+function Konstant($c) {
+    static $kz = array(<xsl:for-each select="/amqp/constant"><xsl:value-of select="@value"/> => array('value' => '<xsl:value-of select="@value"/>', 'name' => '<xsl:value-of select="bl:convertToConst(@name)"/>', 'class' => '<xsl:value-of select="@class"/>')<xsl:if test="position()!=last()">, </xsl:if></xsl:for-each>);
+    return isset($kz[$c]) ? $kz[$c] : null;
+}
+
 <!-- Output method lookup factory -->
 class ClassFactory extends \<xsl:value-of select="bl:getPhpParentNs()"/>\ClassFactory
 {
