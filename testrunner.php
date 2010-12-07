@@ -34,23 +34,28 @@ function test4() {
 
 
 function test5() {
+    $VH = 'robin';
+    $EX = 'router';
+    $Q = 'msgQ2';
+    $USER = 'testing';
+    $PASS = 'letmein';
+
+
     // Produce
-    $sParams = array(
-                     'host' => 'localhost',
+    $sParams = array('host' => 'localhost',
                      'port' => 5672,
-                     'username' => 'guest',
-                     'userpass' => 'guest',
-                     'vhost' => '/');
+                     'username' => $USER,
+                     'userpass' => $PASS,
+                     'vhost' => $VH);
     $connFact = new amqp\ConnectionFactory($sParams);
     $conn = $connFact->newConnection();
     $chan = $conn->getChannel();
 
-    $EX = 'router';
-    $Q = 'msgs';
 
     // Declare the exchange
     $excDecl = $chan->exchange('declare', array('reserved-1' => $chan->getTicket(),
                                                 'type' => 'direct',
+                                                'durable' => true,
                                                 'exchange' => $EX));
     $chan->invoke($excDecl);
 
@@ -64,43 +69,78 @@ function test5() {
                                         'queue' => $Q,
                                         'exchange' => $EX));
     $chan->invoke($qBind);
-    /*
+
+
+    // Start a transaction
+    //$chan->invoke($chan->tx('select'));
+
+
     // Pushes content to a queue
     $basicP = $chan->basic('publish', array('content-type' => 'text/plain',
                                             'content-encoding' => 'UTF-8',
                                             'reserved-1' => $chan->getTicket(),
                                             'mandatory' => false,
                                             'immediate' => false,
-                                            'exchange' => $EX), 'You should help out the aged beatnik!');
+                                            'exchange' => $EX), 'You should help out the aged beatnik (mebbeh)');
 
-    $chan->invoke($basicP);
-    */
+    for ($i = 0; $i < 10; $i++) {
+    //while (true) {
+        //$basicP->setContent($basicP->getContent() . "[$i]");
+        $chan->invoke($basicP);
+    }
+
+
 
     // Pull a single message from the queue
-    $basicGet = $chan->basic('get', array('reserved-1' => $chan->getTicket(), 'queue'));
+    $basicGet = $chan->basic('get', array('reserved-1' => $chan->getTicket(), 'queue' => $Q));
     // Suck all content from that Q.
     $contents = array();
-    $i = 0;
+    $i = $delTag = 0;
     while (true) {
         $getOk = $chan->invoke($basicGet);
-        if ($c = $getOk->getContent()) {
+        if ($i == 1) {
+            printf("GetOK Class fields:\n");
+            foreach ($getOk->getClassFields() as $k => $v) {
+                if (is_bool($v)) {
+                    $v = $v ? 'true' : 'false';
+                }
+                printf(" %s => %s\n", $k, $v);
+            }
+            printf("GetOK Method fields:\n");
+            foreach ($getOk->getFields() as $k => $v) {
+                if (is_bool($v)) {
+                    $v = $v ? 'true' : 'false';
+                }
+                printf(" %s => %s\n", $k, $v);
+            }
+        }
+        if ($getOk->getMethodProto()->getSpecHasContent()) {
+            $c = $getOk->getContent();
             if (! in_array($c, $contents)) {
                 $contents[] = $c;
             }
+            $delTag = $getOk->getField('delivery-tag');
         } else {
             break;
         }
-        if (($i++ % 10) == 0) {
+        if (($i++ % 100) == 0) {
             printf("...Consumed %d messages\n", $i);
         }
     }
+
     printf("Read %d messages, distinct versions are:\n%s", $i, implode("\n", $contents));
     //printf("Get result method %s, content:\n%s\n", $getOk->getClassProto()->getSpecName(), $getOk->getContent());
 
+    // Send an ack to clear all msgs
+    $basicAck = $chan->basic('ack', array('delivery-tag' => $delTag, 'multiple' => true));
+    $chan->invoke($basicAck);
 
-    $excDel = $chan->exchange('delete', array('reserved-1' => $chan->getTicket(),
+    //$chan->invoke($chan->tx('commit'));
+
+
+    /*$excDel = $chan->exchange('delete', array('reserved-1' => $chan->getTicket(),
                                               'exchange' => $EX));
-    $chan->invoke($excDel);
+                                              $chan->invoke($excDel);*/
 
 }
 

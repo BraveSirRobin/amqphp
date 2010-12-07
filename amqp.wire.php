@@ -889,10 +889,12 @@ class Method
     function getClassFields () { return $this->classFields; }
 
     function setContent ($content) {
-        if ($this->mode === 'read') {
+        if (! $content) {
+            return;
+        } else if ($this->mode === 'read') {
             trigger_error('Setting content value for read constructed method', E_USER_WARNING);
         } else if (! $this->methProto->getSpecHasContent()) {
-            //trigger_error('Setting content value for a method which doesn\'t take content!', E_USER_WARNING);
+            trigger_error('Setting content value for a method which doesn\'t take content', E_USER_WARNING);
         } else {
             $this->content = $content;
         }

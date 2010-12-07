@@ -1,5 +1,9 @@
 <?php
-
+/**
+ * TODO: Consider switching implementation to cache protocol
+ * objects in to groups, like XmlSpecClass caching it's.
+ * XmlSpecMethods  Current impl probably isn't very efficient
+ */
 namespace amqp_091\protocol\abstrakt;
 
 // GLOBAL [one]

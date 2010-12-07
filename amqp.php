@@ -72,7 +72,7 @@ class ConnectionFactory
 
 class Connection
 {
-    const READ_LEN = 1024;
+    const READ_LEN = 4096;
 
     private static $ClientProperties = array('product' => 'My Amqp implementation',
                                              'version' => '0.01',
@@ -164,12 +164,12 @@ class Connection
         $meth->setField('reserved-2', '');
 
         if (! ($this->write($meth->toBin()))) {
-            throw new \Exception("Connection initialisation failed (10)", 9882);
+            throw new \Exception("Connection initialisation failed (10)", 9883);
         }
 
         // Expect open-ok
         if (! ($raw = $this->read())) {
-            throw new \Exception("Connection initialisation failed (11)", 9883);
+            throw new \Exception("Connection initialisation failed (11)", 9884);
         }
         $meth = new wire\Method($raw);
         if (! ($meth->getMethodProto()->getSpecIndex() == 41 && $meth->getClassProto()->getSpecIndex() == 10)) {
@@ -260,22 +260,6 @@ class Connection
         return $this->br;
     }
 
-    /** Use select to poll for incoming data 
-    function canRead () {
-        $orig = $read = array($this->sock);
-        $selN = @socket_select($read, $written = array(), $except = array(), 0);
-        if ($selN === false) {
-            $errNo = socket_last_error();
-            if ($errNo ===  SOCKET_EINTR) {
-                pcntl_signal_dispatch(); // select returned false due to signal, handle it ASAP
-            } else {
-                $this->error("client read select failed:\n%s", socket_strerror());
-            }
-        } else {
-            var_dump($read);
-            return $selN > 0;
-        }
-        } */
 
     /**
      * Once implemented, this will be the method of delivering 'unsolicited' content
@@ -285,7 +269,8 @@ class Connection
      */
     function unexpected (wire\Method $meth) {
         // TODO: channel flow -> deliver to channel!
-        if ($meth->getWireType() == 1) {
+        switch ($meth->getWireType()) {
+        case 1:
             $todo = '';
             if ($meth->getWireClassId() == 10 && $meth->getWireMethodId() == 50) {
                 $todo = 'connection-exception';
@@ -325,6 +310,20 @@ class Connection
                 }
                 throw new \Exception($em, $n);
             }
+            break;
+        case 2:
+            if (isset($this->chans[$meth->getWireChannel()]) &&
+                ($tmp = $this->chans[$meth->getWireChannel()]) instanceof meth\Method) {
+                if (! $this->write($tmp->toBin())) {
+                    throw new \Exception("Failed to send channel command response", 4367);
+                }
+                return;
+            }
+            break;
+        default:
+            echo hexdump($meth->toBin()) . "\n\n";
+            var_dump($meth);
+            throw new \Exception("Unexpected method", 8974);
         }
     }
 
@@ -368,12 +367,10 @@ class Connection
 
 class Channel
 {
-    const FLOW_OPEN = 1;
-    const FLOW_SHUT = 2;
 
     private $myConn;
     private $chanId;
-    private $flow = self::FLOW_OPEN;
+    private $flow = true;
     private $ticket;
     private $destroyed = false;
     private $frameMax;
@@ -426,14 +423,20 @@ class Channel
                 $m->setClassField($k, $v);
             }
         }
-        foreach (array_merge(array_combine($meth->getSpecFields(), array_fill(0, count($meth->getSpecFields()), '')), $args) as $k => $v) {
-            $m->setField($k, $v);
+        if ($meth->getSpecFields()) {
+            foreach (array_merge(array_combine($meth->getSpecFields(), array_fill(0, count($meth->getSpecFields()), '')), $args) as $k => $v) {
+                $m->setField($k, $v);
+            }
         }
         $m->setContent($content);
         return $m;
     }
 
     function invoke (wire\Method $m) {
+        if (! $this->flow) {
+            trigger_error("Channel is closed", E_USER_WARNING);
+            return;
+        }
         if ($this->destroyed) {
             throw new \Exception("Attempting to use a destroyed channel", 8767);
         }
@@ -446,5 +449,21 @@ class Channel
     function destroy () {
         $this->destroyed = true;
         $this->myConn = $this->chanId = $this->ticket = null;
+    }
+
+    /**
+     * Callback from the Connection object for channel frames
+     * @param   $meth           A channel method for this channel
+     * @return  mixed           If a method is returned it will be sent by the channel
+     */
+    function processChannelCommand (wire\Method $meth) {
+        switch ($meth->getMethodProto()->getSpecName()) {
+        case 'flow':
+            $this->flow = ! $this->flow;
+            if ($r = $meth->getMethodProto()->getResponses()) {
+                return $r[0];
+            }
+            break;
+        }
     }
 }
