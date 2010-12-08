@@ -138,6 +138,8 @@ function test5() {
     //$chan->invoke($chan->tx('commit'));
 
 
+    $conn->shutdown();
+
     /*$excDel = $chan->exchange('delete', array('reserved-1' => $chan->getTicket(),
                                               'exchange' => $EX));
                                               $chan->invoke($excDel);*/

@@ -683,6 +683,10 @@ class Method
     private $classFields = array(); // Amqp message class fields
     private $content; // Amqp message payload
 
+    /* Runtime flags  */
+    private $hasMeth = false;
+    private $hasCHeader = false;
+
     /** 
      * @field $wireType
      * Frame type of the first frame read by this method.  Note that in some
@@ -724,20 +728,20 @@ class Method
 
     /** Helper: parse the incoming message from $src */
     /** TODO: Use generated validation methods??? */
-    /** TODO: Deal with frame header, body content */
-    /** TODO: Validate frame size */
-    private function readContruct ($bin) {
+    function readContruct ($bin) {
+        if ($this->mode == 'write') {
+            trigger_error('Invalid read construct operation on a read mode method', E_USER_WARNING);
+            return '';
+        }
+
         $src = new Reader($bin);
 
-        $hasMethod = $hasCHeader = false;
-        $first = true;
         $FRME = 206; // TODO!!  UN-HARD CODE!!
         while (! $src->isSpent()) {
             list($wireType, $wireChannel, $wireSize) = $this->extractFrameHeader($src);
-            if ($first) {
+            if (! $this->wireType) {
                 $this->wireChannel = $wireChannel;
                 $this->wireType = $wireType;
-                $first = false;
             }
             switch ($wireType) {
             case 1:
@@ -919,8 +923,7 @@ class Method
     function getWireClassId () { return $this->wireClassId; }
     function getWireMethodId () { return $this->wireMethodId; }
 
-    /** TODO: Test generated validation methods!!! */
-    /** Generate complete payload set, possibly including content header and body */
+
     function toBin () {
         if ($this->mode == 'read') {
             trigger_error('Invalid serialize operation on a read mode method', E_USER_WARNING);
@@ -946,16 +949,16 @@ class Method
             // TODO: support for messages > 2^32 - this requires splitting content in to
             // multiple sub-frames
             $w = new Writer;
-            $tmp = $this->getContentBin();
+            $tmp = (string) $this->content;
             $w->write(3, 'octet');
             $w->write($this->wireChannel, 'short');
             $w->write(strlen($tmp), 'long');
             $buff .= $w->getBuffer() . $tmp . proto\FRAME_END;
         }
-        return $buff;
+        return array($buff);
     }
 
-    function getMethodBin () {
+    private function getMethodBin () {
         if ($this->mode == 'read') {
             trigger_error('Invalid serialize operation on a read mode method', E_USER_WARNING);
             return '';
@@ -979,7 +982,7 @@ class Method
         return $src->getBuffer();
     }
 
-    function getContentHeaderBin () {
+    private function getContentHeaderBin () {
         if ($this->mode == 'read') {
             trigger_error('Invalid serialize operation on a read mode method', E_USER_WARNING);
             return '';
@@ -1012,30 +1015,22 @@ class Method
                 $pFlags .= '0';
             }
             if (isset($this->classFields[$fName]) && $f->getSpecFieldDomain() != 'bit') {
+                if (! $f->validate($this->classFields[$fName])) {
+                    trigger_error("Field {$fName} of method {$this->methProto->getSpecName()} is not valid", E_USER_WARNING);
+                    return '';
+                }
                 $src2->write($this->classFields[$fName], $f->getSpecDomainType());
             }
         }
         if ($pFlags && (strlen($pFlags) % 16) !== 0) {
             $pFlags .= str_repeat('0', 16 - (strlen($pFlags) % 16));
         }
-        //echo $pFlags;
         // Assemble the flag bytes
         $pBuff = '';
         for ($i = 0; $i < $pChunks; $i++) {
             $pBuff .= pack('n', bindec(substr($pFlags, $i*16, 16)));
         }
-        //echo $pBuff;
-        //die;
         return $src->getBuffer() . $pBuff . $src2->getBuffer();
-    }
-
-
-    function getContentBin () {
-        if ($s = (string) $this->getContent()) {
-            return $s;
-        } else {
-            return '';
-        }
     }
 
 
@@ -1043,7 +1038,8 @@ class Method
     /** Checks if $other is the right type to be a response to *this* method */
     function isResponse (Method $other) {
         if ($exp = $this->methProto->getSpecResponseMethods()) {
-            if ($this->classProto->getSpecName() != $other->classProto->getSpecName()) {
+            if ($this->classProto->getSpecName() != $other->classProto->getSpecName() ||
+                $this->wireChannel != $other->wireChannel) {
                 return false;
             } else {
                 return in_array($other->methProto->getSpecName(), $exp);

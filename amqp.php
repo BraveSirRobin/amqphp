@@ -1,12 +1,15 @@
 <?php
 
-
 /**
  * This library is intended to be as "procedural" as possible - all
  * methods return just like regular functions, including those which
  * carry content.
  */
 
+/**
+ * TODO:
+ *  (1) Implement exceptions for Amqp 'events', i.e. channel / connection exceptions, etc.
+ */
 
 namespace amqp_091;
 
@@ -74,6 +77,8 @@ class Connection
 {
     const READ_LEN = 4096;
 
+    const CLOSE_WAIT = 100; // Millis delay for graceful shutdown
+
     private static $ClientProperties = array('product' => 'My Amqp implementation',
                                              'version' => '0.01',
                                              'platform' => 'Linux baby!',
@@ -102,7 +107,37 @@ class Connection
         $this->initConnection();
     }
 
-    private function initConnection() {
+
+    /** Shutdown child channels and then the connection  */
+    function shutdown () {
+        foreach (array_keys($this->chans) as $cName) {
+            $this->chans[$cName]->shutdown();
+        }
+        $meth = new wire\Method(protocol\ClassFactory::GetMethod('connection', 'close'));
+        $meth->setField('reply-code', '');
+        $meth->setField('reply-text', '');
+        $meth->setField('class-id', '');
+        $meth->setField('method-id', '');
+        if (! $this->write($meth->toBin())) {
+            trigger_error("Unclean connection shutdown (1)", E_USER_WARNING);
+            return;
+        }
+        if (! ($raw = $this->read())) {
+             trigger_error("Unclean connection shutdown (2)", E_USER_WARNING);
+             return;
+        }
+        if (! ($meth = new wire\Method($raw)) && 
+            $meth->getClassProto() &&
+            $meth->getClassProto()->getSpecName() == 'connection' &&
+            $methd->getMethodProto() &&
+            $meth->getMethodProto()->getSpecName() == 'close-ok') {
+            trigger_error("Channel protocol shudown fault", E_USER_WARNING);
+        }
+    }
+
+
+
+    private function initConnection () {
         if (! ($this->write(wire\PROTOCOL_HEADER))) {
             // No bytes written?
             throw new \Exception("Connection initialisation failed (1)", 9873);
@@ -125,7 +160,7 @@ class Connection
         }
         $meth->setField('client-properties', $this->getClientProperties());
         $meth->setField('mechanism', 'AMQPLAIN');
-        $meth->setField('response', $this->saslHack());
+        $meth->setField('response', $this->getSaslResponse());
         $meth->setField('locale', 'en_US');
         // Send start-ok
         if (! ($this->write($meth->toBin()))) {
@@ -177,7 +212,7 @@ class Connection
         }
     }
 
-    private function getClientProperties() {
+    private function getClientProperties () {
         /* Build table to use long strings - RMQ seems to require this. */
         $t = new wire\Table;
         foreach (self::$ClientProperties as $pn => $pv) {
@@ -186,7 +221,7 @@ class Connection
         return $t;
     }
 
-    private function saslHack() {
+    private function getSaslResponse () {
         $t = new wire\Table();
         $t['LOGIN'] = new wire\TableField($this->username, 'S');
         $t['PASSWORD'] = new wire\TableField($this->userpass, 'S');
@@ -198,6 +233,14 @@ class Connection
 
     function getChannel ($num = false) {
         return ($num === false) ? $this->initNewChannel() : $this->chans[$num];
+    }
+
+    function removeChannel (Channel $chan) {
+        if (false !== ($k = array_search($chan, $this->chans))) {
+            unset($this->chans[$k]);
+        } else {
+            trigger_error("Channel not found", E_USER_WARNING);
+        }
     }
 
     private function initNewChannel () {
@@ -236,23 +279,38 @@ class Connection
         }
         return $ret;
     }
-    private function write ($buff) {
-        if (DEBUG) {
-            echo "\n<write>\n";
-            echo wire\hexdump($buff);
-        }
+    private function write ($buffs) {
         $bw = 0;
-        $contentLength = strlen($buff);
-        while ($bw < $contentLength) {
-            if (($tmp = socket_write($this->sock, $buff, $contentLength)) === false) {
-                throw new \Exception(sprintf("\nSocket write failed: %s\n",
-                                            socket_strerror(socket_last_error())), 7854);
+        foreach ((array) $buffs as $buff) {
+            if (DEBUG) {
+                echo "\n<write>\n";
+                echo wire\hexdump($buff);
             }
-            $bw += $tmp;
-            $this->bw += $tmp;
+            $contentLength = strlen($buff);
+            while ($bw < $contentLength) {
+                if (($tmp = socket_write($this->sock, $buff, $contentLength)) === false) {
+                    throw new \Exception(sprintf("\nSocket write failed: %s\n",
+                                                 socket_strerror(socket_last_error())), 7854);
+                }
+                $bw += $tmp;
+                $this->bw += $tmp;
+            }
         }
         return $bw;
     }
+
+    private function close () {
+        socket_shutdown($this->sock, 1); // Client connection can still read
+        usleep(self::CLOSE_WAIT);
+        @socket_shutdown($this->sock, 0); // Full disconnect
+        $errNo = socket_last_error();
+        if ($errNo) {
+            trigger_error(sprintf("[client] socket error during socket close: %s", socket_strerror($errNo)), E_USER_WARNING);
+        }
+        socket_close($this->sock);
+    }
+
+
     function getBytesWritten () {
         return $this->bw;
     }
@@ -262,70 +320,43 @@ class Connection
 
 
     /**
-     * Once implemented, this will be the method of delivering 'unsolicited' content
-     * in the procedural model.  'Unsolicited' means "wire content which is read during 
-     * a method invokation but is not directly related to the invoked
-     * methods' response"
+     * Handle global connection messages.
+     *  The channel number is 0 for all frames which are global to the connection (4.2.3)
      */
-    function unexpected (wire\Method $meth) {
-        // TODO: channel flow -> deliver to channel!
-        switch ($meth->getWireType()) {
-        case 1:
-            $todo = '';
-            if ($meth->getWireClassId() == 10 && $meth->getWireMethodId() == 50) {
-                $todo = 'connection-exception';
-            } else if ($meth->getWireClassId() == 20 && $meth->getWireMethodId() == 40) {
-                $todo = 'channel-exception';
+    private function handleConnectionMessage (wire\Method $meth) {
+        if ($meth->getClassProto()->getSpecName() == 'connection' &&
+            $meth->getMethodProto()->getSpecName() == 'close') {
+            if ($culprit = protocol\ClassFactory::GetMethod($meth->getField('class-id'), $meth->getField('method-id'))) {
+                $culprit = "{$culprit->getSpecClass()}.{$culprit->getSpecName()}";
+            } else {
+                $culprit = '(Unknown or unspecified)';
             }
-
-            if ($todo) {
-                if ($culprit = protocol\ClassFactory::GetMethod($meth->getField('class-id'), $meth->getField('method-id'))) {
-                    $culprit = "{$culprit->getSpecClass()}.{$culprit->getSpecName()}";
-                } else {
-                    $culprit = '(Unknown or unspecified)';
-                }
-                // Note: ignores the soft-error, hard-error distinction in the xml
-                $errCode = protocol\Konstant($meth->getField('reply-code'));
-                $eb = '';
-                foreach ($meth->getFields() as $k => $v) {
-                    $eb .= sprintf("(%s=%s) ", $k, $v);
-                }
-                $tmp = $meth->getMethodProto()->getResponses();
-                $closeOk = new wire\Method($tmp[0]);
-                $em = "[$todo] reply-code={$errCode['name']} triggered by $culprit: $eb";
-                if ($this->write($closeOk->toBin())) {
-                    $em .= " Channel closed OK";
-                    $n = 7565;
-                } else {
-                    $em .= " Additionally, channel closure failed";
-                    $n = 7566;
-                }
-                if ($todo == 'connection-exception') {
-                    // TODO:  CLOSE SOCKET PROPERLY!!!!
-                } else if ($todo == 'channel-exception') {
-                    $chan = $this->chans[$meth->getWireChannel()];
-                    unset($this->chans[$meth->getWireChannel()]);
-                    $chan->destroy();
-                    $chan = null; // TODO: Test to make sure chan is suitably dead
-                }
-                throw new \Exception($em, $n);
+            // Note: ignores the soft-error, hard-error distinction in the xml
+            $errCode = protocol\Konstant($meth->getField('reply-code'));
+            $eb = '';
+            foreach ($meth->getFields() as $k => $v) {
+                $eb .= sprintf("(%s=%s) ", $k, $v);
             }
-            break;
-        case 2:
-            if (isset($this->chans[$meth->getWireChannel()]) &&
-                ($tmp = $this->chans[$meth->getWireChannel()]) instanceof meth\Method) {
-                if (! $this->write($tmp->toBin())) {
-                    throw new \Exception("Failed to send channel command response", 4367);
-                }
-                return;
+            $tmp = $meth->getMethodProto()->getResponses();
+            $closeOk = new wire\Method($tmp[0]);
+            $em = "[connection close] reply-code={$errCode['name']} triggered by $culprit: $eb";
+            if ($this->write($closeOk->toBin())) {
+                $em .= " Channel closed OK";
+                $n = 7565;
+            } else {
+                $em .= " Additionally, channel closure failed";
+                $n = 7566;
             }
-            break;
-        default:
-            echo hexdump($meth->toBin()) . "\n\n";
-            var_dump($meth);
-            throw new \Exception("Unexpected method", 8974);
+            $this->close();
+            throw new \Exception($em, $n);
+        } else {
+            $this->close();
+            throw new \Exception(sprintf("Unexpected channel message (%s.%s), connection closed",
+                                         $meth->getClassProto()->getSpecName(), $meth->getMethodProto()->getSpecName()), 96356);
         }
     }
+
+
 
     /**
      * Write the given method to the wire and loop waiting for the response.
@@ -347,15 +378,21 @@ class Connection
                     if (! ($raw = $this->read())) {
                         throw new \Exception("Send message failed (3)", 5625);
                     }
-                    $newMeth->readBodyContent(new wire\Reader($raw));
+                    $newMeth->readContruct($raw);
                 }
-                if (! in_array($newMeth->getWireType(), array(1,2))
-                    || $newMeth->getWireChannel() != $meth->getWireChannel()) {
-                    $this->unexpected($newMeth);
-                } else if ($meth->isResponse($newMeth)) {
+
+                if ($meth->isResponse($newMeth)) {
                     return $newMeth;
+                } else if ($newMeth->getWireChannel() == 0) {
+                    // The channel number is 0 for all frames which are global to the connection
+                    $this->handleConnectionMessage($newMeth);
+                } else if ($newMeth->getWireClassId() == 20 &&
+                           ($chan = $this->chans[$newMeth->getWireChannel()])) {
+                    $chan->handleChannelMessage($newMeth);
                 } else {
-                    $this->unexpected($newMeth);
+                    // Unexpected. ???
+                    $hd = wire\hexdump($meth->toBin());
+                    throw new \Exception("Unexpected method:\n$hd", 8795);
                 }
             }
         } else {
@@ -433,7 +470,9 @@ class Channel
     }
 
     function invoke (wire\Method $m) {
-        if (! $this->flow) {
+        if ($this->destroyed) {
+            trigger_error("Channel is destroyed", E_USER_WARNING);
+        } else if (! $this->flow) {
             trigger_error("Channel is closed", E_USER_WARNING);
             return;
         }
@@ -445,25 +484,57 @@ class Channel
 
     function getTicket () { return $this->ticket; }
 
-    // Used to prevent use after a channel exc.
-    function destroy () {
-        $this->destroyed = true;
-        $this->myConn = $this->chanId = $this->ticket = null;
-    }
 
     /**
      * Callback from the Connection object for channel frames
      * @param   $meth           A channel method for this channel
      * @return  mixed           If a method is returned it will be sent by the channel
      */
-    function processChannelCommand (wire\Method $meth) {
+    function handleChannelMessage (wire\Method $meth) {
         switch ($meth->getMethodProto()->getSpecName()) {
         case 'flow':
+            // TODO: Make sure that when shut off, the current message send is cancelled
             $this->flow = ! $this->flow;
             if ($r = $meth->getMethodProto()->getResponses()) {
                 return $r[0];
             }
             break;
+        case 'close':
+            if ($culprit = protocol\ClassFactory::GetMethod($meth->getField('class-id'), $meth->getField('method-id'))) {
+                $culprit = "{$culprit->getSpecClass()}.{$culprit->getSpecName()}";
+            } else {
+                $culprit = '(Unknown or unspecified)';
+            }
+            // Note: ignores the soft-error, hard-error distinction in the xml
+            $errCode = protocol\Konstant($meth->getField('reply-code'));
+            $eb = '';
+            foreach ($meth->getFields() as $k => $v) {
+                $eb .= sprintf("(%s=%s) ", $k, $v);
+            }
+            $tmp = $meth->getMethodProto()->getResponses();
+            $closeOk = new wire\Method($tmp[0]);
+            $em = "[channel.close] reply-code={$errCode['name']} triggered by $culprit: $eb";
+            if ($this->write($closeOk->toBin())) {
+                $em .= " Channel closed OK";
+                $n = 3687;
+            } else {
+                $em .= " Additionally, channel closure failed";
+                $n = 2435;
+            }
+            throw new \Exception($em, $n);
+        default:
+            $hd = wire\hexdump($meth->toBin());
+            throw new \Exception("Unexpected method:\n$hd", 8795);
         }
+    }
+
+    /** Perform a protocol channel shutdown and remove self from containing Connection  */
+    function shutdown () {
+        if (! $this->invoke($this->channel('close', array('reply-code' => '', 'reply-text' => '')))) {
+            trigger_error("Unclean channel shutdown", E_USER_WARNING);
+        }
+        $this->myConn->removeChannel($this);
+        $this->destroyed = true;
+        $this->myConn = $this->chanId = $this->ticket = null;
     }
 }
