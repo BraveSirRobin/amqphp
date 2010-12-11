@@ -197,6 +197,14 @@ class Reader extends Protocol
         return $r;
     }
 
+    /** Used to fetch a string of length $n from the buffer, updates the internal pointer  */
+    function readN ($n) {
+        //        printf("readN : \$n: %d, \$this->p: %d, buffLen: %d\n", $n, $this->p, strlen($this->bin));
+        $ret = substr($this->bin, $this->p, $n);
+        $this->p += strlen($ret);
+        return $ret;
+    }
+
     /** Read the given type from the local buffer and return a PHP conversion */
     function read ($type, $tableField=false) {
         $implType = ($tableField) ?
@@ -692,17 +700,20 @@ class Method
      * Frame type of the first frame read by this method.  Note that in some
      * cases more than one frame of different types will be read in to a single Method object
      */
-    private $wireType;
+    //private $wireType;
     /** @field $wireChannel  The channel for this method  */
-    private $wireChannel;
-    private $wireMethodId;
-    private $wireClassId;
-    private $contentSize;
+    private $wireChannel; // Read from Amqp frame
+    private $wireMethodId; // Read from Amqp method frame
+    private $wireClassId; // Read from Amqp method frame
+    private $contentSize; // Read from Amqp content header frame
+
+    /** Total number of bytes read from the wire for this object,
+        includes total of method, content header, message body */
+    private $bytesRead = 0;
 
     // Dev time only!
     function debug_TODO_deleteme () {
         printf("Output info for method %s.%s\n", $this->classProto->getSpecName(), $this->methProto->getSpecName());
-        printf(" Wire Type: %d\n", $this->wireType);
         printf(" strlen(this->content): %d\n (this->contentSize - 1): %d", strlen($this->content), ($this->contentSize - 1));
     }
 
@@ -737,11 +748,11 @@ class Method
         $src = new Reader($bin);
 
         $FRME = 206; // TODO!!  UN-HARD CODE!!
+        $break = false;
         while (! $src->isSpent()) {
             list($wireType, $wireChannel, $wireSize) = $this->extractFrameHeader($src);
-            if (! $this->wireType) {
+            if (! $this->wireChannel) {
                 $this->wireChannel = $wireChannel;
-                $this->wireType = $wireType;
             }
             switch ($wireType) {
             case 1:
@@ -754,6 +765,7 @@ class Method
                 break;
             case 3:
                 $this->readBodyContent($src, $wireSize);
+                $break = true;
                 break;
             default:
                 throw new \Exception("Unsupported frame type!", 8674);
@@ -761,7 +773,11 @@ class Method
             if ($src->read('octet') != $FRME) {
                 throw new \Exception("Framing exception - missed frame end", 8763);
             }
+            if ($break) {
+                break;
+            }
         }
+        $this->bytesRead += $src->getReadPointer();
     }
 
     /** Helper: extract and return a frame header */
@@ -853,17 +869,20 @@ class Method
 
     /** Append message body content from $src */
     private function readBodyContent (Reader $src, $wireSize) {
-        $buff = substr($src->getRemainingBuffer(), 0, -1);
+        $buff = $src->readN($wireSize);
         if (strlen($buff) != $wireSize) {
-            throw new \Exception("Invalid content frame", 76585);
+            throw new \Exception("Invalid content frame " . strlen($buff) . " $wireSize", 76585);
         }
         $this->content .= $buff;
     }
 
     /* This for content messages, has the full message been read from the wire yet?  */
     function readConstructComplete () {
-        return ($this->wireType != 2 || ! (strlen($this->content) < ($this->contentSize - 1)));
+        //printf("[readConstructComplete] hasContent: %d, content-len: %d, contentSize: %d\n", $this->methProto->getSpecHasContent(), strlen($this->content), $this->contentSize);
+        return (! $this->methProto->getSpecHasContent() || (strlen($this->content) <= $this->contentSize));
     }
+
+    function getBytesRead () { return $this->bytesRead; }
 
     function setField ($name, $val) {
         if ($this->mode === 'read') {
@@ -916,7 +935,7 @@ class Method
 
     function getMethodProto () { return $this->methProto; }
     function getClassProto () { return $this->classProto; }
-    function getWireType () { return $this->wireType; }
+    //function getWireType () { return $this->wireType; }
     function getWireChannel () { return $this->wireChannel; }
     function getWireSize () { return $this->wireSize; }
 

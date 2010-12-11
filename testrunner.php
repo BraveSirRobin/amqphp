@@ -16,7 +16,7 @@ class DebugConsumer implements amqp\Consumer
     private $n = 0;
     function onMessageReceive (wire\Method $meth) {
         printf("Received Message:\n%s\n", $meth->getContent());
-        if ($this->n++ > 10) {
+        if ($this->n++ > 10000) {
             return amqp\CONSUME_BREAK;
         } else {
             // TODO: Build and return an ack
@@ -27,8 +27,8 @@ class DebugConsumer implements amqp\Consumer
     // and messages were delivered.  Should only be called when select
     // is called with a timeout
     function onSelectLoop () {
-        printf("Select loop called\n");
-        if ($this->n++ > 10) {
+        printf("   select loop called {$this->n}\n");
+        if ($this->n++ > 10000) {
             return amqp\CONSUME_BREAK;
         }
     }
@@ -115,12 +115,11 @@ function test5() {
                                             'immediate' => false,
                                             'exchange' => $EX), 'You should help out the aged beatnik (mebbeh)');
 
-    for ($i = 0; $i < 10; $i++) {
-    //while (true) {
-        //$basicP->setContent($basicP->getContent() . "[$i]");
+    for ($i = 0; $i < 100; $i++) {
         $chan->invoke($basicP);
     }
 
+    echo "Written $i messages to the broker\n";
     return; // ***************
 
 
@@ -131,6 +130,7 @@ function test5() {
     $i = $delTag = 0;
     while (true) {
         $getOk = $chan->invoke($basicGet);
+        //printf(" [%d bytes read]\n", $getOk->getBytesRead());
         if ($i == 1) {
             printf("GetOK Class fields:\n");
             foreach ($getOk->getClassFields() as $k => $v) {
@@ -217,6 +217,8 @@ function test9() {
                                         'queue' => $Q,
                                         'exchange' => $EX));
     $chan->invoke($qBind);
+
+    register_shutdown_function(function () use ($conn) { echo "Do channel shutdown\n"; $conn->shutdown(); });
 
     // Consume messages forever
     $chan->consume(new DebugConsumer, array('reserved-1' => $chan->getTicket(),

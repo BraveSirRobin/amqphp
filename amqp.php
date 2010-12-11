@@ -9,6 +9,9 @@
 /**
  * TODO:
  *  (1) Implement exceptions for Amqp 'events', i.e. channel / connection exceptions, etc.
+ *  (2) WRT REF_NOTE_1 : the loop exit tracking at REF_NOTE_1 duplicates the wire\Reader::isSpent()
+ *      functionality.  Consider switching the code so that the wire\Method is either passed in to the
+ *      constructor OR made available via. an accessor so that the duplication can be removed
  */
 
 namespace amqp_091;
@@ -445,28 +448,47 @@ class Connection
                         $buff .= $tmp;
                         $br += $brNow;
                     }
-                    echo "\n\nRead content from wire:\n" . wire\hexdump($buff);
-                    //var_dump($buff);
+                    //echo "\n\nRead content from wire:\n" . wire\hexdump($buff);
                     if (! $meth) {
                         $meth = new wire\Method($buff);
+                    } else {
+                        $meth->readContruct($buff);
                     }
                     try {
-                        if ($meth->readConstructComplete()) {
-                            if ($meth->getWireChannel() == 0) {
-                                $this->handleConnectionMessage($meth);
-                            } else if ($meth->getWireChannel() &&
-                                       isset($this->chans[$meth->getWireChannel()])) {
-                                $response = $this->chans[$meth->getWireChannel()]->handleChannelMessage($meth);
-                                if ($response == CONSUME_BREAK) {
-                                    break;
-                                } else if ($response instanceof wire\Method) {
-                                    $this->sendMethod($meth);
+                        $readLen = strlen($buff);
+                        $br = 0;
+                        $break = false;
+                        /** REF_NOTE_1  */
+                        while (true) {
+                            if ($meth->readConstructComplete()) {
+                                if ($meth->getWireChannel() == 0) {
+                                    $this->handleConnectionMessage($meth);
+                                } else if ($meth->getWireChannel() && isset($this->chans[$meth->getWireChannel()])) {
+                                    // We expect the Consumer to be called here, if appropriate
+                                    $response = $this->chans[$meth->getWireChannel()]->handleChannelMessage($meth);
+                                    if ($response == CONSUME_BREAK) {
+                                        // TODO: What to do with other messages?
+                                        break 2;
+                                    } else if ($response instanceof wire\Method) {
+                                        $this->sendMethod($meth);
+                                    }
+                                } else {
+                                    throw new \Exception("Failed to deliver incoming message", 9045);
                                 }
-                            } else {
-                                throw new \Exception("Failed to deliver incoming message", 9045);
                             }
-                            $meth = null;
+                            $br += $meth->getBytesRead();
+                            if ($break) {
+                                break;
+                            }
+                            if ($br < $readLen) {
+                                // There's more frames to be had so eat them
+                                $meth = new wire\Method(substr($buff, $br));
+                            } else {
+                                //$break = true;
+                                break;
+                            }
                         }
+                        $meth = null;
                     } catch (\Exception $e) {
                         $this->blocking = false;
                         throw $e;
@@ -664,26 +686,3 @@ interface Consumer
     // is called with a timeout
     function onSelectLoop ();
 }
-
-/** A simple blocking consumer 
-class ChannelConsumer extends Channel
-{
-    private $chan;
-    private $cons;
-
-    function __construct (Channel $chan, Consumer $cons) {
-        $this->chan = $chan;
-        $this->cons = $cons;
-        // TODO: Ensure only one channelconsumer per channel
-        // TODO: send Amqp consume
-    }
-
-    function listen () {
-        // Block on $socket, deliver events to consumer
-    }
-
-    function shutdown () {
-        // Shut down this consume session
-    }
-}
-*/
