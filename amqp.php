@@ -25,6 +25,9 @@ require('gencode/amqp.0_9_1.php');
 
 const DEBUG = false;
 
+/** Flag is passed by a Consumer to a Connection (via. a channel) to indicate that it wants to stop consuming */
+const CONSUME_BREAK = 1;
+
 
 /**
  * Class to create connections to a single RabbitMQ endpoint.  If connections
@@ -77,8 +80,6 @@ class Connection
 {
     const READ_LEN = 4096;
 
-    const CLOSE_WAIT = 100; // Millis delay for graceful shutdown
-
     private static $ClientProperties = array('product' => 'My Amqp implementation',
                                              'version' => '0.01',
                                              'platform' => 'Linux baby!',
@@ -91,13 +92,16 @@ class Connection
 
     private $chans = array(); // Format: array(<chan-id> => Channel)
     private $nextChan = 1;
-    private $chanMax; // Set during setup.
-    private $frameMax; // Set during setup.
+    private $chanMax; // Negotated during setup.
+    private $frameMax; // Negotated during setup.
 
-
+    /** Broker connection params, specified in constructor */
     private $username;
     private $userpass;
     private $vhost;
+
+    /** Flag set when connection is in read blocking mode, waiting for messages */
+    private $blocking = false;
 
     function __construct ($sock, $username, $userpass, $vhost) {
         $this->sock = $sock;
@@ -129,10 +133,11 @@ class Connection
         if (! ($meth = new wire\Method($raw)) && 
             $meth->getClassProto() &&
             $meth->getClassProto()->getSpecName() == 'connection' &&
-            $methd->getMethodProto() &&
+            $meth->getMethodProto() &&
             $meth->getMethodProto()->getSpecName() == 'close-ok') {
             trigger_error("Channel protocol shudown fault", E_USER_WARNING);
         }
+        $this->close();
     }
 
 
@@ -255,15 +260,7 @@ class Connection
     function getVHost() { return $this->vhost; }
 
 
-    // DELETEME!!!
-    function cheatRead() {
-        return $this->read();
-    }
-
-
-    /** In the general sense, this method is broken, because there could be many
-        frame reads in a single 'session'.  For example, receiving a message with
-        basic.consume which has been broken in to many frames. */
+    /**  Low level protocol read function */
     private function read () {
         $ret = '';
         while ($tmp = socket_read($this->sock, self::READ_LEN)) {
@@ -279,6 +276,8 @@ class Connection
         }
         return $ret;
     }
+    /** Low level protocol write function.  Accepts either single values or
+        arrays of content */
     private function write ($buffs) {
         $bw = 0;
         foreach ((array) $buffs as $buff) {
@@ -298,15 +297,8 @@ class Connection
         }
         return $bw;
     }
-
+    /**  Low level socket close function */
     private function close () {
-        socket_shutdown($this->sock, 1); // Client connection can still read
-        usleep(self::CLOSE_WAIT);
-        @socket_shutdown($this->sock, 0); // Full disconnect
-        $errNo = socket_last_error();
-        if ($errNo) {
-            trigger_error(sprintf("[client] socket error during socket close: %s", socket_strerror($errNo)), E_USER_WARNING);
-        }
         socket_close($this->sock);
     }
 
@@ -339,12 +331,12 @@ class Connection
             }
             $tmp = $meth->getMethodProto()->getResponses();
             $closeOk = new wire\Method($tmp[0]);
-            $em = "[connection close] reply-code={$errCode['name']} triggered by $culprit: $eb";
+            $em = "[connection.close] reply-code={$errCode['name']} triggered by $culprit: $eb";
             if ($this->write($closeOk->toBin())) {
-                $em .= " Channel closed OK";
+                $em .= " Connection closed OK";
                 $n = 7565;
             } else {
-                $em .= " Additionally, channel closure failed";
+                $em .= " Additionally, connection closure ack send failed";
                 $n = 7566;
             }
             $this->close();
@@ -362,6 +354,7 @@ class Connection
      * Write the given method to the wire and loop waiting for the response.
      */
     function sendMethod (wire\Method $meth) {
+        // TODO: Examine $blocking flag, might need to warn / error
         // Check for incoming data, if found, process in case it's an exception
         if (! ($this->write($meth->toBin()))) {
             throw new \Exception("Send message failed (1)", 5623);
@@ -399,18 +392,117 @@ class Connection
             return null;
         }
     }
+
+
+    function isBlocking () { return $this->isBlocking; }
+
+    private $blockTmSecs = null;
+    private $blockTmMillis = 0;
+
+    function setBlockingTimeoutSecs ($nSecs) {
+        if (is_null($nSecs)) {
+            $this->blockTmSecs = null;
+        } else {
+            $this->blockTmSecs = (int) $nSecs;
+        }
+    }
+
+    function setBlockingTimeoutMillis ($nMillis) {
+        $this->blockTmMillis = (int) $nMillis;
+    }
+
+    /* Set a read block on $sock in order to receive message via. basic.consume 
+       WARNING: By default, this method will block indefinitely! */
+    function readBlock (Consumer $cons) {
+        if ($this->blocking) {
+            throw new \Exception("Multiple simultaneous read blocking not supported (TODO?)", 6362);
+        }
+        $this->blocking = true;
+        $meth = null;
+        while (true) {
+            $read = $ex = array($this->sock);
+            $write = null;
+            $select = is_null($this->blockTmSecs) ?
+                @socket_select($read, $write, $exc, null)
+                : @socket_select($read, $write, $ex, $this->blockTmSecs, $this->blockTmMillis);
+            if ($select === false) {
+                $errNo = socket_last_error();
+                $errStr = socket_strerror($errNo);
+                throw new Exception ("Read block select produced an error: $errStr", 9963);
+            } else if ($select > 0) {
+                // Check for content or exceptions
+                if ($ex) {
+                    $this->blocking = false;
+                    $errNo = socket_last_error();
+                    $errStr = socket_strerror($errNo);
+                    //throw new \Exception("Socket read exception: [$errNo]: $errStr", 9873);
+                }
+                if ($read) {
+                    // Read content, construct a message and deliver it to appropriate callback
+                    $buff = $tmp = '';
+                    $br = 0;
+                    while ($brNow = @socket_recv($this->sock, $tmp, self::READ_LEN, MSG_DONTWAIT)) {
+                        $buff .= $tmp;
+                        $br += $brNow;
+                    }
+                    echo "\n\nRead content from wire:\n" . wire\hexdump($buff);
+                    //var_dump($buff);
+                    if (! $meth) {
+                        $meth = new wire\Method($buff);
+                    }
+                    try {
+                        if ($meth->readConstructComplete()) {
+                            if ($meth->getWireChannel() == 0) {
+                                $this->handleConnectionMessage($meth);
+                            } else if ($meth->getWireChannel() &&
+                                       isset($this->chans[$meth->getWireChannel()])) {
+                                $response = $this->chans[$meth->getWireChannel()]->handleChannelMessage($meth);
+                                if ($response == CONSUME_BREAK) {
+                                    break;
+                                } else if ($response instanceof wire\Method) {
+                                    $this->sendMethod($meth);
+                                }
+                            } else {
+                                throw new \Exception("Failed to deliver incoming message", 9045);
+                            }
+                            $meth = null;
+                        }
+                    } catch (\Exception $e) {
+                        $this->blocking = false;
+                        throw $e;
+                    }
+                }
+                $cons->onSelectLoop();
+            }
+        }
+        $this->blocking = false;
+    }
 }
 
 
 class Channel
 {
-
+    /** The parent Connection object */
     private $myConn;
+
+    /** The channel ID we're linked to */
     private $chanId;
+
+    /** As set by the channel.flow Amqp method, controls whether content can
+        be sent or not */
     private $flow = true;
+
+    /** Required for RMQ */
     private $ticket;
+
+    /** Flag set when the underlying Amqp channel has been closed due to an exception */
     private $destroyed = false;
+
+    /** Set by negotiation during channel setup */
     private $frameMax;
+
+    /** A Consumer instance to deliver incoming messages to */
+    private $consumer;
 
     function __construct (Connection $rConn, $chanId, $frameMax) {
         $this->myConn = $rConn;
@@ -514,14 +606,22 @@ class Channel
             $tmp = $meth->getMethodProto()->getResponses();
             $closeOk = new wire\Method($tmp[0]);
             $em = "[channel.close] reply-code={$errCode['name']} triggered by $culprit: $eb";
-            if ($this->write($closeOk->toBin())) {
+            $b1 = $this->myConn->getBytesWritten();
+            $this->myConn->sendMethod($closeOk);
+            if ($this->myConn->getBytesWritten() > $b1) {
                 $em .= " Channel closed OK";
                 $n = 3687;
             } else {
-                $em .= " Additionally, channel closure failed";
+                $em .= " Additionally, channel closure ack send failed";
                 $n = 2435;
             }
             throw new \Exception($em, $n);
+        case 'deliver':
+            if ($this->consumer) {
+                return $this->consumer->onMessageReceive($meth);
+            } else {
+                throw new \Exception("Unexpected message received", 9875);
+            }
         default:
             $hd = wire\hexdump($meth->toBin());
             throw new \Exception("Unexpected method:\n$hd", 8795);
@@ -537,4 +637,53 @@ class Channel
         $this->destroyed = true;
         $this->myConn = $this->chanId = $this->ticket = null;
     }
+
+    /** Wrapper for basic.consume, uses Connection::readBlock() to receive messages */
+    function consume (Consumer $cons, array $consumeParams) {
+        if ($this->consumer) {
+            throw new \Exception("Multiple concurrent consumes are not supported", 8056);
+        }
+        $this->consumer = $cons;
+        $cOk = $this->invoke($this->basic('consume', $consumeParams));
+        /** Calling readBlock means the code goes in to an indefinite read loop */
+        $this->myConn->readBlock($this->consumer);
+
+        $this->invoke($this->basic('cancel', array('consumer-tag' => $cOk->getField('consumer-tag'))));
+        $this->consumer = null;
+    }
 }
+
+/** Callback object specification for blocking consumer */
+interface Consumer
+{
+    // Messages are delivered to this function
+    function onMessageReceive (wire\Method $meth);
+
+    // Callback invoked by the select loop, called regardless of whether
+    // and messages were delivered.  Should only be called when select
+    // is called with a timeout
+    function onSelectLoop ();
+}
+
+/** A simple blocking consumer 
+class ChannelConsumer extends Channel
+{
+    private $chan;
+    private $cons;
+
+    function __construct (Channel $chan, Consumer $cons) {
+        $this->chan = $chan;
+        $this->cons = $cons;
+        // TODO: Ensure only one channelconsumer per channel
+        // TODO: send Amqp consume
+    }
+
+    function listen () {
+        // Block on $socket, deliver events to consumer
+    }
+
+    function shutdown () {
+        // Shut down this consume session
+    }
+}
+*/

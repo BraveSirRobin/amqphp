@@ -11,7 +11,39 @@ require('amqp.php');
 
 
 
-test5();
+class DebugConsumer implements amqp\Consumer
+{
+    private $n = 0;
+    function onMessageReceive (wire\Method $meth) {
+        printf("Received Message:\n%s\n", $meth->getContent());
+        if ($this->n++ > 10) {
+            return amqp\CONSUME_BREAK;
+        } else {
+            // TODO: Build and return an ack
+        }
+    }
+
+    // Callback invoked by the select loop, called regardless of whether
+    // and messages were delivered.  Should only be called when select
+    // is called with a timeout
+    function onSelectLoop () {
+        printf("Select loop called\n");
+        if ($this->n++ > 10) {
+            return amqp\CONSUME_BREAK;
+        }
+    }
+}
+
+
+// Script starts
+
+
+
+if (isset($argv[1]) && strtolower($argv[1]) == 'consume') {
+    test9();
+} else {
+    test5();
+}
 
 //
 // NEW TESTS
@@ -89,6 +121,7 @@ function test5() {
         $chan->invoke($basicP);
     }
 
+    return; // ***************
 
 
     // Pull a single message from the queue
@@ -150,16 +183,48 @@ function test5() {
 
 function test9() {
     // Consume
-    $sParams = array(
-                     'host' => 'localhost',
+    $VH = 'robin';
+    $EX = 'router';
+    $Q = 'msgQ2';
+    $USER = 'testing';
+    $PASS = 'letmein';
+
+    // Produce
+    $sParams = array('host' => 'localhost',
                      'port' => 5672,
-                     'username' => 'guest',
-                     'userpass' => 'guest',
-                     'vhost' => '/');
+                     'username' => $USER,
+                     'userpass' => $PASS,
+                     'vhost' => $VH);
     $connFact = new amqp\ConnectionFactory($sParams);
     $conn = $connFact->newConnection();
     $chan = $conn->getChannel();
-    // queue_declare, exchange_declare, queue_bind, basic_consume
+
+
+    // Declare the exchange
+    $excDecl = $chan->exchange('declare', array('reserved-1' => $chan->getTicket(),
+                                                'type' => 'direct',
+                                                'durable' => true,
+                                                'exchange' => $EX));
+    $chan->invoke($excDecl);
+
+    // Declare the queue
+    $qDecl = $chan->queue('declare', array('reserved-1' => $chan->getTicket(),
+                                           'queue' => $Q));
+    $chan->invoke($qDecl);
+
+    // Bind Q to EX
+    $qBind = $chan->queue('bind', array('reserved-1' => $chan->getTicket(),
+                                        'queue' => $Q,
+                                        'exchange' => $EX));
+    $chan->invoke($qBind);
+
+    // Consume messages forever
+    $chan->consume(new DebugConsumer, array('reserved-1' => $chan->getTicket(),
+                                            'queue' => $Q,
+                                            'no-local' => true,
+                                            'no-ack' => true,
+                                            'exclusive' => false,
+                                            'no-wait' => false)); // Blocks indefinitely
 }
 
 
