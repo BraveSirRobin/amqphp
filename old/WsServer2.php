@@ -412,7 +412,7 @@ class WsClient
      */
     final function onReadReady($loopId) {
         $buff = $tmp = '';
-        $br = $expectedBytes = 0;
+        $br = 0;
         while ($brNow = @socket_recv($this->sock, $tmp, self::BUFF_LEN, MSG_DONTWAIT)) {
             $buff .= $tmp;
             $br += $brNow;

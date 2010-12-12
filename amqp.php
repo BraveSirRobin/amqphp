@@ -387,8 +387,10 @@ class Connection
                     $chan->handleChannelMessage($newMeth);
                 } else {
                     // Unexpected. ???
-                    $hd = wire\hexdump($meth->toBin());
-                    throw new \Exception("Unexpected method:\n$hd", 8795);
+                    throw new \Exception(sprintf("Received unexpected response in sendMethod for %s.%s:\n%s",
+                                                 $meth->getMethodProto()->getSpecName(),
+                                                 $meth->getClassProto()->getSpecName(),
+                                                 wire\hexdump($raw)), 8795);
                 }
             }
         } else {
@@ -430,8 +432,13 @@ class Connection
                 : @socket_select($read, $write, $ex, $this->blockTmSecs, $this->blockTmMillis);
             if ($select === false) {
                 $errNo = socket_last_error();
+                if ($errNo = SOCKET_EINTR) {
+                    // If shutdown signal handlers have been set up, allow these the chance to shutdown
+                    // gracefully before throwing the exception
+                    pcntl_signal_dispatch();
+                }
                 $errStr = socket_strerror($errNo);
-                throw new Exception ("Read block select produced an error: $errStr", 9963);
+                throw new \Exception ("Read block select produced an error: [$errNo] $errStr", 9963);
             } else if ($select > 0) {
                 // Check for content or exceptions
                 if ($ex) {
@@ -466,11 +473,8 @@ class Connection
                                 } else if ($meth->getWireChannel() && isset($this->chans[$meth->getWireChannel()])) {
                                     // We expect the Consumer to be called here, if appropriate
                                     $response = $this->chans[$meth->getWireChannel()]->handleChannelMessage($meth);
-                                    if ($response == CONSUME_BREAK) {
-                                        // TODO: What to do with other messages?
-                                        break 2;
-                                    } else if ($response instanceof wire\Method) {
-                                        $this->sendMethod($meth);
+                                    if ($response instanceof wire\Method) {
+                                        $this->sendMethod($response);
                                     }
                                 } else {
                                     throw new \Exception("Failed to deliver incoming message", 9045);
@@ -494,7 +498,6 @@ class Connection
                         throw $e;
                     }
                 }
-                $cons->onSelectLoop();
             }
         }
         $this->blocking = false;
@@ -640,13 +643,16 @@ class Channel
             throw new \Exception($em, $n);
         case 'deliver':
             if ($this->consumer) {
-                return $this->consumer->onMessageReceive($meth);
+                return $this->consumer->handleDelivery($meth);
             } else {
                 throw new \Exception("Unexpected message received", 9875);
             }
         default:
-            $hd = wire\hexdump($meth->toBin());
-            throw new \Exception("Unexpected method:\n$hd", 8795);
+            $hd = '';
+            foreach ($meth->toBin() as $i => $bin) {
+                $hd .= sprintf("  --(part %d)--\n%s\n", $i+1, wire\hexdump($bin));
+            }
+            throw new \Exception("Received unexpected channel method:\n$hd", 8795);
         }
     }
 
@@ -667,6 +673,7 @@ class Channel
         }
         $this->consumer = $cons;
         $cOk = $this->invoke($this->basic('consume', $consumeParams));
+        $cons->handleConsumeOk($cOk, $this);
         /** Calling readBlock means the code goes in to an indefinite read loop */
         $this->myConn->readBlock($this->consumer);
 
@@ -675,14 +682,17 @@ class Channel
     }
 }
 
-/** Callback object specification for blocking consumer */
+// Interface for a simple blocking consumer - modelled on the RMQ Java here:
+// http://www.rabbitmq.com/releases/rabbitmq-java-client/v2.2.0/rabbitmq-java-client-javadoc-2.2.0/com/rabbitmq/client/Consumer.html
 interface Consumer
 {
-    // Messages are delivered to this function
-    function onMessageReceive (wire\Method $meth);
+    function handleCancelOk ();
 
-    // Callback invoked by the select loop, called regardless of whether
-    // and messages were delivered.  Should only be called when select
-    // is called with a timeout
-    function onSelectLoop ();
+    function handleConsumeOk (wire\Method $meth, Channel $chan);
+
+    function handleDelivery (wire\Method $meth);
+
+    function handleRecoveryOk ();
+
+    function handleShutdownSignal ();
 }
