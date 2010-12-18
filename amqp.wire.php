@@ -758,7 +758,12 @@ class Method
             case 1:
                 // Load in method and method fields
                 $this->readMethodContent($src, $wireSize);
-                break;
+                // Exit immediately for methods that don't take content
+                if ($this->methProto->getSpecHasContent()) {
+                    break;
+                } else {
+                    break 2;
+                }
             case 2:
                 // Load in content header and property flags
                 $this->readContentHeaderContent($src, $wireSize);

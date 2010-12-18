@@ -16,7 +16,9 @@ class DebugConsumer implements amqp\Consumer
     private $i = 0;
     private $myChan;
 
-    function handleCancelOk () {}
+    function handleCancelOk () {
+        return amqp\CONSUME_HALT;
+    }
 
     function handleConsumeOk (wire\Method $meth, amqp\Channel $chan) {
         $this->myChan = $chan;
@@ -28,12 +30,19 @@ class DebugConsumer implements amqp\Consumer
                $meth->getMethodProto()->getSpecName(),
                $meth->getField('delivery-tag'),
                $meth->getContent());
+
         if ((++$this->i % 3) == 0) {
             // reject every third message
             printf(" [reject message %d]\n", $meth->getField('delivery-tag'));
             $resp = new wire\Method(protocol\ClassFactory::GetClassByName('basic')->getMethodByName('reject'), $meth->getWireChannel());
             $resp->setField('delivery-tag', $meth->getField('delivery-tag'));
             $resp->setField('requeue', true);
+            return $resp;
+        } else if (($this->i % 50) == 0) {
+            printf("Done 50, going to sleep...\n");
+            $resp = new wire\Method(protocol\ClassFactory::GetClassByName('basic')->getMethodByName('cancel'), $meth->getWireChannel());
+            $resp->setField('consumer-tag', $meth->getField('consumer-tag'));
+            $resp->setField('no-wait', true);
             return $resp;
         } else {
             $resp = new wire\Method(protocol\ClassFactory::GetClassByName('basic')->getMethodByName('ack'), $meth->getWireChannel());
@@ -56,7 +65,7 @@ class DebugConsumer implements amqp\Consumer
 $VH_NAME = 'robin';
 $EX = 'router3';
 $EX_TYPE = 'fanout';
-$Q = 'newq-3';
+$Q = 'newq-2';
 $USER = 'testing';
 $PASS = 'letmein';
 $HOST = 'localhost';
@@ -261,6 +270,7 @@ function methodToXml (wire\Method $meth) {
     $w->startElement('msg');
     $w->writeAttribute('class', $meth->getClassProto()->getSpecName());
     $w->writeAttribute('method', $meth->getMethodProto()->getSpecName());
+    $w->writeAttribute('channel', $meth->getWireChannel());
     $w->startElement('class-fields');
     if ($meth->getClassFields()) {
         foreach ($meth->getClassFields() as $fn => $fv) {

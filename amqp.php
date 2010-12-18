@@ -12,6 +12,18 @@
  *  (2) WRT REF_NOTE_1 : the loop exit tracking at REF_NOTE_1 duplicates the wire\Reader::isSpent()
  *      functionality.  Consider switching the code so that the wire\Method is either passed in to the
  *      constructor OR made available via. an accessor so that the duplication can be removed
+ *  (3) Fix the situation where Connection->sendMethod() gets confused by messages received due
+ *      to Connection->readBlock().  Deliver all unexpeected channel messages to the channel objects
+ *  (4) Support concurrent per-channel consumers, enforce the per-channel-ness
+ *  (4.1) Refactor Connection->readBlock to be static, support round-robin concurrent content publication,
+ *        reads will still be synchronous.
+ *  (4.2) Create a more defined API contract between Channel and Consumer - don't pass Method objects back
+ *        from Consumer, define signals that the Consumer returns to Channel that trigger sending methods.
+ *  (4.3) Have some (4.2) return signals to do the following: "ack message", "reject message",  "cancel and 
+ *        reject all messages", "cancel and ack all messages"
+ *  (4.1) Prevent simultaneous use of synchronous and asynchronous API - make this an "API simplification
+ *        feature"
+ *  (5) Test sending/receiving large messages in multiple frames
  */
 
 namespace amqp_091;
@@ -29,7 +41,7 @@ require('gencode/amqp.0_9_1.php');
 const DEBUG = false;
 
 /** Flag is passed by a Consumer to a Connection (via. a channel) to indicate that it wants to stop consuming */
-const CONSUME_BREAK = 1;
+const CONSUME_HALT = 1;
 
 
 /**
@@ -355,6 +367,8 @@ class Connection
 
     /**
      * Write the given method to the wire and loop waiting for the response.
+     * This method is not suitable for use with consumers, because it can't
+     * handle additional frames after the response method.
      */
     function sendMethod (wire\Method $meth) {
         // TODO: Examine $blocking flag, might need to warn / error
@@ -366,7 +380,9 @@ class Connection
             // Allow other traffic through - content, heartbeats, etc.
             while (true) { // TODO: Limit counter?
                 if (! ($raw = $this->read())) {
-                    throw new \Exception("Send message failed (2)", 5624);
+                    throw new \Exception(sprintf("(2) Send message failed for %s.%s:\n",
+                                                 $meth->getClassProto()->getSpecName(),
+                                                 $meth->getMethodProto()->getSpecName()), 5624);
                 }
                 $newMeth = new wire\Method($raw);
                 while (! $newMeth->readConstructComplete()) {
@@ -387,9 +403,10 @@ class Connection
                     $chan->handleChannelMessage($newMeth);
                 } else {
                     // Unexpected. ???
+                    printf("Unexpected method object:\n%s\n", methodToXml($newMeth));
                     throw new \Exception(sprintf("Received unexpected response in sendMethod for %s.%s:\n%s",
-                                                 $meth->getMethodProto()->getSpecName(),
                                                  $meth->getClassProto()->getSpecName(),
+                                                 $meth->getMethodProto()->getSpecName(),
                                                  wire\hexdump($raw)), 8795);
                 }
             }
@@ -441,12 +458,6 @@ class Connection
                 throw new \Exception ("Read block select produced an error: [$errNo] $errStr", 9963);
             } else if ($select > 0) {
                 // Check for content or exceptions
-                if ($ex) {
-                    $this->blocking = false;
-                    $errNo = socket_last_error();
-                    $errStr = socket_strerror($errNo);
-                    //throw new \Exception("Socket read exception: [$errNo]: $errStr", 9873);
-                }
                 if ($read) {
                     // Read content, construct a message and deliver it to appropriate callback
                     $buff = $tmp = '';
@@ -475,6 +486,9 @@ class Connection
                                     $response = $this->chans[$meth->getWireChannel()]->handleChannelMessage($meth);
                                     if ($response instanceof wire\Method) {
                                         $this->sendMethod($response);
+                                    } else if ($response == CONSUME_HALT) {
+                                        printf("\n\nConsume end here!!!!\n\n");
+                                        break 2;
                                     }
                                 } else {
                                     throw new \Exception("Failed to deliver incoming message", 9045);
@@ -647,6 +661,14 @@ class Channel
             } else {
                 throw new \Exception("Unexpected message received", 9875);
             }
+            break;
+        case 'cancel-ok':
+            if ($this->consumer) {
+                return $this->consumer->handleCancelOk($meth);
+            } else {
+                throw new \Exception("Unexpected message received", 9875);
+            }
+            break;
         default:
             $hd = '';
             foreach ($meth->toBin() as $i => $bin) {
