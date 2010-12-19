@@ -758,7 +758,9 @@ class Method
                 if ($this->methProto->getSpecHasContent()) {
                     break;
                 } else {
-                    break 2;
+                    //break 2;
+                    $break = true;
+                    break;
                 }
             case 2:
                 // Load in content header and property flags
