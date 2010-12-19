@@ -9,9 +9,6 @@
 /**
  * TODO:
  *  (1) Implement exceptions for Amqp 'events', i.e. channel / connection exceptions, etc.
- *  (2) WRT REF_NOTE_1 : the loop exit tracking at REF_NOTE_1 duplicates the wire\Reader::isSpent()
- *      functionality.  Consider switching the code so that the wire\Method is either passed in to the
- *      constructor OR made available via. an accessor so that the duplication can be removed
  *  (3) Fix the situation where Connection->sendMethod() gets confused by messages received due
  *      to Connection->readBlock().  Deliver all unexpeected channel messages to the channel objects
  *  (4) Support concurrent per-channel consumers, enforce the per-channel-ness
@@ -36,12 +33,21 @@ require('amqp.protocol.abstrakt.php');
 require('gencode/amqp.0_9_1.php');
 
 
-
+/**
+ * CONS_ACK - ack single message
+ * CONS_REJECT - reject single message
+ * CONS_SHUTDOWN - shut down and ignore all undelivered messages
+ * CONS_SHUTDOWN | CONS_REJECT_ALL - shut down and reject all undelivered messages
+ * CONS_SHUTDOWN | CONS_ACK_ALL - shut down and ack all undelivered messages
+ */
+const CONS_ACK = 1;
+const CONS_REJECT = 2;
+const CONS_SHUTDOWN = 4;
+const CONS_REJECT_ALL = 8;
+const CON_ACK_ALL = 16;
 
 const DEBUG = false;
 
-/** Flag is passed by a Consumer to a Connection (via. a channel) to indicate that it wants to stop consuming */
-const CONSUME_HALT = 1;
 
 
 /**
@@ -268,7 +274,10 @@ class Connection
         if ($this->chanMax > 0 && $newChan > $this->chanMax) {
             throw new \Exception("Channels are exhausted!", 23756);
         }
-        return ($this->chans[$newChan] = new Channel($this, $newChan, $this->vhost, $this->frameMax));
+        // HERE:  Channel setup code calls back to connection, which can't find channel.  Chicken / Egg
+        $this->chans[$newChan] = new Channel($this, $newChan, $this->vhost, $this->frameMax);
+        $this->chans[$newChan]->initChannel();
+        return $this->chans[$newChan];
     }
 
 
@@ -369,8 +378,8 @@ class Connection
      * Write the given method to the wire and loop waiting for the response.
      * This method is not suitable for use with consumers, because it can't
      * handle additional frames after the response method.
-     */
-    function sendMethod (wire\Method $meth) {
+
+    function sendMethodOld (wire\Method $meth) {
         // TODO: Examine $blocking flag, might need to warn / error
         // Check for incoming data, if found, process in case it's an exception
         if (! ($this->write($meth->toBin()))) {
@@ -385,6 +394,7 @@ class Connection
                                                  $meth->getMethodProto()->getSpecName()), 5624);
                 }
                 $newMeth = new wire\Method($raw);
+                // 
                 while (! $newMeth->readConstructComplete()) {
                     $newMeth->debug_TODO_deleteme();
                     if (! ($raw = $this->read())) {
@@ -400,21 +410,21 @@ class Connection
                     $this->handleConnectionMessage($newMeth);
                 } else if ($newMeth->getWireClassId() == 20 &&
                            ($chan = $this->chans[$newMeth->getWireChannel()])) {
+                    // Deliver channel messages immediately
                     $chan->handleChannelMessage($newMeth);
                 } else {
-                    // Unexpected. ???
-                    printf("Unexpected method object:\n%s\n", methodToXml($newMeth));
-                    throw new \Exception(sprintf("Received unexpected response in sendMethod for %s.%s:\n%s",
-                                                 $meth->getClassProto()->getSpecName(),
-                                                 $meth->getMethodProto()->getSpecName(),
-                                                 wire\hexdump($raw)), 8795);
+                    // Save for later
+                    //printf("[WARNING] - unDelivered method in sendMethod: ");
+                    printf("Received unexpected response in sendMethod for %s.%s:\n%s",
+                           $meth->getClassProto()->getSpecName(),
+                           $meth->getMethodProto()->getSpecName(),
+                           wire\hexdump($raw));
+                    $this->unDelivered[] = $newMeth;
                 }
             }
-        } else {
-            return null;
         }
     }
-
+     */
 
     function isBlocking () { return $this->isBlocking; }
 
@@ -434,8 +444,8 @@ class Connection
     }
 
     /* Set a read block on $sock in order to receive message via. basic.consume 
-       WARNING: By default, this method will block indefinitely! */
-    function readBlock (Consumer $cons) {
+       WARNING: By default, this method will block indefinitely!
+    function readBlockOld (Consumer $cons) {
         if ($this->blocking) {
             throw new \Exception("Multiple simultaneous read blocking not supported (TODO?)", 6362);
         }
@@ -461,10 +471,8 @@ class Connection
                 if ($read) {
                     // Read content, construct a message and deliver it to appropriate callback
                     $buff = $tmp = '';
-                    $br = 0;
-                    while ($brNow = @socket_recv($this->sock, $tmp, self::READ_LEN, MSG_DONTWAIT)) {
+                    while (@socket_recv($this->sock, $tmp, self::READ_LEN, MSG_DONTWAIT)) {
                         $buff .= $tmp;
-                        $br += $brNow;
                     }
                     //echo "\n\nRead content from wire:\n" . wire\hexdump($buff);
                     if (! $meth) {
@@ -473,10 +481,6 @@ class Connection
                         $meth->readContruct($buff);
                     }
                     try {
-                        $readLen = strlen($buff);
-                        $br = 0;
-                        $break = false;
-                        /** REF_NOTE_1  */
                         while (true) {
                             if ($meth->readConstructComplete()) {
                                 if ($meth->getWireChannel() == 0) {
@@ -486,23 +490,14 @@ class Connection
                                     $response = $this->chans[$meth->getWireChannel()]->handleChannelMessage($meth);
                                     if ($response instanceof wire\Method) {
                                         $this->sendMethod($response);
-                                    } else if ($response == CONSUME_HALT) {
-                                        printf("\n\nConsume end here!!!!\n\n");
-                                        break 2;
                                     }
                                 } else {
                                     throw new \Exception("Failed to deliver incoming message", 9045);
                                 }
                             }
-                            $br += $meth->getBytesRead();
-                            if ($break) {
-                                break;
-                            }
-                            if ($br < $readLen) {
-                                // There's more frames to be had so eat them
-                                $meth = new wire\Method(substr($buff, $br));
+                            if (! $meth->getReader()->isSpent()) {
+                                $meth = new wire\Method($meth->getReader()->getRemainingBuffer());
                             } else {
-                                //$break = true;
                                 break;
                             }
                         }
@@ -515,6 +510,191 @@ class Connection
             }
         }
         $this->blocking = false;
+    }
+    */
+
+
+    private $unDelivered = array();
+    private $unDeliverable = array();
+    private $incompleteMethod = null;
+
+
+    /** Entry */
+    function startConsuming () {
+        foreach ($this->chans as $chan) {
+            $chan->onConsumeStart();
+        }
+        if (! $this->blocking) {
+            $this->consumeSelectLoop();
+            foreach ($this->chans as $chan) {
+                $chan->onConsumeEnd();
+            }
+        }
+    }
+
+
+
+    private function consumeSelectLoop () {
+        if ($this->blocking) {
+            throw new \Exception("Multiple simultaneous read blocking not supported (TODO?)", 6362);
+        }
+        $this->blocking = true;
+        
+        while (true) {
+            $read = $ex = array($this->sock);
+            $write = null;
+            $select = is_null($this->blockTmSecs) ?
+                @socket_select($read, $write, $exc, null)
+                : @socket_select($read, $write, $ex, $this->blockTmSecs, $this->blockTmMillis);
+            if ($select === false) {
+                $errNo = socket_last_error();
+                if ($errNo = SOCKET_EINTR) {
+                    // If shutdown signal handlers have been set up, allow these the chance to shutdown
+                    // gracefully before throwing the exception
+                    pcntl_signal_dispatch();
+                }
+                $errStr = socket_strerror($errNo);
+                throw new \Exception ("Read block select produced an error: [$errNo] $errStr", 9963);
+            } else if ($select > 0 && $read) {
+                // Check for content or exceptions
+                // Read all buffered messages, store these grouped by channel
+                $buff = $tmp = '';
+                while (@socket_recv($this->sock, $tmp, self::READ_LEN, MSG_DONTWAIT)) {
+                    $buff .= $tmp;
+                }
+                if ($buff) {
+                    $meth = $this->incompleteMethod;
+                    $meths = $this->readMessages($buff, $meth);
+                    $c = count($meths);
+                    if (! $meths[$c-1]->readConstructComplete()) {
+                        // Incomplete method, save for later
+                        $this->incompleteMethod = array_pop($meths);
+                    }
+                    if ($meths) {
+                        $this->unDelivered = array_merge($this->unDelivered, $meths);
+                        $this->deliverAll();
+                    }
+                } else {
+                    throw new \Exceptions("Empty read in blocking select loop", 9864);
+                }
+            }
+        }
+        $this->blocking = false;
+    }
+
+
+
+
+
+    function sendMethod (wire\Method $inMeth) {
+        if (! ($this->write($inMeth->toBin()))) {
+            throw new \Exception("Send message failed (1)", 5623);
+        }
+        if ($rTypes = $inMeth->getMethodProto()->getSpecResponseMethods()) {
+            // Allow other traffic through - content, heartbeats, etc.
+            while (true) {
+                if (! ($buff = $this->read())) {
+                    throw new \Exception(sprintf("(2) Send message failed for %s.%s:\n",
+                                                 $inMeth->getClassProto()->getSpecName(),
+                                                 $inMeth->getMethodProto()->getSpecName()), 5624);
+                }
+                $meth = $this->incompleteMethod;
+                $meths = $this->readMessages($buff, $meth);
+                $c = count($meths);
+                if (! $meths[$c-1]->readConstructComplete()) {
+                    // Incomplete method, save for later
+                    $this->incompleteMethod = array_pop($meths);
+                }
+                foreach (array_keys($meths) as $k) {
+                    $meth = $meths[$k];
+                    unset($meths[$k]);
+                    if ($inMeth->isResponse($meth)) {
+                        if ($meths) {
+                            $this->unDelivered = array_merge($this->unDelivered, $meths);
+                        }
+                        return $meth;
+                    } else {
+                        $this->unDelivered[] = $meth;
+                    }
+                }
+            }
+        }
+    }
+
+
+
+
+
+
+    /** Convert the given raw wire content in to Method objects.  Connection
+        and channel messages are delivered immediately and not returned */
+    private function readMessages ($buff, wire\Method $meth = null) {
+        if (! $meth) {
+            $meth = new wire\Method($buff);
+        } else {
+            $meth->readContruct($buff);
+        }
+        $allMeths = array(); // Collect all method here
+        while (true) {
+            //printf ("  [chans]: %s\n", implode(', ', array_keys($this->chans)));
+            if ($meth->readConstructComplete()) {
+                if ($meth->getWireChannel() == 0) {
+                    // Deliver Connection messages immediately
+                    $this->handleConnectionMessage($meth);
+                } else if ($meth->getWireClassId() == 20 &&
+                           ($chan = $this->chans[$meth->getWireChannel()])) {
+                    // Deliver Channel messages immediately
+                    $chanR = $chan->handleChannelMessage($meth);
+                    if ($chanR instanceof wire\Method) {
+                        $this->sendMethod($chanR);
+                    } else if ($chanR === true) {
+                        // This is required to support sending channel messages
+                        $allMeths[] = $meth;
+                    }
+                } else {
+                    $allMeths[] = $meth;
+                }
+            }
+            if (! $meth->getReader()->isSpent()) {
+                $meth = new wire\Method($meth->getReader()->getRemainingBuffer());
+            } else {
+                break;
+            }
+        }
+        return $allMeths;
+    }
+
+
+    private function deliverAll () {
+        foreach (array_keys($this->unDelivered) as $k) {
+            $meth = $this->unDelivered[$k];
+            if (isset($this->chans[$meth->getWireChannel()])) {
+                $this->chans[$meth->getWireChannel()]->onDelivery($meth);
+            } else {
+                trigger_error("Message delivered on unknown channel", E_USER_WARNING);
+                $this->unDeliverable[] = $meth;
+            }
+            unset($this->unDelivered[$k]);
+        }
+    }
+
+    function getUndeliverableMessages ($chan) {
+        $r = array();
+        foreach (array_keys($this->unDeliverable) as $k) {
+            if ($this->unDeliverable[$k]->getWireChannel() == $chan) {
+                $r[] = $this->unDeliverable[$k];
+            }
+        }
+        return $r;
+    }
+
+    /** Remove all undeliverable messages for the given channel */
+    function removeUndeliverableMessages ($chan) {
+        foreach (array_keys($this->unDeliverable) as $k) {
+            if ($this->unDeliverable[$k]->getWireChannel() == $chan) {
+                unset($this->unDeliverable[$k]);
+            }
+        }
     }
 }
 
@@ -543,10 +723,20 @@ class Channel
     /** A Consumer instance to deliver incoming messages to */
     private $consumer;
 
+    /** Params for the basic.consume setup method */
+    private $consumeParams;
+
+    /** Used to track whether the channel.open returned OK. */
+    private $isOpen = false;
+
+
     function __construct (Connection $rConn, $chanId, $frameMax) {
         $this->myConn = $rConn;
         $this->chanId = $chanId;
+        $this->frameMax = $frameMax;
+    }
 
+    function initChannel () {
         $meth = new wire\Method(protocol\ClassFactory::GetMethod('channel', 'open'), $this->chanId);
         $meth->setField('reserved-1', '');
         $resp = $this->myConn->sendMethod($meth);
@@ -620,8 +810,13 @@ class Channel
      * Callback from the Connection object for channel frames
      * @param   $meth           A channel method for this channel
      * @return  mixed           If a method is returned it will be sent by the channel
+     *                          If true, the message will be delivered as normal by the Connection
+     *                          Else, $meth will be removed from delivery queue by the Connection
      */
     function handleChannelMessage (wire\Method $meth) {
+        if ($meth->getClassProto()->getSpecName() != 'channel') {
+            throw new \Exception("Non-channel message delivered to channel responder", 8975);
+        }
         switch ($meth->getMethodProto()->getSpecName()) {
         case 'flow':
             // TODO: Make sure that when shut off, the current message send is cancelled
@@ -655,26 +850,48 @@ class Channel
                 $n = 2435;
             }
             throw new \Exception($em, $n);
-        case 'deliver':
+      /*case 'deliver':
+            // DEPRECATED!!!!
             if ($this->consumer) {
                 return $this->consumer->handleDelivery($meth);
             } else {
                 throw new \Exception("Unexpected message received", 9875);
             }
-            break;
+            break;*/
         case 'cancel-ok':
+            // DEPRECATED!!!!!
             if ($this->consumer) {
                 return $this->consumer->handleCancelOk($meth);
             } else {
                 throw new \Exception("Unexpected message received", 9875);
             }
             break;
+        case 'close-ok':
+        case 'open-ok':
+            return true;
         default:
             $hd = '';
             foreach ($meth->toBin() as $i => $bin) {
                 $hd .= sprintf("  --(part %d)--\n%s\n", $i+1, wire\hexdump($bin));
             }
+            var_dump($meth);
             throw new \Exception("Received unexpected channel method:\n$hd", 8795);
+        }
+    }
+
+    /** Callback for all received content which is not a channel message */
+    function onDelivery (wire\Method $meth) {
+        $cls = $meth->getClassProto()->getSpecName();
+        $mth = $meth->getMethodProto()->getSpecName();
+
+        if ($cls == 'basic' && $mth == 'deliver') {
+            if ($this->consumer) {
+                return $this->consumer->handleDelivery($meth);
+            } else {
+                throw new \Exception("Unexpected message received", 9875);
+            }
+        } else {
+            throw new \Exception("Unexpected method delivery", 3759);
         }
     }
 
@@ -701,6 +918,26 @@ class Channel
 
         $this->invoke($this->basic('cancel', array('consumer-tag' => $cOk->getField('consumer-tag'))));
         $this->consumer = null;
+    }
+
+    function setConsumer (Consumer $cons, array $consumeParams = array()) {
+        $this->consumer = $cons;
+        $this->consumeParams = $consumeParams;
+    }
+
+    private $consuming = false;
+
+    function onConsumeStart () {
+        if (! $this->consuming && $this->consumer) {
+            $cOk = $this->invoke($this->basic('consume', $this->consumeParams));
+            $this->consumer->handleConsumeOk($cOk, $this);
+            $this->consuming = true;
+        }
+    }
+
+    function onConsumeEnd () {
+        // TODO: Call this?!
+        $this->consuming = false;
     }
 }
 

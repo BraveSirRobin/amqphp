@@ -17,7 +17,6 @@ class DebugConsumer implements amqp\Consumer
     private $myChan;
 
     function handleCancelOk () {
-        return amqp\CONSUME_HALT;
     }
 
     function handleConsumeOk (wire\Method $meth, amqp\Channel $chan) {
@@ -243,12 +242,13 @@ function doConsume () {
     //register_shutdown_function($shutdown);
 
     // Consume messages forever, blocks indefinitely
-    $chan->consume(new DebugConsumer, array('reserved-1' => $chan->getTicket(),
-                                            'queue' => $Q,
-                                            'no-local' => true,
-                                            'no-ack' => false,
-                                            'exclusive' => false,
-                                            'no-wait' => false));
+    $chan->setConsumer(new DebugConsumer, array('reserved-1' => $chan->getTicket(),
+                                                'queue' => $Q,
+                                                'no-local' => true,
+                                                'no-ack' => false,
+                                                'exclusive' => false,
+                                                'no-wait' => false));
+    $conn->startConsuming();
 }
 
 
@@ -336,4 +336,19 @@ function getConnection () {
                      'vhost' => $VH_NAME);
     $connFact = new amqp\ConnectionFactory($sParams);
     return $conn = $connFact->newConnection();
+}
+
+// Pretty print the given backtrace, from debug_backtrace, return as string
+function printBacktrace ($bt) {
+    $r = '';
+    foreach ($bt as $t) {
+        if (isset($t['type']) && ($t['type'] == '->' || $t['type'] == '::')) {
+            $r .= sprintf("Class call %s%s%s at %s [%s]\n", $t['class'], $t['type'], $t['function'], basename($t['file']), $t['line']);
+        } else if (isset($t['function'])) {
+            $r .= sprintf("Function call %s at %s [%s]\n", $t['function'], basename($t['file']), $t['line']);
+        } else {
+            $r .= sprintf("File %s [%s]\n", basename($t['file']), $t['line']);
+        }
+    }
+    return $r;
 }

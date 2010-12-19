@@ -695,17 +695,13 @@ class Method
     private $hasMeth = false;
     private $hasCHeader = false;
 
-    /** 
-     * @field $wireType
-     * Frame type of the first frame read by this method.  Note that in some
-     * cases more than one frame of different types will be read in to a single Method object
-     */
-    //private $wireType;
     /** @field $wireChannel  The channel for this method  */
     private $wireChannel; // Read from Amqp frame
     private $wireMethodId; // Read from Amqp method frame
     private $wireClassId; // Read from Amqp method frame
     private $contentSize; // Read from Amqp content header frame
+
+    private $reader; // read mode Reader
 
     /** Total number of bytes read from the wire for this object,
         includes total of method, content header, message body */
@@ -745,7 +741,7 @@ class Method
             return '';
         }
 
-        $src = new Reader($bin);
+        $src = is_string($bin) ? new Reader($bin) : $bin;
 
         $FRME = 206; // TODO!!  UN-HARD CODE!!
         $break = false;
@@ -773,6 +769,7 @@ class Method
                 $break = true;
                 break;
             default:
+                var_dump($wireType);
                 throw new \Exception("Unsupported frame type!", 8674);
             }
             if ($src->read('octet') != $FRME) {
@@ -782,6 +779,7 @@ class Method
                 break;
             }
         }
+        $this->reader = $src;
         $this->bytesRead += $src->getReadPointer();
     }
 
@@ -816,7 +814,7 @@ class Method
         }
         $en = $src->getReadPointer();
         if ($wireSize != ($en - $st)) {
-            throw new \Exception("Invalid message size", 9845);
+            throw new \Exception("Invalid method frame size", 9845);
         }
     }
 
@@ -865,7 +863,7 @@ class Method
         }
         $en = $src->getReadPointer();
         if ($wireSize != ($en - $st)) {
-            throw new \Exception("Invalid message size", 2546);
+            throw new \Exception("Invalid content header frame size", 2546);
         }
     }
 
@@ -876,7 +874,7 @@ class Method
     private function readBodyContent (Reader $src, $wireSize) {
         $buff = $src->readN($wireSize);
         if (strlen($buff) != $wireSize) {
-            throw new \Exception("Invalid content frame " . strlen($buff) . " $wireSize", 76585);
+            throw new \Exception("Invalid content frame size", 76585);
         }
         $this->content .= $buff;
     }
@@ -937,6 +935,13 @@ class Method
         return $this->content;
     }
 
+    function getReader () {
+        if ($this->mode != 'read') {
+            trigger_error("Invalid read mode operation on a non-reading Method", E_USER_WARNING);
+            return null;
+        }
+        return $this->reader;
+    }
 
     function getMethodProto () { return $this->methProto; }
     function getClassProto () { return $this->classProto; }
@@ -950,6 +955,7 @@ class Method
 
     function toBin () {
         if ($this->mode == 'read') {
+            echo printBacktrace(debug_backtrace());
             trigger_error('Invalid serialize operation on a read mode method', E_USER_WARNING);
             return '';
         }
