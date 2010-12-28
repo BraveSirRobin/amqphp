@@ -9,14 +9,12 @@
 /**
  * TODO:
  *  (1) Implement exceptions for Amqp 'events', i.e. channel / connection exceptions, etc.
- *  (4) Support concurrent per-channel consumers, enforce the per-channel-ness
- *  (4.2) Create a more defined API contract between Channel and Consumer - don't pass Method objects back
- *        from Consumer, define signals that the Consumer returns to Channel that trigger sending methods.
- *  (4.3) Have some (4.2) return signals to do the following: "ack message", "reject message",  "cancel and 
- *        reject all messages", "cancel and ack all messages"
- *  (4.1) Prevent simultaneous use of synchronous and asynchronous API - make this an "API simplification
- *        feature"
- *  (5) Test sending/receiving large messages in multiple frames
+ *  (2) Support concurrent per-channel consumers, enforce the per-channel-ness
+ *  (3) Test sending/receiving large messages in multiple frames
+ *  (4) Create a simple-to-use basic Consumer implementation
+ *  (5) Consider switching to use the higher level stream socket PHP funcs - could
+ *      be helpful to be able to use built-in SSL (+ client certs?!)
+ *  (6) Implement default profiles - probably best to use a code generation approach
  */
 
 namespace amqp_091;
@@ -29,16 +27,6 @@ require('amqp.protocol.abstrakt.php');
 require('gencode/amqp.0_9_1.php');
 
 
-/**
- * CONS_ACK - ack single message
- * CONS_REJECT - reject single message
- * CONS_SHUTDOWN - shut down and ignore all undelivered messages
- */
-const CONS_ACK = 1;
-const CONS_REJECT = 2;
-const CONS_SHUTDOWN = 4;
-const CONS_REJECT_ALL = 8; // TODO: Implement or remove
-const CON_ACK_ALL = 16; // TODO: Implement or remove
 
 const DEBUG = false;
 
@@ -145,6 +133,7 @@ class Connection
              trigger_error("Unclean connection shutdown (2)", E_USER_WARNING);
              return;
         }
+        printf("num undelivered:\n%d\n", count($this->unDelivered));
         if (! ($meth = new wire\Method($raw)) && 
             $meth->getClassProto() &&
             $meth->getClassProto()->getSpecName() == 'connection' &&
@@ -278,22 +267,36 @@ class Connection
     function getVHost() { return $this->vhost; }
 
 
-    /**  Low level protocol read function */
+    /** Still 'synchronous', doesn't rely on frame end at end of buffer */
     private function read () {
-        $ret = '';
-        while ($tmp = socket_read($this->sock, self::READ_LEN)) {
-            $ret .= $tmp;
-            $this->br += strlen($tmp);
-            if (substr($tmp, -1) === protocol\FRAME_END) {
-                break;
+        $read = $ex = array($this->sock);
+        $write = null;
+        $buff = $tmp = '';
+        $select = socket_select($read, $write, $ex, 5, 0); // TODO: parameterise wait interval
+        if ($select === false) {
+            $errNo = socket_last_error();
+            if ($errNo = SOCKET_EINTR) {
+                // Select returned because we received a signal, dispatch to signal handlers, if present
+                pcntl_signal_dispatch();
             }
+            $errStr = socket_strerror($errNo);
+            throw new \Exception ("Read block select produced an error: [$errNo] $errStr", 9963);
+        } else if ($select > 0 && $read) {
+            while (@socket_recv($this->sock, $tmp, self::READ_LEN, MSG_DONTWAIT)) {
+                $buff .= $tmp;
+            }
+            //if (substr($buff, -1) != protocol\FRAME_END) {
+            //    trigger_error("TODO: WARNING!!!  Read doesn't end a frame end!", E_USER_WARNING);
+            //}
         }
         if (DEBUG) {
             echo "\n<read>\n";
-            echo wire\hexdump($ret);
+            echo wire\hexdump($buff);
         }
-        return $ret;
+        return $buff;
     }
+
+
     /** Low level protocol write function.  Accepts either single values or
         arrays of content */
     private function write ($buffs) {
@@ -392,8 +395,12 @@ class Connection
 
     /** Entry */
     function startConsuming () {
+        $a = false;
         foreach ($this->chans as $chan) {
-            $chan->onConsumeStart();
+            $a = $chan->onConsumeStart() || $a;
+        }
+        if (! $a) {
+            throw new \Exception("No consumers found in attached channels", 8755);
         }
         if (! $this->blocking) {
             $this->consumeSelectLoop();
@@ -404,7 +411,11 @@ class Connection
     }
 
 
-
+    /**
+     * Blocks indefinitely waiting for messages to consume.  This routine is designed to
+     * handle large prefetch count values by reading all wire content each time it becomes
+     * available then delivereing in order.
+     */
     private function consumeSelectLoop () {
         if ($this->blocking) {
             throw new \Exception("Multiple simultaneous read blocking not supported (TODO?)", 6362);
@@ -415,54 +426,53 @@ class Connection
             $this->deliverAll();
             $read = $ex = array($this->sock);
             $write = null;
+            printf("-CS-SEL- %d-", count($this->unDelivered));
             $select = is_null($this->blockTmSecs) ?
                 @socket_select($read, $write, $exc, null)
                 : @socket_select($read, $write, $ex, $this->blockTmSecs, $this->blockTmMillis);
             if ($select === false) {
                 $errNo = socket_last_error();
                 if ($errNo = SOCKET_EINTR) {
-                    // If shutdown signal handlers have been set up, allow these the chance to shutdown
-                    // gracefully before throwing the exception
+                    // Select returned because we received a signal, dispatch to signal handlers, if present
                     pcntl_signal_dispatch();
                 }
                 $errStr = socket_strerror($errNo);
                 throw new \Exception ("Read block select produced an error: [$errNo] $errStr", 9963);
             } else if ($select > 0 && $read) {
-                // Check for content or exceptions
-                // Read all buffered messages, store these grouped by channel
                 $buff = $tmp = '';
                 while (@socket_recv($this->sock, $tmp, self::READ_LEN, MSG_DONTWAIT)) {
                     $buff .= $tmp;
                 }
                 if ($buff) {
-                    $meth = $this->incompleteMethod;
-                    $meths = $this->readMessages($buff, $meth);
-                    $c = count($meths);
-                    if (! $meths[$c-1]->readConstructComplete()) {
-                        // Incomplete method, save for later
-                        $this->incompleteMethod = array_pop($meths);
-                    }
+                    $meths = $this->readMessages($buff);
                     if ($meths) {
                         $this->unDelivered = array_merge($this->unDelivered, $meths);
-                        $this->deliverAll();
                     }
                 } else {
                     throw new \Exception("Empty read in blocking select loop", 9864);
                 }
             }
+            $this->deliverAll();
         }
         $this->blocking = false;
     }
 
 
-
-
-
-    function sendMethod (wire\Method $inMeth) {
+    /**  
+     * TODO: Amend the logic which decides whether to wait for a response to take
+     * account of the no-wait domain:
+     *   If set, the server will not respond to the method. The client should not wait
+     *   for a reply method. If the server could not complete the method it will raise a
+     *   channel or connection exception.
+     * @arg  Method     $inMeth         The method to send
+     * @arg  boolean    $noWait         Flag that prevents the default behaviour of immediately
+     *                                  waiting for a response - used mainly during consume
+     */
+    function sendMethod (wire\Method $inMeth, $noWait=false) {
         if (! ($this->write($inMeth->toBin()))) {
             throw new \Exception("Send message failed (1)", 5623);
         }
-        if ($rTypes = $inMeth->getMethodProto()->getSpecResponseMethods()) {
+        if (! $noWait && ($rTypes = $inMeth->getMethodProto()->getSpecResponseMethods())) {
             // Allow other traffic through - content, heartbeats, etc.
             while (true) {
                 if (! ($buff = $this->read())) {
@@ -470,13 +480,8 @@ class Connection
                                                  $inMeth->getClassProto()->getSpecName(),
                                                  $inMeth->getMethodProto()->getSpecName()), 5624);
                 }
-                $meth = $this->incompleteMethod;
-                $meths = $this->readMessages($buff, $meth);
-                $c = count($meths);
-                if (! $meths[$c-1]->readConstructComplete()) {
-                    // Incomplete method, save for later
-                    $this->incompleteMethod = array_pop($meths);
-                }
+
+                $meths = $this->readMessages($buff);
                 foreach (array_keys($meths) as $k) {
                     $meth = $meths[$k];
                     unset($meths[$k]);
@@ -496,19 +501,19 @@ class Connection
 
 
 
-
-
     /** Convert the given raw wire content in to Method objects.  Connection
         and channel messages are delivered immediately and not returned */
-    private function readMessages ($buff, wire\Method $meth = null) {
-        if (! $meth) {
+    private function readMessages ($buff) {
+        if (is_null($this->incompleteMethod)) {
             $meth = new wire\Method($buff);
         } else {
+            printf("  --  Split message detected  --\n");
+            $meth = $this->incompleteMethod;
             $meth->readContruct($buff);
+            $this->incompleteMethod = null;
         }
         $allMeths = array(); // Collect all method here
         while (true) {
-            //printf ("  [chans]: %s\n", implode(', ', array_keys($this->chans)));
             if ($meth->readConstructComplete()) {
                 if ($meth->getWireChannel() == 0) {
                     // Deliver Connection messages immediately
@@ -518,7 +523,9 @@ class Connection
                     // Deliver Channel messages immediately
                     $chanR = $chan->handleChannelMessage($meth);
                     if ($chanR instanceof wire\Method) {
-                        $this->sendMethod($chanR);
+                        // TODO: Remove this from here.
+                        printf("(%s.%s)", $chanR->getClassProto()->getSpecName(), $chanR->getMethodProto()->getSpecName());
+                        $this->sendMethod($chanR, true); // SMR
                     } else if ($chanR === true) {
                         // This is required to support sending channel messages
                         $allMeths[] = $meth;
@@ -526,6 +533,14 @@ class Connection
                 } else {
                     $allMeths[] = $meth;
                 }
+            } else {
+                // Special case for a split message, return here so that $this->incompleteMethod remains set
+                if (! $meth->getReader()->isSpent()) {
+                    throw new \Exception("Framing error?  Incomplete method is not last in byte buffer?", 9875);
+                }
+                printf(" -- Save incomplete method %s.%s --\n", $meth->getClassProto()->getSpecName(), $meth->getMethodProto()->getSpecName());
+                $this->incompleteMethod = $meth;
+                break;
             }
             if (! $meth->getReader()->isSpent()) {
                 $meth = new wire\Method($meth->getReader()->getRemainingBuffer());
@@ -544,24 +559,19 @@ class Connection
      * be placed in local queue
      */
     private function deliverAll () {
-        //printf("  [deliver all messages]\n");
-        $resps = array();
-        while ($meth = array_shift($this->unDelivered)) {
+        printf("+DLVR %d+", count($this->unDelivered));
+        while ($this->unDelivered) {
+            $meth = array_shift($this->unDelivered);
             if (isset($this->chans[$meth->getWireChannel()])) {
-                if ($resp = $this->chans[$meth->getWireChannel()]->onDelivery($meth)) {
-                    $resps[] = $resp;
+                if ($resp = $this->chans[$meth->getWireChannel()]->handleChannelMessage($meth)) {
+                    $this->sendMethod($resp, true);
                 }
             } else {
                 trigger_error("Message delivered on unknown channel", E_USER_WARNING);
                 $this->unDeliverable[] = $meth;
             }
         }
-        if ($resps) {
-            foreach ($resps as $resp) {
-                //printf(" [respond]: %s.%s\n", $resp->getClassProto()->getSpecName(), $resp->getMethodProto()->getSpecName());
-                $this->sendMethod($resp);
-            }
-        }
+        printf("-DLVR %d-", count($this->unDelivered));
     }
 
     function getUndeliverableMessages ($chan) {
@@ -612,6 +622,9 @@ class Channel
     /** Params for the basic.consume setup method */
     private $consumeParams;
 
+    /** Switched to true when subscribed as a consumer */
+    private $consuming = false;
+
     /** Used to track whether the channel.open returned OK. */
     private $isOpen = false;
 
@@ -643,7 +656,7 @@ class Channel
 
     /**
      * Implement Amqp protocol methods with method name as Amqp class name.
-     * TODO: Implement defaults profiles
+     *
      * @arg  string   $class       Amqp class
      * @arg  array    $_args       Format: array (<Amqp method name>, <Assoc method/class mixed field array>, <method content>)
      */
@@ -700,18 +713,17 @@ class Channel
      *                          Else, $meth will be removed from delivery queue by the Connection
      */
     function handleChannelMessage (wire\Method $meth) {
-        if ($meth->getClassProto()->getSpecName() != 'channel') {
-            throw new \Exception("Non-channel message delivered to channel responder", 8975);
-        }
-        switch ($meth->getMethodProto()->getSpecName()) {
-        case 'flow':
+        $sid = "{$meth->getClassProto()->getSpecName()}.{$meth->getMethodProto()->getSpecName()}";
+
+        switch ($sid) { //$meth->getMethodProto()->getSpecName()) {
+        case 'channel.flow':
             // TODO: Make sure that when shut off, the current message send is cancelled
             $this->flow = ! $this->flow;
             if ($r = $meth->getMethodProto()->getResponses()) {
                 return $r[0];
             }
             break;
-        case 'close':
+        case 'channel.close':
             if ($culprit = protocol\ClassFactory::GetMethod($meth->getField('class-id'), $meth->getField('method-id'))) {
                 $culprit = "{$culprit->getSpecClass()}.{$culprit->getSpecName()}";
             } else {
@@ -736,9 +748,13 @@ class Channel
                 $n = 2435;
             }
             throw new \Exception($em, $n);
-        case 'close-ok':
-        case 'open-ok':
+        case 'channel.close-ok':
+        case 'channel.open-ok':
             return true;
+        case 'basic.deliver':
+            return $this->consumer->handleDelivery($meth);
+        case 'basic.cancel-ok':
+            return $this->consumer->handleCancelOk($meth);
         default:
             $hd = '';
             foreach ($meth->toBin() as $i => $bin) {
@@ -749,29 +765,6 @@ class Channel
         }
     }
 
-
-    /** Callback for all received content which is not a channel message.  Should only ever be
-        stuff from the basic class */
-    function onDelivery (wire\Method $meth) {
-        $cls = $meth->getClassProto()->getSpecName();
-        $mth = $meth->getMethodProto()->getSpecName();
-
-        if ($cls == 'basic') {
-            if (! $this->consumer) {
-                throw new \Exception("Unexpected message received, no consumer available", 9875);
-            }
-            switch ($mth) {
-            case 'deliver':
-                return $this->consumer->handleDelivery($meth);
-            case 'cancel-ok':
-                return $this->consumer->handleCancelOk($meth);
-            default:
-                throw new \Exception("Unexpected basic method delivery", 3758);
-            }
-        } else {
-            throw new \Exception("Unexpected method delivery", 3759);
-        }
-    }
 
     /** Perform a protocol channel shutdown and remove self from containing Connection  */
     function shutdown () {
@@ -788,7 +781,6 @@ class Channel
         $this->consumeParams = $consumeParams;
     }
 
-    private $consuming = false;
 
     function onConsumeStart () {
         if (! $this->consuming && $this->consumer) {
@@ -796,6 +788,7 @@ class Channel
             $this->consumer->handleConsumeOk($cOk, $this);
             $this->consuming = true;
         }
+        return $this->consuming;
     }
 
     function onConsumeEnd () {
@@ -817,4 +810,27 @@ interface Consumer
     function handleRecoveryOk ();
 
     function handleShutdownSignal ();
+}
+
+class SimpleConsumer implements Consumer
+{
+
+    private $consuming = false;
+
+    function __construct () {
+    }
+
+    function handleCancelOk () {}
+
+    function handleConsumeOk (wire\Method $meth, Channel $chan) {
+        $this->consuming = true;
+    }
+
+    function handleDelivery (wire\Method $meth) {}
+
+    function handleRecoveryOk () {}
+
+    function handleShutdownSignal () {
+        $this->consuming = false;
+    }
 }

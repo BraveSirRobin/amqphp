@@ -684,6 +684,13 @@ class Table implements \ArrayAccess, \Iterator
 /** TODO: Review the read/write mode split */
 class Method
 {
+    /** Used to track progress of read construct */
+    const ST_METH_READ = 1;
+    const ST_CHEAD_READ = 2;
+    const ST_BODY_READ = 4;
+
+    private $rcState = 0; // Holds a bitmask of ST_* consts
+
     private $methProto; // XmlSpecMethod
     private $classProto; // XmlSpecClass
     private $mode; // read,write
@@ -711,6 +718,21 @@ class Method
     function debug_TODO_deleteme () {
         printf("Output info for method %s.%s\n", $this->classProto->getSpecName(), $this->methProto->getSpecName());
         printf(" strlen(this->content): %d\n (this->contentSize - 1): %d", strlen($this->content), ($this->contentSize - 1));
+    }
+
+    function getReadStateAsString () {
+        // Mostly for dev only
+        $buff = '';
+        if ($this->rcState & self::ST_METH_READ) {
+            $buff .= "  Method header is read\n";
+        }
+        if ($this->rcState & self::ST_CHEAD_READ) {
+            $buff .= "  Content header is read\n";
+        }
+        if ($this->rcState & self::ST_BODY_READ) {
+            $buff .= "  Content body is read\n";
+        }
+        return $buff;
     }
 
 
@@ -753,6 +775,7 @@ class Method
             switch ($wireType) {
             case 1:
                 // Load in method and method fields
+                $this->rcState = $this->rcState | self::ST_METH_READ;
                 $this->readMethodContent($src, $wireSize);
                 // Exit immediately for methods that don't take content
                 if ($this->methProto->getSpecHasContent()) {
@@ -764,9 +787,11 @@ class Method
                 }
             case 2:
                 // Load in content header and property flags
+                $this->rcState = $this->rcState | self::ST_CHEAD_READ;
                 $this->readContentHeaderContent($src, $wireSize);
                 break;
             case 3:
+                $this->rcState = $this->rcState | self::ST_BODY_READ;
                 $this->readBodyContent($src, $wireSize);
                 $break = true;
                 break;
@@ -775,7 +800,10 @@ class Method
                 throw new \Exception("Unsupported frame type!", 8674);
             }
             if ($src->read('octet') != $FRME) {
-                throw new \Exception("Framing exception - missed frame end", 8763);
+                throw new \Exception(sprintf("Framing exception - missed frame end (%s.%s)",
+                                             $this->classProto->getSpecName(),
+                                             $this->methProto->getSpecName()
+                                             ), 8763);
             }
             if ($break) {
                 break;
@@ -806,7 +834,8 @@ class Method
         } else if (null === ($this->wireMethodId = $src->read('short'))) {
             throw new \Exception("Failed to read method ID from frame", 6547);
         } else if (! ($this->classProto = proto\ClassFactory::GetClassByIndex($this->wireClassId))) {
-            throw new \Exception("Failed to construct class prototype", 9875);
+            throw new \Exception(sprintf("Failed to construct class prototype for class ID %s",
+                                         $this->wireClassId), 9875);
         } else if (! ($this->methProto = $this->classProto->getMethodByIndex($this->wireMethodId))) {
             throw new \Exception("Failed to construct method prototype", 5645);
         }
@@ -826,10 +855,14 @@ class Method
         if (null === ($wireClassId = $src->read('short'))) {
             throw new \Exception("Failed to read class ID from frame", 3684);
         }
-        if (is_null($this->wireClassId) && ! ($this->classProto = proto\ClassFactory::GetClassByIndex($this->wireClassId))) {
+        if (is_null($this->wireClassId) && ! ($this->classProto = proto\ClassFactory::GetClassByIndex($wireClassId))) {
             throw new \Exception("Failed to construct class prototype", 9875);
         } else if ($wireClassId != $this->wireClassId) {
-            throw new \Exception("Unexpected class in content header", 5434);
+            $bt = debug_backtrace();
+            printf("Method class state:\n%s", $this->getReadStateAsString());
+            printf("Backtrace:\n%s\n...done....\n", printBacktrace($bt));
+            throw new \Exception(sprintf("Unexpected class in content header (%d, %d)",
+                                         $wireClassId, $this->wireClassId), 5434);
         }
 
         if ($src->read('short') === null) {
@@ -884,7 +917,18 @@ class Method
     /* This for content messages, has the full message been read from the wire yet?  */
     function readConstructComplete () {
         //printf("[readConstructComplete] hasContent: %d, content-len: %d, contentSize: %d\n", $this->methProto->getSpecHasContent(), strlen($this->content), $this->contentSize);
-        return (! $this->methProto->getSpecHasContent() || (strlen($this->content) <= $this->contentSize));
+        if (! is_object($this->methProto)) {
+            printf("Error condition about to trigger, type of proto is %s..\n", gettype($this->methProto));
+            printf("Read construct state:\n%s\n", $this->getReadStateAsString());
+            $bt = debug_backtrace();
+            echo printBacktrace($bt);
+        }
+        //return (! $this->methProto->getSpecHasContent() || (strlen($this->content) <= $this->contentSize));
+        if (! $this->methProto->getSpecHasContent()) {
+            return (boolean) $this->rcState & self::ST_METH_READ;
+        } else {
+            return ($this->rcState & self::ST_CHEAD_READ) && (strlen($this->content) <= $this->contentSize);
+        }
     }
 
     function getBytesRead () { return $this->bytesRead; }

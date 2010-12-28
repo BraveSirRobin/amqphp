@@ -16,12 +16,15 @@ class DebugConsumer implements amqp\Consumer
     private $i = 0;
     private $myChan;
     private $myName;
+    private $cancelled = false;
 
     function __construct ($myName) {
         $this->myName = $myName;
     }
 
     function handleCancelOk () {
+        printf("Received Cancel-OK\n");
+        $this->cancelled = true;
     }
 
     function handleConsumeOk (wire\Method $meth, amqp\Channel $chan) {
@@ -29,30 +32,33 @@ class DebugConsumer implements amqp\Consumer
     }
 
     function handleDelivery (wire\Method $meth) {
-        printf("(%s, %s.%s, %s):\n  %s\n",
+        /*printf("(%s, %s.%s, %s):\n  %s\n",
                $this->myName,
                $meth->getClassProto()->getSpecName(),
                $meth->getMethodProto()->getSpecName(),
                $meth->getField('delivery-tag'),
-               $meth->getContent());
-
-        if ((++$this->i % 3) == 0) {
+               $meth->getContent());*/
+        ++$this->i;
+        if ($this->cancelled || (($this->i % 3) == 0)) {
             // reject every third message
-            printf(" [reject message %d]\n", $meth->getField('delivery-tag'));
+            //printf(" [reject message %d]\n", $meth->getField('delivery-tag'));
             $resp = new wire\Method(protocol\ClassFactory::GetMethod('basic', 'reject'), $meth->getWireChannel());
             $resp->setField('delivery-tag', $meth->getField('delivery-tag'));
             $resp->setField('requeue', true);
+            echo "r";
             return $resp;
         } else if (($this->i % 50) == 0) {
-            printf("\n\n\n\n\n\n\n\n\n\n\nSend basic.cancel\n\n\n\n\n\n\n\n\n\n\n\n\n");
+            printf("+BC+");
             $resp = new wire\Method(protocol\ClassFactory::GetMethod('basic', 'cancel'), $meth->getWireChannel());
             $resp->setField('consumer-tag', $meth->getField('consumer-tag'));
             $resp->setField('no-wait', false);
+            $this->cancelled = true;
             return $resp;
         } else {
             $resp = new wire\Method(protocol\ClassFactory::GetMethod('basic', 'ack'), $meth->getWireChannel());
             $resp->setField('delivery-tag', $meth->getField('delivery-tag'));
             $resp->setField('multiple', false);
+            echo "a";
             return $resp;
         }
     }
@@ -242,27 +248,27 @@ function doConsume () {
                                         'exchange' => $EX));
     $chan->invoke($qBind);
 
-    $shutdown = function () use ($conn) { echo "Do channel shutdown\n"; $conn->shutdown(); die; };
+    $shutdown = function () use ($conn) { echo "\nDo channel shutdown\n"; $conn->shutdown(); die; };
     pcntl_signal(SIGINT, $shutdown); 
     pcntl_signal(SIGTERM, $shutdown);
     //register_shutdown_function($shutdown);
 
 
     $chan->setConsumer(new DebugConsumer('first'), array('reserved-1' => $chan->getTicket(),
-                                                'queue' => $Q,
-                                                'no-local' => true,
-                                                'no-ack' => false,
-                                                'exclusive' => false,
-                                                'no-wait' => false));
+                                                         'queue' => $Q,
+                                                         'no-local' => true,
+                                                         'no-ack' => false,
+                                                         'exclusive' => false,
+                                                         'no-wait' => false));
 
     // Create a second channel to receive messages on
     $chan2 = $conn->getChannel();
     $chan2->setConsumer(new DebugConsumer('second'), array('reserved-1' => $chan2->getTicket(),
-                                                'queue' => $Q,
-                                                'no-local' => true,
-                                                'no-ack' => false,
-                                                'exclusive' => false,
-                                                'no-wait' => false));
+                                                           'queue' => $Q,
+                                                           'no-local' => true,
+                                                           'no-ack' => false,
+                                                           'exclusive' => false,
+                                                           'no-wait' => false));
 
     // Consume messages forever, blocks indefinitely
     try {
