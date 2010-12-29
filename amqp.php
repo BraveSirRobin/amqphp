@@ -8,6 +8,7 @@
 
 /**
  * TODO:
+ *  (A) Confirm whether the Connection->read method needs to cache partial frame reads
  *  (1) Implement exceptions for Amqp 'events', i.e. channel / connection exceptions, etc.
  *  (2) Support concurrent per-channel consumers, enforce the per-channel-ness
  *  (3) Test sending/receiving large messages in multiple frames
@@ -272,7 +273,9 @@ class Connection
         $read = $ex = array($this->sock);
         $write = null;
         $buff = $tmp = '';
+        $st = microtime(true);
         $select = socket_select($read, $write, $ex, 5, 0); // TODO: parameterise wait interval
+        printf("(R_SEL %s)", bcsub((string) microtime(true), (string) $st, 4));
         if ($select === false) {
             $errNo = socket_last_error();
             if ($errNo = SOCKET_EINTR) {
@@ -285,9 +288,9 @@ class Connection
             while (@socket_recv($this->sock, $tmp, self::READ_LEN, MSG_DONTWAIT)) {
                 $buff .= $tmp;
             }
-            //if (substr($buff, -1) != protocol\FRAME_END) {
-            //    trigger_error("TODO: WARNING!!!  Read doesn't end a frame end!", E_USER_WARNING);
-            //}
+            if (substr($buff, -1) != protocol\FRAME_END) {
+                trigger_error("TODO: WARNING!!!  Read doesn't end a frame end!", E_USER_WARNING);
+            }
         }
         if (DEBUG) {
             echo "\n<read>\n";
@@ -426,10 +429,12 @@ class Connection
             $this->deliverAll();
             $read = $ex = array($this->sock);
             $write = null;
-            printf("-CS-SEL- %d-", count($this->unDelivered));
+            $st = microtime(true);
             $select = is_null($this->blockTmSecs) ?
                 @socket_select($read, $write, $exc, null)
                 : @socket_select($read, $write, $ex, $this->blockTmSecs, $this->blockTmMillis);
+            $en = microtime(true);
+            printf("(CS_SEL %s)", bcsub((string) $en, (string) $st, 4));
             if ($select === false) {
                 $errNo = socket_last_error();
                 if ($errNo = SOCKET_EINTR) {
@@ -443,11 +448,8 @@ class Connection
                 while (@socket_recv($this->sock, $tmp, self::READ_LEN, MSG_DONTWAIT)) {
                     $buff .= $tmp;
                 }
-                if ($buff) {
-                    $meths = $this->readMessages($buff);
-                    if ($meths) {
-                        $this->unDelivered = array_merge($this->unDelivered, $meths);
-                    }
+                if ($buff && ($meths = $this->readMessages($buff))) {
+                    $this->unDelivered = array_merge($this->unDelivered, $meths);
                 } else {
                     throw new \Exception("Empty read in blocking select loop", 9864);
                 }
@@ -507,7 +509,7 @@ class Connection
         if (is_null($this->incompleteMethod)) {
             $meth = new wire\Method($buff);
         } else {
-            printf("  --  Split message detected  --\n");
+            //printf("  --  Split message detected  --\n");
             $meth = $this->incompleteMethod;
             $meth->readContruct($buff);
             $this->incompleteMethod = null;
@@ -523,8 +525,7 @@ class Connection
                     // Deliver Channel messages immediately
                     $chanR = $chan->handleChannelMessage($meth);
                     if ($chanR instanceof wire\Method) {
-                        // TODO: Remove this from here.
-                        printf("(%s.%s)", $chanR->getClassProto()->getSpecName(), $chanR->getMethodProto()->getSpecName());
+                        //printf("(%s.%s)", $chanR->getClassProto()->getSpecName(), $chanR->getMethodProto()->getSpecName());
                         $this->sendMethod($chanR, true); // SMR
                     } else if ($chanR === true) {
                         // This is required to support sending channel messages
@@ -538,7 +539,7 @@ class Connection
                 if (! $meth->getReader()->isSpent()) {
                     throw new \Exception("Framing error?  Incomplete method is not last in byte buffer?", 9875);
                 }
-                printf(" -- Save incomplete method %s.%s --\n", $meth->getClassProto()->getSpecName(), $meth->getMethodProto()->getSpecName());
+                //printf(" -- Save incomplete method %s.%s --\n", $meth->getClassProto()->getSpecName(), $meth->getMethodProto()->getSpecName());
                 $this->incompleteMethod = $meth;
                 break;
             }
@@ -559,11 +560,11 @@ class Connection
      * be placed in local queue
      */
     private function deliverAll () {
-        printf("+DLVR %d+", count($this->unDelivered));
+        printf("(+DLVR %d)", count($this->unDelivered));
         while ($this->unDelivered) {
             $meth = array_shift($this->unDelivered);
             if (isset($this->chans[$meth->getWireChannel()])) {
-                if ($resp = $this->chans[$meth->getWireChannel()]->handleChannelMessage($meth)) {
+                if (($resp = $this->chans[$meth->getWireChannel()]->handleChannelMessage($meth)) instanceof wire\Method) {
                     $this->sendMethod($resp, true);
                 }
             } else {
@@ -571,7 +572,7 @@ class Connection
                 $this->unDeliverable[] = $meth;
             }
         }
-        printf("-DLVR %d-", count($this->unDelivered));
+        printf("(-DLVR %d)", count($this->unDelivered));
     }
 
     function getUndeliverableMessages ($chan) {
@@ -603,8 +604,7 @@ class Channel
     /** The channel ID we're linked to */
     private $chanId;
 
-    /** As set by the channel.flow Amqp method, controls whether content can
-        be sent or not */
+    /** As set by the channel.flow Amqp method, controls whether content can be sent or not */
     private $flow = true;
 
     /** Required for RMQ */
@@ -616,17 +616,11 @@ class Channel
     /** Set by negotiation during channel setup */
     private $frameMax;
 
-    /** A Consumer instance to deliver incoming messages to */
-    private $consumer;
-
-    /** Params for the basic.consume setup method */
-    private $consumeParams;
-
-    /** Switched to true when subscribed as a consumer */
-    private $consuming = false;
-
     /** Used to track whether the channel.open returned OK. */
     private $isOpen = false;
+
+    /** Consumers for this channel, format array(array(<Consumer>, <consumer-tag OR false>)+) */
+    private $consumers = array();
 
 
     function __construct (Connection $rConn, $chanId, $frameMax) {
@@ -665,7 +659,7 @@ class Channel
             throw new \Exception("Attempting to use a destroyed channel", 8766);
         }
         $method = (isset($_args[0])) ? $_args[0] : null;
-        $args = (isset($_args[1])) ? $_args[1] : null;
+        $args = (isset($_args[1])) ? $_args[1] : array();
         $content = (isset($_args[2])) ? $_args[2] : null;
 
         if (! ($cls = protocol\ClassFactory::GetClassByName($class))) {
@@ -675,13 +669,19 @@ class Channel
         }
 
         $m = new wire\Method($meth, $this->chanId);
-        if ($meth->getSpecHasContent() && $cls->getSpecFields()) {
-            foreach (array_merge(array_combine($cls->getSpecFields(), array_fill(0, count($cls->getSpecFields()), null)), $args) as $k => $v) {
+        $clsF = $cls->getSpecFields();
+        $mthF = $meth->getSpecFields();
+        if (in_array('reserved-1', $mthF)) {
+            // Helper for RMQ!!!!
+            $args['reserved-1'] = $this->ticket;
+        }
+        if ($meth->getSpecHasContent() && $clsF) {
+            foreach (array_merge(array_combine($clsF, array_fill(0, count($clsF), null)), $args) as $k => $v) {
                 $m->setClassField($k, $v);
             }
         }
-        if ($meth->getSpecFields()) {
-            foreach (array_merge(array_combine($meth->getSpecFields(), array_fill(0, count($meth->getSpecFields()), '')), $args) as $k => $v) {
+        if ($mthF) {
+            foreach (array_merge(array_combine($mthF, array_fill(0, count($mthF), '')), $args) as $k => $v) {
                 $m->setField($k, $v);
             }
         }
@@ -701,9 +701,6 @@ class Channel
         }
         return $this->myConn->sendMethod($m);
     }
-
-    function getTicket () { return $this->ticket; }
-
 
     /**
      * Callback from the Connection object for channel frames
@@ -752,9 +749,20 @@ class Channel
         case 'channel.open-ok':
             return true;
         case 'basic.deliver':
-            return $this->consumer->handleDelivery($meth);
+            if ($cons = $this->getConsumerForTag($meth->getField('consumer-tag'))) {
+                return $cons->handleDelivery($meth);
+            }
+            throw new \Exception("Unknown consumer tag (1) {$meth->getField('consumer-tag')}", 9684);
         case 'basic.cancel-ok':
-            return $this->consumer->handleCancelOk($meth);
+            if ($cons = $this->getConsumerForTag($meth->getField('consumer-tag'))) {
+                return $cons->handleCancelOk($meth);
+            }
+            throw new \Exception("Unknown consumer tag (2)", 9685);
+        case 'basic.recover-ok':
+            if ($cons = $this->getConsumerForTag($meth->getField('consumer-tag'))) {
+                return $cons->handleRecoveryOk($meth);
+            }
+            throw new \Exception("Unknown consumer tag (3)", 9686);
         default:
             $hd = '';
             foreach ($meth->toBin() as $i => $bin) {
@@ -776,19 +784,41 @@ class Channel
         $this->myConn = $this->chanId = $this->ticket = null;
     }
 
-    function setConsumer (Consumer $cons, array $consumeParams = array()) {
-        $this->consumer = $cons;
-        $this->consumeParams = $consumeParams;
+    function addConsumer (Consumer $cons) {
+        foreach ($this->consumers as $c) {
+            if ($c === $cons) {
+                throw new \Exception("Consumer can only be added to channel once", 9684);
+            }
+        }
+        $this->consumers[] = array($cons, false);
+    }
+
+    private function getConsumerForTag ($tag) {
+        foreach ($this->consumers as $c) {
+            if ($c[1] == $tag) {
+                return $c[0];
+            }
+        }
+        return null;
     }
 
 
     function onConsumeStart () {
-        if (! $this->consuming && $this->consumer) {
-            $cOk = $this->invoke($this->basic('consume', $this->consumeParams));
-            $this->consumer->handleConsumeOk($cOk, $this);
-            $this->consuming = true;
+        if (! $this->consumers) {
+            return false;
         }
-        return $this->consuming;
+        foreach (array_keys($this->consumers) as $cnum) {
+            if (false === $this->consumers[$cnum][1]) {
+                $consChan = $this->consumers[$cnum][0]->getConsumeMethod()->getWireChannel();
+                if ($this->chanId !== $consChan) {
+                    throw new \Exception("Consumer has wrong channel", 8734);
+                }
+                $cOk = $this->invoke($this->consumers[$cnum][0]->getConsumeMethod());
+                $this->consumers[$cnum][0]->handleConsumeOk($cOk);
+                $this->consumers[$cnum][1] = $cOk->getField('consumer-tag');
+            }
+        }
+        return true;
     }
 
     function onConsumeEnd () {
@@ -801,36 +831,39 @@ class Channel
 // http://www.rabbitmq.com/releases/rabbitmq-java-client/v2.2.0/rabbitmq-java-client-javadoc-2.2.0/com/rabbitmq/client/Consumer.html
 interface Consumer
 {
-    function handleCancelOk ();
+    function handleCancelOk (wire\Method $meth);
 
-    function handleConsumeOk (wire\Method $meth, Channel $chan);
+    function handleConsumeOk (wire\Method $meth);
 
     function handleDelivery (wire\Method $meth);
 
-    function handleRecoveryOk ();
+    function handleRecoveryOk (wire\Method $meth);
 
     function handleShutdownSignal ();
+
+    function getConsumeMethod ();
 }
 
 class SimpleConsumer implements Consumer
 {
+    protected $consMeth;
+    protected $consuming = false;
 
-    private $consuming = false;
-
-    function __construct () {
+    function __construct (wire\Method $consume = null) {
+        $this->consMeth = $consume ?
+            $consume
+            : protocol\ClassFactory::GetMethod('basic', 'consume');
     }
 
-    function handleCancelOk () {}
+    function handleCancelOk (wire\Method $meth) {}
 
-    function handleConsumeOk (wire\Method $meth, Channel $chan) {
-        $this->consuming = true;
-    }
+    function handleConsumeOk (wire\Method $meth) { $this->consuming = true; }
 
     function handleDelivery (wire\Method $meth) {}
 
-    function handleRecoveryOk () {}
+    function handleRecoveryOk (wire\Method $meth) {}
 
-    function handleShutdownSignal () {
-        $this->consuming = false;
-    }
+    function handleShutdownSignal () { $this->consuming = false; }
+
+    function getConsumeMethod () { return $this->consMeth; }
 }

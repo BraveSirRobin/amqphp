@@ -11,25 +11,24 @@ require('amqp.php');
 
 
 
-class DebugConsumer implements amqp\Consumer
+class DebugConsumer extends amqp\SimpleConsumer
 {
     private $i = 0;
     private $myChan;
     private $myName;
     private $cancelled = false;
 
-    function __construct ($myName) {
+    function __construct (wire\Method $consume = null, $myName) {
+        parent::__construct($consume);
         $this->myName = $myName;
     }
 
-    function handleCancelOk () {
+    function handleCancelOk (wire\Method $meth) {
+        parent::handleCancelOk($meth);
         printf("Received Cancel-OK\n");
         $this->cancelled = true;
     }
 
-    function handleConsumeOk (wire\Method $meth, amqp\Channel $chan) {
-        $this->myChan = $chan;
-    }
 
     function handleDelivery (wire\Method $meth) {
         /*printf("(%s, %s.%s, %s):\n  %s\n",
@@ -62,10 +61,6 @@ class DebugConsumer implements amqp\Consumer
             return $resp;
         }
     }
-
-    function handleRecoveryOk () {}
-
-    function handleShutdownSignal () {}
 }
 
 
@@ -117,25 +112,6 @@ function doProduce ($n) {
     $chan = $conn->getChannel();
 
 
-    // Declare the exchange
-    /*$excDecl = $chan->exchange('declare', array('reserved-1' => $chan->getTicket(),
-                                                'type' => $EX_TYPE,
-                                                'durable' => true,
-                                                'exchange' => $EX));
-                                                $chan->invoke($excDecl);*/
-    /*
-    // Declare the queue
-    $qDecl = $chan->queue('declare', array('reserved-1' => $chan->getTicket(),
-                                           'queue' => $Q));
-    $chan->invoke($qDecl);
-
-    // Bind Q to EX
-    $qBind = $chan->queue('bind', array('reserved-1' => $chan->getTicket(),
-                                        'queue' => $Q,
-                                        'exchange' => $EX));
-    $chan->invoke($qBind);
-    */
-
     // Start a transaction
     //$chan->invoke($chan->tx('select'));
 
@@ -143,7 +119,6 @@ function doProduce ($n) {
     // Pushes content to a queue
     $basicP = $chan->basic('publish', array('content-type' => 'text/plain',
                                             'content-encoding' => 'UTF-8',
-                                            'reserved-1' => $chan->getTicket(),
                                             'routing-key' => '',
                                             'mandatory' => false,
                                             'immediate' => false,
@@ -160,7 +135,7 @@ function doProduce ($n) {
 
 
     // Pull a single message from the queue
-    $basicGet = $chan->basic('get', array('reserved-1' => $chan->getTicket(), 'queue' => $Q));
+    $basicGet = $chan->basic('get', array('queue' => $Q));
     // Suck all content from that Q.
     $contents = array();
     $i = $delTag = 0;
@@ -209,10 +184,6 @@ function doProduce ($n) {
 
     $conn->shutdown();
 
-    /*$excDel = $chan->exchange('delete', array('reserved-1' => $chan->getTicket(),
-                                              'exchange' => $EX));
-                                              $chan->invoke($excDel);*/
-
 }
 
 
@@ -230,20 +201,17 @@ function doConsume () {
 
     // Declare the exchange
 
-    $excDecl = $chan->exchange('declare', array('reserved-1' => $chan->getTicket(),
-                                                'type' => $EX_TYPE,
+    $excDecl = $chan->exchange('declare', array('type' => $EX_TYPE,
                                                 'durable' => true,
                                                 'exchange' => $EX));
     $chan->invoke($excDecl);
 
     // Declare the queue
-    $qDecl = $chan->queue('declare', array('reserved-1' => $chan->getTicket(),
-                                           'queue' => $Q));
+    $qDecl = $chan->queue('declare', array('queue' => $Q));
     $chan->invoke($qDecl);
 
     // Bind Q to EX
-    $qBind = $chan->queue('bind', array('reserved-1' => $chan->getTicket(),
-                                        'queue' => $Q,
+    $qBind = $chan->queue('bind', array('queue' => $Q,
                                         'routing-key' => '',
                                         'exchange' => $EX));
     $chan->invoke($qBind);
@@ -254,21 +222,21 @@ function doConsume () {
     //register_shutdown_function($shutdown);
 
 
-    $chan->setConsumer(new DebugConsumer('first'), array('reserved-1' => $chan->getTicket(),
-                                                         'queue' => $Q,
-                                                         'no-local' => true,
-                                                         'no-ack' => false,
-                                                         'exclusive' => false,
-                                                         'no-wait' => false));
+    $cons1 = $chan->basic('consume', array('queue' => $Q,
+                                           'no-local' => true,
+                                           'no-ack' => false,
+                                           'exclusive' => false,
+                                           'no-wait' => false));
+    $chan->addConsumer(new DebugConsumer($cons1, '{1}'));
 
     // Create a second channel to receive messages on
-    $chan2 = $conn->getChannel();
-    $chan2->setConsumer(new DebugConsumer('second'), array('reserved-1' => $chan2->getTicket(),
-                                                           'queue' => $Q,
-                                                           'no-local' => true,
-                                                           'no-ack' => false,
-                                                           'exclusive' => false,
-                                                           'no-wait' => false));
+    /*$chan2 = $conn->getChannel();
+    $cons2 = $chan2->basic('consume', array('queue' => $Q,
+                                           'no-local' => true,
+                                           'no-ack' => false,
+                                           'exclusive' => false,
+                                           'no-wait' => false));*/
+    $chan->addConsumer(new DebugConsumer($cons1, '{2}'));
 
     // Consume messages forever, blocks indefinitely
     try {
@@ -342,8 +310,7 @@ function deleteExchange () {
     $conn = getConnection();
     $chan = $conn->getChannel();
 
-    $meth = $chan->exchange('delete', array('reserved-1' => $chan->getTicket(),
-                                            'exchange' => $EX,
+    $meth = $chan->exchange('delete', array('exchange' => $EX,
                                             'if-unused' => false));
     $chan->invoke($meth);
 }
