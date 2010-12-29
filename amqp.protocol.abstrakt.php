@@ -253,7 +253,6 @@ abstract class FieldFactory
     }
     final static function GetField ($fName, $mName = '') {
         if (false !== ($f = static::Lookup($fName, $mName))) {
-            //            echo "  [OK] : Return field ($fName, $mName) ($f)\n";
             return is_string(static::$Cache[$f][2]) ?
                 (static::$Cache[$f][2] = new static::$Cache[$f][2])
                 : static::$Cache[$f][2];

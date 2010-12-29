@@ -680,8 +680,10 @@ class Table implements \ArrayAccess, \Iterator
 
 
 
-
-/** TODO: Review the read/write mode split */
+/**
+ * Represents a single Amqp method, either incoming or outgoing.  Note that a
+ * method may be composed of multiple Amqp frames, depending on it's type
+ */
 class Method
 {
     /** Used to track progress of read construct */
@@ -714,11 +716,6 @@ class Method
         includes total of method, content header, message body */
     private $bytesRead = 0;
 
-    // Dev time only!
-    function debug_TODO_deleteme () {
-        printf("Output info for method %s.%s\n", $this->classProto->getSpecName(), $this->methProto->getSpecName());
-        printf(" strlen(this->content): %d\n (this->contentSize - 1): %d", strlen($this->content), ($this->contentSize - 1));
-    }
 
     function getReadStateAsString () {
         // Mostly for dev only
@@ -854,18 +851,10 @@ class Method
         $st = $src->getReadPointer();
         if (null === ($wireClassId = $src->read('short'))) {
             throw new \Exception("Failed to read class ID from frame", 3684);
-        }
-        if (is_null($this->wireClassId) && ! ($this->classProto = proto\ClassFactory::GetClassByIndex($wireClassId))) {
-            throw new \Exception("Failed to construct class prototype", 9875);
         } else if ($wireClassId != $this->wireClassId) {
-            $bt = debug_backtrace();
-            printf("Method class state:\n%s", $this->getReadStateAsString());
-            printf("Backtrace:\n%s\n...done....\n", printBacktrace($bt));
-            throw new \Exception(sprintf("Unexpected class in content header (%d, %d)",
-                                         $wireClassId, $this->wireClassId), 5434);
-        }
-
-        if ($src->read('short') === null) {
+            throw new \Exception(sprintf("Unexpected class in content header (%d, %d) - read state %d",
+                                         $wireClassId, $this->wireClassId, $this->rcState), 5434);
+        } else if ($src->read('short') === null) {
             throw new \Exception("Failed to read pointless weight header field", 3684);
         } else if (null === ($this->contentSize = $src->read('longlong'))) {
             throw new \Exception("Failed to read content size", 9867);
@@ -916,14 +905,6 @@ class Method
 
     /* This for content messages, has the full message been read from the wire yet?  */
     function readConstructComplete () {
-        //printf("[readConstructComplete] hasContent: %d, content-len: %d, contentSize: %d\n", $this->methProto->getSpecHasContent(), strlen($this->content), $this->contentSize);
-        if (! is_object($this->methProto)) {
-            printf("Error condition about to trigger, type of proto is %s..\n", gettype($this->methProto));
-            printf("Read construct state:\n%s\n", $this->getReadStateAsString());
-            $bt = debug_backtrace();
-            echo printBacktrace($bt);
-        }
-        //return (! $this->methProto->getSpecHasContent() || (strlen($this->content) <= $this->contentSize));
         if (! $this->methProto->getSpecHasContent()) {
             return (boolean) $this->rcState & self::ST_METH_READ;
         } else {

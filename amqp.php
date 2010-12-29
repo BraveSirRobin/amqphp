@@ -8,14 +8,12 @@
 
 /**
  * TODO:
- *  (A) Confirm whether the Connection->read method needs to cache partial frame reads
- *  (1) Implement exceptions for Amqp 'events', i.e. channel / connection exceptions, etc.
- *  (2) Support concurrent per-channel consumers, enforce the per-channel-ness
+ *  (1) Confirm whether the Connection->read method needs to cache partial frame reads
+ *  (2) Implement exceptions for Amqp 'events', i.e. channel / connection exceptions, etc.
  *  (3) Test sending/receiving large messages in multiple frames
- *  (4) Create a simple-to-use basic Consumer implementation
- *  (5) Consider switching to use the higher level stream socket PHP funcs - could
+ *  (4) Consider switching to use the higher level stream socket PHP funcs - could
  *      be helpful to be able to use built-in SSL (+ client certs?!)
- *  (6) Implement default profiles - probably best to use a code generation approach
+ *  (5) Implement default profiles - probably best to use a code generation approach
  */
 
 namespace amqp_091;
@@ -106,6 +104,8 @@ class Connection
 
     /** Flag set when connection is in read blocking mode, waiting for messages */
     private $blocking = false;
+    /** Flag is picked up in consume loop and causes it to exit immediately */
+    private $consumeHalt = false;
 
     function __construct ($sock, $username, $userpass, $vhost) {
         $this->sock = $sock;
@@ -413,6 +413,14 @@ class Connection
         }
     }
 
+    function stopConsuming () {
+        if (! $this->blocking) {
+            return false;
+        }
+        $this->consumeHalt = true;
+        return true;
+    }
+
 
     /**
      * Blocks indefinitely waiting for messages to consume.  This routine is designed to
@@ -421,7 +429,7 @@ class Connection
      */
     private function consumeSelectLoop () {
         if ($this->blocking) {
-            throw new \Exception("Multiple simultaneous read blocking not supported (TODO?)", 6362);
+            throw new \Exception("Multiple simultaneous read blocking not supported", 6362);
         }
         $this->blocking = true;
 
@@ -429,6 +437,10 @@ class Connection
             $this->deliverAll();
             $read = $ex = array($this->sock);
             $write = null;
+            if ($this->consumeHalt) {
+                $this->consumeHalt = false;
+                break;
+            }
             $st = microtime(true);
             $select = is_null($this->blockTmSecs) ?
                 @socket_select($read, $write, $exc, null)
@@ -629,6 +641,7 @@ class Channel
         $this->frameMax = $frameMax;
     }
 
+
     function initChannel () {
         $meth = new wire\Method(protocol\ClassFactory::GetMethod('channel', 'open'), $this->chanId);
         $meth->setField('reserved-1', '');
@@ -750,17 +763,17 @@ class Channel
             return true;
         case 'basic.deliver':
             if ($cons = $this->getConsumerForTag($meth->getField('consumer-tag'))) {
-                return $cons->handleDelivery($meth);
+                return $cons->handleDelivery($meth, $this);
             }
             throw new \Exception("Unknown consumer tag (1) {$meth->getField('consumer-tag')}", 9684);
         case 'basic.cancel-ok':
             if ($cons = $this->getConsumerForTag($meth->getField('consumer-tag'))) {
-                return $cons->handleCancelOk($meth);
+                return $cons->handleCancelOk($meth, $this);
             }
             throw new \Exception("Unknown consumer tag (2)", 9685);
         case 'basic.recover-ok':
             if ($cons = $this->getConsumerForTag($meth->getField('consumer-tag'))) {
-                return $cons->handleRecoveryOk($meth);
+                return $cons->handleRecoveryOk($meth, $this);
             }
             throw new \Exception("Unknown consumer tag (3)", 9686);
         default:
@@ -768,7 +781,6 @@ class Channel
             foreach ($meth->toBin() as $i => $bin) {
                 $hd .= sprintf("  --(part %d)--\n%s\n", $i+1, wire\hexdump($bin));
             }
-            var_dump($meth);
             throw new \Exception("Received unexpected channel method:\n$hd", 8795);
         }
     }
@@ -802,7 +814,10 @@ class Channel
         return null;
     }
 
-
+    /**
+     * Channel callback from Connection->startConsuming() - prepare consumers to receive
+     * @return  boolean         Return true if there are consumers present
+     */
     function onConsumeStart () {
         if (! $this->consumers) {
             return false;
@@ -814,7 +829,7 @@ class Channel
                     throw new \Exception("Consumer has wrong channel", 8734);
                 }
                 $cOk = $this->invoke($this->consumers[$cnum][0]->getConsumeMethod());
-                $this->consumers[$cnum][0]->handleConsumeOk($cOk);
+                $this->consumers[$cnum][0]->handleConsumeOk($cOk, $this);
                 $this->consumers[$cnum][1] = $cOk->getField('consumer-tag');
             }
         }
@@ -831,15 +846,15 @@ class Channel
 // http://www.rabbitmq.com/releases/rabbitmq-java-client/v2.2.0/rabbitmq-java-client-javadoc-2.2.0/com/rabbitmq/client/Consumer.html
 interface Consumer
 {
-    function handleCancelOk (wire\Method $meth);
+    function handleCancelOk (wire\Method $meth, Channel $chan);
 
-    function handleConsumeOk (wire\Method $meth);
+    function handleConsumeOk (wire\Method $meth, Channel $chan);
 
-    function handleDelivery (wire\Method $meth);
+    function handleDelivery (wire\Method $meth, Channel $chan);
 
-    function handleRecoveryOk (wire\Method $meth);
+    function handleRecoveryOk (wire\Method $meth, Channel $chan);
 
-    function handleShutdownSignal ();
+    function handleShutdownSignal (Channel $chan);
 
     function getConsumeMethod ();
 }
@@ -855,15 +870,54 @@ class SimpleConsumer implements Consumer
             : protocol\ClassFactory::GetMethod('basic', 'consume');
     }
 
-    function handleCancelOk (wire\Method $meth) {}
+    function handleCancelOk (wire\Method $meth, Channel $chan) {}
 
-    function handleConsumeOk (wire\Method $meth) { $this->consuming = true; }
+    function handleConsumeOk (wire\Method $meth, Channel $chan) { $this->consuming = true; }
 
-    function handleDelivery (wire\Method $meth) {}
+    function handleDelivery (wire\Method $meth, Channel $chan) {}
 
-    function handleRecoveryOk (wire\Method $meth) {}
+    function handleRecoveryOk (wire\Method $meth, Channel $chan) {}
 
-    function handleShutdownSignal () { $this->consuming = false; }
+    function handleShutdownSignal (Channel $chan) { $this->consuming = false; }
 
     function getConsumeMethod () { return $this->consMeth; }
+
+    /**
+     * Helper: return a basic.reject method which rejects the input 
+     * @param  wire\Method     $meth      A method created from basic.deliver
+     * @param  boolean         $requeue   Flag on the returned method, see docs for basic.reject field "requeue"
+     * @return wire\Method                A method which rejects the input
+     */
+    protected function reject (wire\Method $meth, $requeue=true) {
+        $resp = new wire\Method(protocol\ClassFactory::GetMethod('basic', 'reject'), $meth->getWireChannel());
+        $resp->setField('delivery-tag', $meth->getField('delivery-tag'));
+        $resp->setField('requeue', $requeue);
+        return $resp;
+    }
+
+    /**
+     * Helper: return a basic.ack method which acks the input
+     * @param  wire\Method     $meth      A method created from basic.deliver
+     * @param  boolean         $multiple  A flag for the returned method, see docs for basic.ack field "multiple"
+     * @return wire\Method                A method which acks the input
+     */
+    protected function ack (wire\Method $meth, $multiple=false) {
+        $resp = new wire\Method(protocol\ClassFactory::GetMethod('basic', 'ack'), $meth->getWireChannel());
+        $resp->setField('delivery-tag', $meth->getField('delivery-tag'));
+        $resp->setField('multiple', $multiple);
+        return $resp;
+    }
+
+    /**
+     * Helper: return a basic.cancel method which stops consuming for the given input
+     * @param  wire\Method     $meth      A method created from basic.deliver
+     * @param  boolean         $noWait    A flag for the returned method, see docs for basic.cancel field "no-wait"
+     * @return wire\Method                A method which cancels consuming for the consumer that received the input message
+     */
+    protected function cancel (wire\Method $meth, $noWait=false) {
+        $resp = new wire\Method(protocol\ClassFactory::GetMethod('basic', 'cancel'), $meth->getWireChannel());
+        $resp->setField('consumer-tag', $meth->getField('consumer-tag'));
+        $resp->setField('no-wait', $noWait);
+        return $resp;
+    }
 }

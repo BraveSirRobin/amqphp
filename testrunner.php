@@ -14,51 +14,37 @@ require('amqp.php');
 class DebugConsumer extends amqp\SimpleConsumer
 {
     private $i = 0;
-    private $myChan;
+    private $conn;
     private $myName;
     private $cancelled = false;
 
-    function __construct (wire\Method $consume = null, $myName) {
+    function __construct (wire\Method $consume = null, $myName, $conn) {
         parent::__construct($consume);
         $this->myName = $myName;
+        $this->conn = $conn;
     }
 
-    function handleCancelOk (wire\Method $meth) {
-        parent::handleCancelOk($meth);
+    function handleCancelOk (wire\Method $meth, amqp\Channel $chan) {
+        parent::handleCancelOk($meth, $chan);
         printf("Received Cancel-OK\n");
         $this->cancelled = true;
     }
 
 
-    function handleDelivery (wire\Method $meth) {
-        /*printf("(%s, %s.%s, %s):\n  %s\n",
-               $this->myName,
-               $meth->getClassProto()->getSpecName(),
-               $meth->getMethodProto()->getSpecName(),
-               $meth->getField('delivery-tag'),
-               $meth->getContent());*/
+    function handleDelivery (wire\Method $meth, amqp\Channel $chan) {
         ++$this->i;
         if ($this->cancelled || (($this->i % 3) == 0)) {
             // reject every third message
-            //printf(" [reject message %d]\n", $meth->getField('delivery-tag'));
-            $resp = new wire\Method(protocol\ClassFactory::GetMethod('basic', 'reject'), $meth->getWireChannel());
-            $resp->setField('delivery-tag', $meth->getField('delivery-tag'));
-            $resp->setField('requeue', true);
             echo "r";
-            return $resp;
+            return $this->reject($meth);
         } else if (($this->i % 50) == 0) {
             printf("+BC+");
-            $resp = new wire\Method(protocol\ClassFactory::GetMethod('basic', 'cancel'), $meth->getWireChannel());
-            $resp->setField('consumer-tag', $meth->getField('consumer-tag'));
-            $resp->setField('no-wait', false);
-            $this->cancelled = true;
-            return $resp;
+            $this->conn->stopConsuming();
+            //$this->cancelled = true;
+            return $this->ack($meth);
         } else {
-            $resp = new wire\Method(protocol\ClassFactory::GetMethod('basic', 'ack'), $meth->getWireChannel());
-            $resp->setField('delivery-tag', $meth->getField('delivery-tag'));
-            $resp->setField('multiple', false);
             echo "a";
-            return $resp;
+            return $this->ack($meth);
         }
     }
 }
@@ -227,7 +213,7 @@ function doConsume () {
                                            'no-ack' => false,
                                            'exclusive' => false,
                                            'no-wait' => false));
-    $chan->addConsumer(new DebugConsumer($cons1, '{1}'));
+    $chan->addConsumer(new DebugConsumer($cons1, '{1}', $conn));
 
     // Create a second channel to receive messages on
     /*$chan2 = $conn->getChannel();
@@ -236,13 +222,18 @@ function doConsume () {
                                            'no-ack' => false,
                                            'exclusive' => false,
                                            'no-wait' => false));*/
-    $chan->addConsumer(new DebugConsumer($cons1, '{2}'));
+    $chan->addConsumer(new DebugConsumer($cons1, '{2}', $conn));
 
     // Consume messages forever, blocks indefinitely
-    try {
-        $conn->startConsuming();
-    } catch (Exception $e) {
-        printf("Exception in consume loop:\n{$e->getMessage()}\n");
+
+    while (true) {
+        try {
+            $conn->startConsuming();
+        } catch (Exception $e) {
+            printf("Exception in consume loop:\n{$e->getMessage()}\n");
+        }
+        printf("\nReached a consume stop, wait, then continue\n");
+        sleep(2);
     }
     $conn->shutdown();
 }
