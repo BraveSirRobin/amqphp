@@ -58,8 +58,6 @@ class ConnectionFactory
             case 'sReadTimeoutUSecs':
                 $this->{$pname} = $pval;
                 break;
-            default:
-                throw new \Exception("Invalid connection factory parameter", 8654);
             }
         }
     }
@@ -134,7 +132,7 @@ class Connection
              trigger_error("Unclean connection shutdown (2)", E_USER_WARNING);
              return;
         }
-        printf("num undelivered:\n%d\n", count($this->unDelivered));
+        //printf("num undelivered:\n%d\n", count($this->unDelivered));
         if (! ($meth = new wire\Method($raw)) && 
             $meth->getClassProto() &&
             $meth->getClassProto()->getSpecName() == 'connection' &&
@@ -273,9 +271,9 @@ class Connection
         $read = $ex = array($this->sock);
         $write = null;
         $buff = $tmp = '';
-        $st = microtime(true);
+        //$st = microtime(true);
         $select = socket_select($read, $write, $ex, 5, 0); // TODO: parameterise wait interval
-        printf("(R_SEL %s)", bcsub((string) microtime(true), (string) $st, 4));
+        //printf("(R_SEL %s)", bcsub((string) microtime(true), (string) $st, 4));
         if ($select === false) {
             $errNo = socket_last_error();
             if ($errNo = SOCKET_EINTR) {
@@ -441,12 +439,12 @@ class Connection
                 $this->consumeHalt = false;
                 break;
             }
-            $st = microtime(true);
+            //$st = microtime(true);
             $select = is_null($this->blockTmSecs) ?
                 @socket_select($read, $write, $exc, null)
                 : @socket_select($read, $write, $ex, $this->blockTmSecs, $this->blockTmMillis);
-            $en = microtime(true);
-            printf("(CS_SEL %s)", bcsub((string) $en, (string) $st, 4));
+            //$en = microtime(true);
+            //printf("(CS_SEL %s)", bcsub((string) $en, (string) $st, 4));
             if ($select === false) {
                 $errNo = socket_last_error();
                 if ($errNo = SOCKET_EINTR) {
@@ -572,7 +570,7 @@ class Connection
      * be placed in local queue
      */
     private function deliverAll () {
-        printf("(+DLVR %d)", count($this->unDelivered));
+        //printf("(+DLVR %d)", count($this->unDelivered));
         while ($this->unDelivered) {
             $meth = array_shift($this->unDelivered);
             if (isset($this->chans[$meth->getWireChannel()])) {
@@ -584,7 +582,7 @@ class Connection
                 $this->unDeliverable[] = $meth;
             }
         }
-        printf("(-DLVR %d)", count($this->unDelivered));
+        //printf("(-DLVR %d)", count($this->unDelivered));
     }
 
     function getUndeliverableMessages ($chan) {
