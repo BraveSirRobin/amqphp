@@ -11,62 +11,69 @@ require __DIR__ . '/../amqp.php';
 class XmlBindingTest extends PHPUnit_Framework_TestCase
 {
     /** Instance of amqp\Connection  */
-    private $conn;
+    private static $conn;
     /** Instance of amqp\Channel */
-    private $chan;
+    private static $chan;
     /** Name of test exchange */
-    private $exchange;
+    private static $exchange;
     /** Type of test exchange */
-    private $exchangeType;
+    private static $exchangeType;
     /** Name of test Q */
-    private $queueName;
+    private static $queueName;
+
+
+
 
     /**
      * Use test setup procedure to create queues and bindings, store
      * the connection and channel locally
      */
-    function setUp () {
+    static function setUpBeforeClass () {
         $sParams = parse_ini_file(__DIR__ . '/BasicTest.ini');
         if (! $sParams) {
             throw new Exception("Failed to find test settings", 9854);
         }
-        $this->exchange = $sParams['exchange'];
-        $this->queueName = $sParams['queueName'];
-        $this->exchangeType = $sParams['exchangeType'];
-        $this->queueName = $sParams['queueName'];
+        self::$exchange = $sParams['exchange'];
+        self::$queueName = $sParams['queueName'];
+        self::$exchangeType = $sParams['exchangeType'];
+        self::$queueName = $sParams['queueName'];
 
         $connFact = new amqp\ConnectionFactory($sParams);
-        $this->conn = $connFact->newConnection();
-        $this->chan = $this->conn->getChannel();
+        self::$conn = $connFact->newConnection();
+        self::$chan = self::$conn->getChannel();
 
         // Declare the exchange
-        $excDecl = $this->chan->exchange('declare', array('type' => $this->exchangeType,
+        $excDecl = self::$chan->exchange('declare', array('type' => self::$exchangeType,
                                                           'durable' => true,
-                                                          'exchange' => $this->exchange));
-        $this->chan->invoke($excDecl);
+                                                          'exchange' => self::$exchange));
+        self::$chan->invoke($excDecl);
 
         // Declare the queue
-        $qDecl = $this->chan->queue('declare', array('queue' => $this->queueName));
-        $this->chan->invoke($qDecl);
+        $qDecl = self::$chan->queue('declare', array('queue' => self::$queueName));
+        self::$chan->invoke($qDecl);
 
         // Bind Q to EX
-        $qBind = $this->chan->queue('bind', array('queue' => $this->queueName,
+        $qBind = self::$chan->queue('bind', array('queue' => self::$queueName,
                                                   'routing-key' => '',
-                                                  'exchange' => $this->exchange));
-        $this->chan->invoke($qBind);
+                                                  'exchange' => self::$exchange));
+        self::$chan->invoke($qBind);
     }
 
     /** Do a gracefull connection close */
-    function tearDown () {
-        if ($this->conn) {
-            $this->conn->shutdown();
+    static function tearDownAfterClass () {
+        if (self::$conn) {
+            self::$conn->shutdown();
         }
     }
 
+
+
+
+
     /** Use queue.declare to find out how many messages are on the test queue */
     function getQueueLength () {
-        $qDecl = $this->chan->queue('declare', array('queue' => $this->queueName));
-        $qOk = $this->chan->invoke($qDecl);
+        $qDecl = self::$chan->queue('declare', array('queue' => self::$queueName));
+        $qOk = self::$chan->invoke($qDecl);
         return $qOk->getField('message-count');
     }
 
@@ -76,17 +83,17 @@ class XmlBindingTest extends PHPUnit_Framework_TestCase
      * Publish a couple of messages, then check that they've arrived on the server
      */
     function testBasicPublish () {
-        $basicP = $this->chan->basic('publish', array('content-type' => 'text/plain',
+        $basicP = self::$chan->basic('publish', array('content-type' => 'text/plain',
                                                       'content-encoding' => 'UTF-8',
                                                       'routing-key' => '',
                                                       'mandatory' => false,
                                                       'immediate' => false,
-                                                      'exchange' => $this->exchange));
+                                                      'exchange' => self::$exchange));
 
         $before = $this->getQueueLength();
         for ($i = 0; $i < 5; $i++) {
             $basicP->setContent(sprintf("Test content from %s->%s, number %d", __CLASS__, __METHOD__, $i + 1));
-            $this->chan->invoke($basicP);
+            self::$chan->invoke($basicP);
         }
         $after = $this->getQueueLength();
         $this->assertEquals($after, $before + 5);
@@ -97,17 +104,20 @@ class XmlBindingTest extends PHPUnit_Framework_TestCase
      * Use basic.get to read back the messages published in testBasicPublish()
      */
     function testBasicGet () {
-        $basicGet = $this->chan->basic('get', array('queue' => $this->queueName));
+        $basicGet = self::$chan->basic('get', array('queue' => self::$queueName));
         for ($i = 0; $i < 5; $i++) {
-            $getOk = $this->chan->invoke($basicGet);
+            $getOk = self::$chan->invoke($basicGet);
             $this->assertNotEmpty($getOk->getContent());
             $delTag = $getOk->getField('delivery-tag');
             $this->assertNotEmpty($delTag);
-            $ack = $this->chan->basic('ack', array('delivery-tag' => $delTag, 'multiple' => false));
+            $ack = self::$chan->basic('ack', array('delivery-tag' => $delTag, 'multiple' => false));
             $this->assertNotEmpty($ack);
-            $this->chan->invoke($ack);
+            self::$chan->invoke($ack);
         }
     }
 
+
+    function testAgainLikeWeDidLastSummer () {
+    }
 
 }

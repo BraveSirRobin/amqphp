@@ -8,9 +8,9 @@
 
 /**
  * TODO:
- *  (1) Confirm whether the Connection->read method needs to cache partial frame reads
- *  (2) Implement exceptions for Amqp 'events', i.e. channel / connection exceptions, etc.
- *  (3) Test sending/receiving large messages in multiple frames
+ *  (1) Implement incomplete messages PER-CHANNEL, otherwise messages may get mixed up
+ *  (2) Test with split method, content header frames (maybe set the frameMax to silly value in setup?)
+ *  (3) Implement exceptions for Amqp 'events', i.e. channel / connection exceptions, etc.
  *  (4) Consider switching to use the higher level stream socket PHP funcs - could
  *      be helpful to be able to use built-in SSL (+ client certs?!)
  *  (5) Implement default profiles - probably best to use a code generation approach
@@ -182,7 +182,7 @@ class Connection
 
         $this->chanMax = $meth->getField('channel-max');
         $this->frameMax = $meth->getField('frame-max');
-        //printf("Got  channel %d, frameMax %d\n", $this->chanMax, $this->frameMax);
+        printf("Got  channel %d, frameMax %d\n", $this->chanMax, $this->frameMax);
 
 
         // Expect tune
@@ -257,7 +257,7 @@ class Connection
             throw new \Exception("Channels are exhausted!", 23756);
         }
         // HERE:  Channel setup code calls back to connection, which can't find channel.  Chicken / Egg
-        $this->chans[$newChan] = new Channel($this, $newChan, $this->vhost, $this->frameMax);
+        $this->chans[$newChan] = new Channel($this, $newChan, $this->frameMax);
         $this->chans[$newChan]->initChannel();
         return $this->chans[$newChan];
     }
@@ -301,20 +301,25 @@ class Connection
     /** Low level protocol write function.  Accepts either single values or
         arrays of content */
     private function write ($buffs) {
-        $bw = 0;
         foreach ((array) $buffs as $buff) {
             if (DEBUG) {
                 echo "\n<write>\n";
                 echo wire\hexdump($buff);
             }
             $contentLength = strlen($buff);
-            while ($bw < $contentLength) {
-                if (($tmp = socket_write($this->sock, $buff, $contentLength)) === false) {
+            $bw = 0;
+            while (true) {
+                if (($tmp = socket_write($this->sock, $buff)) === false) {
                     throw new \Exception(sprintf("\nSocket write failed: %s\n",
                                                  socket_strerror(socket_last_error())), 7854);
                 }
                 $bw += $tmp;
                 $this->bw += $tmp;
+                if ($bw < $contentLength) {
+                    $buff = substr($buff, $bw);
+                } else {
+                    break;
+                }
             }
         }
         return $bw;
@@ -460,8 +465,8 @@ class Connection
                 }
                 if ($buff && ($meths = $this->readMessages($buff))) {
                     $this->unDelivered = array_merge($this->unDelivered, $meths);
-                } else {
-                    throw new \Exception("Empty read in blocking select loop", 9864);
+                } else if (! $buff) {
+                    throw new \Exception("Empty read in blocking select loop : " . strlen($buff), 9864);
                 }
             }
             $this->deliverAll();
@@ -470,22 +475,26 @@ class Connection
     }
 
 
-    /**  
-     * TODO: Amend the logic which decides whether to wait for a response to take
-     * account of the no-wait domain:
-     *   If set, the server will not respond to the method. The client should not wait
-     *   for a reply method. If the server could not complete the method it will raise a
-     *   channel or connection exception.
+    /**
+     * Send the given method immediately, optionally wait for the response.
      * @arg  Method     $inMeth         The method to send
      * @arg  boolean    $noWait         Flag that prevents the default behaviour of immediately
-     *                                  waiting for a response - used mainly during consume
+     *                                  waiting for a response - used mainly during consume.  NOTE
+     *                                  that this mechanism can also be triggered via. the use of
+     *                                  an Amqp no-wait domain field set to true
      */
     function sendMethod (wire\Method $inMeth, $noWait=false) {
         if (! ($this->write($inMeth->toBin()))) {
             throw new \Exception("Send message failed (1)", 5623);
         }
-        if (! $noWait && ($rTypes = $inMeth->getMethodProto()->getSpecResponseMethods())) {
-            // Allow other traffic through - content, heartbeats, etc.
+        if (! $noWait && $inMeth->getMethodProto()->getSpecResponseMethods()) {
+            if ($inMeth->getMethodProto()->hasNoWaitField()) {
+                foreach ($inMeth->getMethodProto()->getFields() as $f) {
+                    if ($f->getSpecDomainName() == 'no-wait' && $inMeth->getField($f->getSpecFieldName())) {
+                        return;
+                    }
+                }
+            }
             while (true) {
                 if (! ($buff = $this->read())) {
                     throw new \Exception(sprintf("(2) Send message failed for %s.%s:\n",
@@ -513,13 +522,16 @@ class Connection
 
 
 
-    /** Convert the given raw wire content in to Method objects.  Connection
-        and channel messages are delivered immediately and not returned */
+    /**
+     * Convert the given raw wire content in to Method objects.  Connection and channel
+     * messages are delivered immediately and not returned.
+     * TODO: Consider changing the code to stop using Method->getReader()->getRemainingBuffer()
+     * - I suspect this is not a very memory-efficient implementation.
+     */
     private function readMessages ($buff) {
         if (is_null($this->incompleteMethod)) {
             $meth = new wire\Method($buff);
         } else {
-            //printf("  --  Split message detected  --\n");
             $meth = $this->incompleteMethod;
             $meth->readContruct($buff);
             $this->incompleteMethod = null;
@@ -546,10 +558,6 @@ class Connection
                 }
             } else {
                 // Special case for a split message, return here so that $this->incompleteMethod remains set
-                if (! $meth->getReader()->isSpent()) {
-                    throw new \Exception("Framing error?  Incomplete method is not last in byte buffer?", 9875);
-                }
-                //printf(" -- Save incomplete method %s.%s --\n", $meth->getClassProto()->getSpecName(), $meth->getMethodProto()->getSpecName());
                 $this->incompleteMethod = $meth;
                 break;
             }
@@ -660,7 +668,7 @@ class Channel
     }
 
     /**
-     * Implement Amqp protocol methods with method name as Amqp class name.
+     * Factory method creates wire\Method objects based on class name and parameters.
      *
      * @arg  string   $class       Amqp class
      * @arg  array    $_args       Format: array (<Amqp method name>, <Assoc method/class mixed field array>, <method content>)
@@ -697,6 +705,8 @@ class Channel
             }
         }
         $m->setContent($content);
+        $m->setMaxFrameSize($this->frameMax);
+        //$m->setMaxFrameSize(10);
         return $m;
     }
 
@@ -907,7 +917,7 @@ class SimpleConsumer implements Consumer
     }
 
     /**
-     * Helper: return a basic.cancel method which stops consuming for the given input
+     * Helper: return a basic.cancel method which stops consuming for the input's consumer-tag
      * @param  wire\Method     $meth      A method created from basic.deliver
      * @param  boolean         $noWait    A flag for the returned method, see docs for basic.cancel field "no-wait"
      * @return wire\Method                A method which cancels consuming for the consumer that received the input message

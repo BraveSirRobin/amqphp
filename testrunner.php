@@ -33,6 +33,13 @@ class DebugConsumer extends amqp\SimpleConsumer
 
     function handleDelivery (wire\Method $meth, amqp\Channel $chan) {
         ++$this->i;
+        /* Fo big rabbiots */
+        file_put_contents('passed-through-rabbit.txt', $meth->getContent());
+        if ($diff = `diff passed-through-rabbit.txt large-file.txt`) {
+            printf("Reconstructed file and orig are different:\n%s\n", $diff);
+        }
+        return $this->ack($meth);
+
         if ($this->cancelled || (($this->i % 3) == 0)) {
             // reject every third message
             echo "r";
@@ -69,6 +76,8 @@ $PORT = 5672;
 
 if (isset($argv[1]) && strtolower($argv[1]) == 'consume') {
     doConsume();
+} else if (isset($argv[1]) && strtolower($argv[1]) == 'long') {
+    call_user_func_array('doProduceLongMessage', array_slice($argv, 2));
 } else {
     $n = (isset($argv[1]) && is_numeric($argv[1])) ?
         (int) $argv[1]
@@ -109,7 +118,7 @@ function doProduce ($n) {
                                             'mandatory' => false,
                                             'immediate' => false,
                                             'exchange' => $EX));
-
+    echo "\nStart Producing\n";
     for ($i = 0; $i < $n; $i++) {
         $basicP->setContent(sprintf("You should help out the aged beatnik %d times!", $i + 1));
         $chan->invoke($basicP);
@@ -173,6 +182,48 @@ function doProduce ($n) {
 }
 
 
+function doProduceLongMessage ($n, $file) {
+    global $VH_NAME;
+    global $EX_TYPE;
+    global $EX;
+    global $Q;
+
+
+    if (! $file) {
+        echo "Fault: you must give a large file as the second parameter\n";
+        return;
+    } else if (! is_file($file)) {
+        echo "Fault: $file does not exist\n";
+        return;
+    }
+
+    // Produce
+    $conn = getConnection();
+    $chan = $conn->getChannel();
+
+
+    // Start a transaction
+    //$chan->invoke($chan->tx('select'));
+
+
+    // Pushes content to a queue
+    $basicP = $chan->basic('publish', array('content-type' => 'text/plain',
+                                            'content-encoding' => 'UTF-8',
+                                            'routing-key' => '',
+                                            'mandatory' => false,
+                                            'immediate' => false,
+                                            'exchange' => $EX));
+    echo "\nStart Producing long message from $file\n";
+    for ($i = 0; $i < $n; $i++) {
+        $basicP->setContent(file_get_contents($file));
+        $chan->invoke($basicP);
+    }
+
+    echo "Written $i messages to the broker\n";
+    $conn->shutdown();
+}
+
+
 
 function doConsume () {
     // Consume
@@ -231,6 +282,7 @@ function doConsume () {
             $conn->startConsuming();
         } catch (Exception $e) {
             printf("Exception in consume loop:\n{$e->getMessage()}\n");
+            break;
         }
         printf("\nReached a consume stop, wait, then continue\n");
         sleep(2);

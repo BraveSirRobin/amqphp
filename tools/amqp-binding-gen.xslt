@@ -154,6 +154,7 @@ class <xsl:value-of select="bl:getPhpClassName('Method')"/> extends \<xsl:value-
     protected $fieldFact = '\\<xsl:value-of select="bl:getPhpNamespace(../@name, true())"/>\\FieldFactory';
     protected $classFact = '\\<xsl:value-of select="str:replace($_NS_PREPEND, '\', '\\')"/>\\ClassFactory';
     protected $content = <xsl:choose><xsl:when test="@content">true</xsl:when><xsl:otherwise>false</xsl:otherwise></xsl:choose>;
+    protected $hasNoWait = <xsl:choose><xsl:when test="./field[@domain='no-wait']">true</xsl:when><xsl:otherwise>false</xsl:otherwise></xsl:choose>;
 }
   </xsl:template>
 

@@ -232,6 +232,10 @@ abstract class XmlSpecMethod
     final function getClass () {
         return call_user_func(array($this->classFact, 'GetClassByName'), $this->class);
     }
+    // Cheat to help out with the pesky no-wait domain
+    final function hasNoWaitField () {
+        return $this->hasNoWait;
+    }
 }
 
 // PER-NS [one]

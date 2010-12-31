@@ -178,15 +178,15 @@ class Reader extends Protocol
     private $p = 0;
     private $binPackOffset = 0;
     private $binBuffer;
+    private $binLen = 0;
 
     function __construct ($bin) {
         $this->bin = $bin;
         $this->binLen = strlen($bin);
     }
 
-    function isSpent () {
-        //printf("Is Spent: \$p = %d, \$len = %d, remaining buffer length:%d\n", $this->p, $this->binLen, substr($this->bin, $this->p, 1) == proto\FRAME_END);
-        return ($this->p >=  ($this->binLen - 1));
+    function isSpent ($n = 0) {
+        return ($this->p + $n >=  $this->binLen);
     }
 
     function getReadPointer () { return $this->p; }
@@ -197,10 +197,19 @@ class Reader extends Protocol
         return $r;
     }
 
+    function append ($bin) {
+        $this->bin .= $bin;
+        $this->binLen += strlen($bin);
+    }
+
+
     /** Used to fetch a string of length $n from the buffer, updates the internal pointer  */
     function readN ($n) {
         //        printf("readN : \$n: %d, \$this->p: %d, buffLen: %d\n", $n, $this->p, strlen($this->bin));
         $ret = substr($this->bin, $this->p, $n);
+        if (strlen($ret) < $n) {
+            return false;
+        }
         $this->p += strlen($ret);
         return $ret;
     }
@@ -695,16 +704,13 @@ class Method
 
     private $methProto; // XmlSpecMethod
     private $classProto; // XmlSpecClass
-    private $mode; // read,write
+    private $mode; // {read,write}
     private $fields = array(); // Amqp method fields
     private $classFields = array(); // Amqp message class fields
     private $content; // Amqp message payload
 
-    /* Runtime flags  */
-    private $hasMeth = false;
-    private $hasCHeader = false;
+    private $frameMax; // Max frame size in bytes
 
-    /** @field $wireChannel  The channel for this method  */
     private $wireChannel; // Read from Amqp frame
     private $wireMethodId; // Read from Amqp method frame
     private $wireClassId; // Read from Amqp method frame
@@ -752,6 +758,7 @@ class Method
         }
     }
 
+
     /** Helper: parse the incoming message from $src */
     /** TODO: Use generated validation methods??? */
     function readContruct ($bin) {
@@ -759,13 +766,26 @@ class Method
             trigger_error('Invalid read construct operation on a read mode method', E_USER_WARNING);
             return '';
         }
-
-        $src = is_string($bin) ? new Reader($bin) : $bin;
-
         $FRME = 206; // TODO!!  UN-HARD CODE!!
         $break = false;
+        $frmeFlag = true;
+
+        if ($this->reader) {
+            // Complete an incomplete frame;
+            //printf("  -- append additional content to existing reader\n");
+            $this->reader->append($bin);
+            $src = $this->reader;
+            $this->lfhCache = true;
+        } else {
+            $src = new Reader($bin);
+        }
+
         while (! $src->isSpent()) {
-            list($wireType, $wireChannel, $wireSize) = $this->extractFrameHeader($src);
+            if (true === ($_fh = $this->extractFrameHeader($src))) {
+                $frmeFlag = false;
+            } else {
+                list($wireType, $wireChannel, $wireSize) = $_fh;
+            }
             if (! $this->wireChannel) {
                 $this->wireChannel = $wireChannel;
             }
@@ -773,30 +793,38 @@ class Method
             case 1:
                 // Load in method and method fields
                 $this->rcState = $this->rcState | self::ST_METH_READ;
-                $this->readMethodContent($src, $wireSize);
-                // Exit immediately for methods that don't take content
-                if ($this->methProto->getSpecHasContent()) {
+                if (true === $this->readMethodContent($src, $wireSize)) {
+                    $frmeFlag = false;
+                    $break = true;
+                } else if ($this->methProto->getSpecHasContent()) {
                     break;
                 } else {
-                    //break 2;
                     $break = true;
                     break;
                 }
             case 2:
                 // Load in content header and property flags
                 $this->rcState = $this->rcState | self::ST_CHEAD_READ;
-                $this->readContentHeaderContent($src, $wireSize);
+                if (true === $this->readContentHeaderContent($src, $wireSize)) {
+                    $frmeFlag = false;
+                    $break = true;
+                }
                 break;
             case 3:
                 $this->rcState = $this->rcState | self::ST_BODY_READ;
-                $this->readBodyContent($src, $wireSize);
-                $break = true;
+                if (true === $this->readBodyContent($src, $wireSize)) {
+                    // Split frame, return early
+                    $frmeFlag = false;
+                    $break = true;
+                } else if ($src->isSpent() || $this->readConstructComplete()) {
+                    $break = true;
+                }
                 break;
             default:
-                var_dump($wireType);
-                throw new \Exception("Unsupported frame type!", 8674);
+                throw new \Exception(sprintf("Unsupported frame type %d", $wireType), 8674);
             }
-            if ($src->read('octet') != $FRME) {
+
+            if ($frmeFlag && $src->read('octet') != $FRME) {
                 throw new \Exception(sprintf("Framing exception - missed frame end (%s.%s)",
                                              $this->classProto->getSpecName(),
                                              $this->methProto->getSpecName()
@@ -811,7 +839,16 @@ class Method
     }
 
     /** Helper: extract and return a frame header */
+    private $lfh; // Used to remember the frame header for split reads
+    private $lfhCache = false; // Flag flipped to trigger read continue for split reads
     private function extractFrameHeader(Reader $src) {
+        if ($src->isSpent(7)) {
+            return true;
+        }
+        if ($this->lfhCache) {
+            $this->lfhCache = false;
+            return $this->lfh;
+        }
         if (null === ($wireType = $src->read('octet'))) {
             throw new \Exception('Failed to read type from frame', 875);
         } else if (null === ($wireChannel = $src->read('short'))) {
@@ -819,18 +856,20 @@ class Method
         } else if (null === ($wireSize = $src->read('long'))) {
             throw new \Exception('Failed to read size from frame', 8715);
         }
-        return array($wireType, $wireChannel, $wireSize);
+        return ($this->lfh = array($wireType, $wireChannel, $wireSize));
     }
 
 
     /** Read a full method frame from $src */
     private function readMethodContent (Reader $src, $wireSize) {
+        if ($src->isSpent($wireSize)) {
+            return true;
+        }
         $st = $src->getReadPointer();
-        if (null === ($this->wireClassId = $src->read('short'))) {
-            throw new \Exception("Failed to read class ID from frame", 87694);
-        } else if (null === ($this->wireMethodId = $src->read('short'))) {
-            throw new \Exception("Failed to read method ID from frame", 6547);
-        } else if (! ($this->classProto = proto\ClassFactory::GetClassByIndex($this->wireClassId))) {
+        $this->wireClassId = $src->read('short');
+        $this->wireMethodId = $src->read('short');
+
+        if (! ($this->classProto = proto\ClassFactory::GetClassByIndex($this->wireClassId))) {
             throw new \Exception(sprintf("Failed to construct class prototype for class ID %s",
                                          $this->wireClassId), 9875);
         } else if (! ($this->methProto = $this->classProto->getMethodByIndex($this->wireMethodId))) {
@@ -848,17 +887,18 @@ class Method
 
     /** Read a full content header frame from src */
     private function readContentHeaderContent (Reader $src, $wireSize) {
+        if ($src->isSpent($wireSize)) {
+            return true;
+        }
         $st = $src->getReadPointer();
-        if (null === ($wireClassId = $src->read('short'))) {
-            throw new \Exception("Failed to read class ID from frame", 3684);
-        } else if ($wireClassId != $this->wireClassId) {
+        $wireClassId = $src->read('short');
+        $src->read('short'); // pointless weight field
+        $this->contentSize = $src->read('longlong');
+        if ($wireClassId != $this->wireClassId) {
             throw new \Exception(sprintf("Unexpected class in content header (%d, %d) - read state %d",
                                          $wireClassId, $this->wireClassId, $this->rcState), 5434);
-        } else if ($src->read('short') === null) {
-            throw new \Exception("Failed to read pointless weight header field", 3684);
-        } else if (null === ($this->contentSize = $src->read('longlong'))) {
-            throw new \Exception("Failed to read content size", 9867);
         }
+
         // Load the property flags
         $binFlags = '';
         while (true) {
@@ -895,20 +935,25 @@ class Method
 
 
     /** Append message body content from $src */
+    private $frameShortfall = 0;
     private function readBodyContent (Reader $src, $wireSize) {
-        $buff = $src->readN($wireSize);
-        if (strlen($buff) != $wireSize) {
-            throw new \Exception("Invalid content frame size", 76585);
+        if ($src->isSpent($wireSize)) {
+            return true;
         }
         $this->content .= $buff;
     }
 
     /* This for content messages, has the full message been read from the wire yet?  */
     function readConstructComplete () {
-        if (! $this->methProto->getSpecHasContent()) {
+        if (! $this->methProto) {
+            return false;
+        } else if (! $this->methProto->getSpecHasContent()) {
             return (boolean) $this->rcState & self::ST_METH_READ;
         } else {
-            return ($this->rcState & self::ST_CHEAD_READ) && (strlen($this->content) <= $this->contentSize);
+            /*printf("Read complete returns %d (%d, %d)\n",
+                   ($this->rcState & self::ST_CHEAD_READ) && (strlen($this->content) >= $this->contentSize),
+                   strlen($this->content), $this->contentSize);*/
+            return ($this->rcState & self::ST_CHEAD_READ) && (strlen($this->content) >= $this->contentSize);
         }
     }
 
@@ -972,13 +1017,12 @@ class Method
 
     function getMethodProto () { return $this->methProto; }
     function getClassProto () { return $this->classProto; }
-    //function getWireType () { return $this->wireType; }
     function getWireChannel () { return $this->wireChannel; }
     function getWireSize () { return $this->wireSize; }
 
     function getWireClassId () { return $this->wireClassId; }
     function getWireMethodId () { return $this->wireMethodId; }
-
+    function setMaxFrameSize ($max) { $this->frameSize = $max; }
 
     function toBin () {
         if ($this->mode == 'read') {
@@ -986,33 +1030,39 @@ class Method
             trigger_error('Invalid serialize operation on a read mode method', E_USER_WARNING);
             return '';
         }
-        $buff = '';
-        // Create the method message
+        // Create the method part
         $w = new Writer;
         $tmp = $this->getMethodBin();
         $w->write(1, 'octet');
         $w->write($this->wireChannel, 'short');
         $w->write(strlen($tmp), 'long');
         $buff = $w->getBuffer() . $tmp . proto\FRAME_END;
-
+        $ret = array($buff);
         if ($this->methProto->getSpecHasContent()) {
-            // Create content header and body
+            // Create content header and body parts
             $w = new Writer;
             $tmp = $this->getContentHeaderBin();
             $w->write(2, 'octet');
             $w->write($this->wireChannel, 'short');
             $w->write(strlen($tmp), 'long');
-            $buff .= $w->getBuffer() . $tmp . proto\FRAME_END;
-            // TODO: support for messages > 2^32 - this requires splitting content in to
-            // multiple sub-frames
-            $w = new Writer;
+            $ret[] = $w->getBuffer() . $tmp . proto\FRAME_END;
+
             $tmp = (string) $this->content;
-            $w->write(3, 'octet');
-            $w->write($this->wireChannel, 'short');
-            $w->write(strlen($tmp), 'long');
-            $buff .= $w->getBuffer() . $tmp . proto\FRAME_END;
+            $i = 0;
+            $frameSize = $this->frameSize - 8;
+            while ($chunk = substr($tmp, ($i * $frameSize), $frameSize)) {
+                $w = new Writer;
+                $w->write(3, 'octet');
+                $w->write($this->wireChannel, 'short');
+                $w->write(strlen($chunk), 'long');
+                $ret[] = $w->getBuffer() . $chunk . proto\FRAME_END;
+
+                //$tmp = substr($tmp, $this->frameSize);
+                $i++;
+            }
+            printf("Send content frame with %d parts\n", $i);
         }
-        return array($buff);
+        return $ret;
     }
 
     private function getMethodBin () {
@@ -1065,13 +1115,14 @@ class Method
                 $pChunks++;
             }
             $fName = $f->getSpecFieldName();
+            $dName = $f->getSpecFieldDomain();
             if (isset($this->classFields[$fName]) && 
-                ! ($f->getSpecFieldDomain() == 'bit' && ! $this->classFields[$f->getSpecFieldName()])) {
+                ! ($dName == 'bit' && ! $this->classFields[$fName])) {
                 $pFlags .= '1';
             } else {
                 $pFlags .= '0';
             }
-            if (isset($this->classFields[$fName]) && $f->getSpecFieldDomain() != 'bit') {
+            if (isset($this->classFields[$fName]) && $dName != 'bit') {
                 if (! $f->validate($this->classFields[$fName])) {
                     trigger_error("Field {$fName} of method {$this->methProto->getSpecName()} is not valid", E_USER_WARNING);
                     return '';
