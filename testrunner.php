@@ -1,7 +1,5 @@
 <?php
 
-//require_once 'amqp.php';
-//require_once 'rabbit.php';
 use amqp_091 as amqp;
 use amqp_091\protocol;
 use amqp_091\wire;
@@ -37,8 +35,10 @@ class DebugConsumer extends amqp\SimpleConsumer
         file_put_contents('passed-through-rabbit.txt', $meth->getContent());
         if ($diff = `diff passed-through-rabbit.txt large-file.txt`) {
             printf("Reconstructed file and orig are different:\n%s\n", $diff);
+        } else {
+            //echo "Big rabbbbit happeh....\n";
         }
-        return $this->ack($meth);
+        //return $this->ack($meth);
 
         if ($this->cancelled || (($this->i % 3) == 0)) {
             // reject every third message
@@ -281,7 +281,7 @@ function doConsume () {
         try {
             $conn->startConsuming();
         } catch (Exception $e) {
-            printf("Exception in consume loop:\n{$e->getMessage()}\n");
+            printf("\n  **Exception in consume loop**\n{$e->getMessage()}\n");
             break;
         }
         printf("\nReached a consume stop, wait, then continue\n");

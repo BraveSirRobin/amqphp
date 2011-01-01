@@ -133,7 +133,7 @@ class Connection
              return;
         }
         //printf("num undelivered:\n%d\n", count($this->unDelivered));
-        if (! ($meth = new wire\Method($raw)) && 
+        if (! ($meth = new wire\Method($raw)) &&
             $meth->getClassProto() &&
             $meth->getClassProto()->getSpecName() == 'connection' &&
             $meth->getMethodProto() &&
@@ -287,7 +287,7 @@ class Connection
                 $buff .= $tmp;
             }
             if (substr($buff, -1) != protocol\FRAME_END) {
-                trigger_error("TODO: WARNING!!!  Read doesn't end a frame end!", E_USER_WARNING);
+                echo ("TODO: WARNING!!!  Read doesn't end a frame end!\n");
             }
         }
         if (DEBUG) {
@@ -399,7 +399,11 @@ class Connection
     private $incompleteMethod = null;
 
 
-    /** Entry */
+    /**
+     * Start unstarted Consumers on all channels, then go in to an endless select
+     * loop, dispatching incoming message deliveries in order.  Can be called from
+     * inside the consume loop, in this case the function will return immediately
+     */
     function startConsuming () {
         $a = false;
         foreach ($this->chans as $chan) {
@@ -416,6 +420,11 @@ class Connection
         }
     }
 
+    /**
+     * Flips a flag which triggers an unconditional exit from the consume loop.
+     * NOTE: active consumers will not be triggered to send basic.cancel just
+     * by calling this method!
+     */
     function stopConsuming () {
         if (! $this->blocking) {
             return false;
@@ -891,7 +900,7 @@ class SimpleConsumer implements Consumer
     function getConsumeMethod () { return $this->consMeth; }
 
     /**
-     * Helper: return a basic.reject method which rejects the input 
+     * Helper: return a basic.reject method which rejects the input
      * @param  wire\Method     $meth      A method created from basic.deliver
      * @param  boolean         $requeue   Flag on the returned method, see docs for basic.reject field "requeue"
      * @return wire\Method                A method which rejects the input
