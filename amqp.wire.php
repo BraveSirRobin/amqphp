@@ -848,8 +848,8 @@ class Method
                                              $this->methProto->getSpecName(),
                                              $this->rcState, // 7
                                              $break, // 1
-                                             $src->isSpent(), // 0
-                                             $this->readConstructComplete(), // 1
+                                             $src->isSpent(), // 1
+                                             $this->readConstructComplete(), // 0
                                              $this->TRACE, // Zah
                                              strlen($this->content),
                                              $this->contentSize,
@@ -893,7 +893,7 @@ class Method
 
     /** Read a full method frame from $src */
     private function readMethodContent (Reader $src, $wireSize) {
-        if ($src->isSpent($wireSize)) {
+        if ($src->isSpent($wireSize + 1)) {
             return true;
         }
         $st = $src->getReadPointer();
@@ -919,7 +919,7 @@ class Method
 
     /** Read a full content header frame from src */
     private function readContentHeaderContent (Reader $src, $wireSize) {
-        if ($src->isSpent($wireSize)) {
+        if ($src->isSpent($wireSize + 1)) {
             return true;
         }
         $st = $src->getReadPointer();
@@ -970,7 +970,7 @@ class Method
     /** Append message body content from $src */
     private $frameShortfall = 0;
     private function readBodyContent (Reader $src, $wireSize) {
-        if ($src->isSpent($wireSize)) {
+        if ($src->isSpent($wireSize + 1)) {
             return true;
         }
         $this->content .= $src->readN($wireSize);
@@ -984,9 +984,6 @@ class Method
         } else if (! $this->methProto->getSpecHasContent()) {
             return (boolean) $this->rcState & self::ST_METH_READ;
         } else {
-            /*printf("Read complete returns %d (%d, %d)\n",
-                   ($this->rcState & self::ST_CHEAD_READ) && (strlen($this->content) >= $this->contentSize),
-                   strlen($this->content), $this->contentSize);*/
             return ($this->rcState & self::ST_CHEAD_READ) && (strlen($this->content) >= $this->contentSize);
         }
     }
@@ -1090,11 +1087,9 @@ class Method
                 $w->write($this->wireChannel, 'short');
                 $w->write(strlen($chunk), 'long');
                 $ret[] = $w->getBuffer() . $chunk . proto\FRAME_END;
-
-                //$tmp = substr($tmp, $this->frameSize);
                 $i++;
             }
-            printf("Send content frame with %d parts\n", $i);
+            //printf("Send content frame with %d parts\n", $i);
         }
         return $ret;
     }

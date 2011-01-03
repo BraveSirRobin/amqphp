@@ -8,7 +8,7 @@
 
 /**
  * TODO:
- *  (1) Implement incomplete messages PER-CHANNEL, otherwise messages may get mixed up
+ *  (1) Confirm if the split read Method buffering needs to be per-channel - not clear from spec
  *  (2) Test with split method, content header frames (maybe set the frameMax to silly value in setup?)
  *  (3) Implement exceptions for Amqp 'events', i.e. channel / connection exceptions, etc.
  *  (4) Consider switching to use the higher level stream socket PHP funcs - could
@@ -105,6 +105,8 @@ class Connection
     /** Flag is picked up in consume loop and causes it to exit immediately */
     private $consumeHalt = false;
 
+    private $signalDispatch = true;
+
     function __construct ($sock, $username, $userpass, $vhost) {
         $this->sock = $sock;
         $this->username = $username;
@@ -182,7 +184,7 @@ class Connection
 
         $this->chanMax = $meth->getField('channel-max');
         $this->frameMax = $meth->getField('frame-max');
-        printf("Got  channel %d, frameMax %d\n", $this->chanMax, $this->frameMax);
+        //printf("Got  channel %d, frameMax %d\n", $this->chanMax, $this->frameMax);
 
 
         // Expect tune
@@ -243,6 +245,11 @@ class Connection
         return ($num === false) ? $this->initNewChannel() : $this->chans[$num];
     }
 
+    /** Flip internal flag the decides if pcntl_signal_dispatch() gets called in consume loop */
+    function setSignalDispatch ($val) {
+        $this->signalDispatch = (boolean) $val;
+    }
+
     function removeChannel (Channel $chan) {
         if (false !== ($k = array_search($chan, $this->chans))) {
             unset($this->chans[$k]);
@@ -276,18 +283,15 @@ class Connection
         //printf("(R_SEL %s)", bcsub((string) microtime(true), (string) $st, 4));
         if ($select === false) {
             $errNo = socket_last_error();
-            if ($errNo = SOCKET_EINTR) {
+            if ($errNo == SOCKET_EINTR) {
                 // Select returned because we received a signal, dispatch to signal handlers, if present
                 pcntl_signal_dispatch();
             }
             $errStr = socket_strerror($errNo);
-            throw new \Exception ("Read block select produced an error: [$errNo] $errStr", 9963);
+            throw new \Exception ("[1] Read block select produced an error: [$errNo] $errStr", 9963);
         } else if ($select > 0 && $read) {
             while (@socket_recv($this->sock, $tmp, self::READ_LEN, MSG_DONTWAIT)) {
                 $buff .= $tmp;
-            }
-            if (substr($buff, -1) != protocol\FRAME_END) {
-                echo ("TODO: WARNING!!!  Read doesn't end a frame end!\n");
             }
         }
         if (DEBUG) {
@@ -452,21 +456,19 @@ class Connection
             if ($this->consumeHalt) {
                 $this->consumeHalt = false;
                 break;
+            } else if ($this->signalDispatch) {
+                pcntl_signal_dispatch();
             }
-            //$st = microtime(true);
             $select = is_null($this->blockTmSecs) ?
                 @socket_select($read, $write, $exc, null)
                 : @socket_select($read, $write, $ex, $this->blockTmSecs, $this->blockTmMillis);
-            //$en = microtime(true);
-            //printf("(CS_SEL %s)", bcsub((string) $en, (string) $st, 4));
             if ($select === false) {
                 $errNo = socket_last_error();
-                if ($errNo = SOCKET_EINTR) {
-                    // Select returned because we received a signal, dispatch to signal handlers, if present
+                if ($this->signalDispatch && $errNo == SOCKET_EINTR) {
                     pcntl_signal_dispatch();
                 }
                 $errStr = socket_strerror($errNo);
-                throw new \Exception ("Read block select produced an error: [$errNo] $errStr", 9963);
+                throw new \Exception ("[2] Read block select produced an error: [$errNo] $errStr", 9963);
             } else if ($select > 0 && $read) {
                 $buff = $tmp = '';
                 while (@socket_recv($this->sock, $tmp, self::READ_LEN, MSG_DONTWAIT)) {
@@ -674,6 +676,7 @@ class Channel
         if (! ($this->ticket = $resp->getField('ticket'))) {
             throw new \Exception("Channel setup failed (3)", 9858);
         }
+        //printf("  Channel %d set up\n", $this->chanId);
     }
 
     /**

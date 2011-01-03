@@ -13,12 +13,12 @@ class DebugConsumer extends amqp\SimpleConsumer
 {
     private $i = 0;
     private $conn;
-    private $myName;
+    private $num;
     private $cancelled = false;
 
-    function __construct (wire\Method $consume = null, $myName, $conn) {
+    function __construct (wire\Method $consume = null, $num, $conn) {
         parent::__construct($consume);
-        $this->myName = $myName;
+        $this->num = $num;
         $this->conn = $conn;
     }
 
@@ -42,15 +42,15 @@ class DebugConsumer extends amqp\SimpleConsumer
 
         if ($this->cancelled || (($this->i % 3) == 0)) {
             // reject every third message
-            echo "r";
+            echo "{$this->num}r";
             return $this->reject($meth);
         } else if (($this->i % 50) == 0) {
-            printf("+BC+");
-            $this->conn->stopConsuming();
+            echo "{$this->num}+BC+";
+            //$this->conn->stopConsuming();
             //$this->cancelled = true;
             return $this->ack($meth);
         } else {
-            echo "a";
+            echo "{$this->num}a";
             return $this->ack($meth);
         }
     }
@@ -258,22 +258,34 @@ function doConsume () {
     pcntl_signal(SIGTERM, $shutdown);
     //register_shutdown_function($shutdown);
 
+    // QOS: set prefetch count to 5.
+    $qOk = $chan->invoke($chan->basic('qos', array('prefetch-count' => 5, 'global' => false)));
 
     $cons1 = $chan->basic('consume', array('queue' => $Q,
                                            'no-local' => true,
                                            'no-ack' => false,
                                            'exclusive' => false,
                                            'no-wait' => false));
-    $chan->addConsumer(new DebugConsumer($cons1, '{1}', $conn));
+    $chan->addConsumer(new DebugConsumer($cons1, 0, $conn));
 
-    // Create a second channel to receive messages on
-    /*$chan2 = $conn->getChannel();
-    $cons2 = $chan2->basic('consume', array('queue' => $Q,
-                                           'no-local' => true,
-                                           'no-ack' => false,
-                                           'exclusive' => false,
-                                           'no-wait' => false));*/
-    $chan->addConsumer(new DebugConsumer($cons1, '{2}', $conn));
+    $mode = 'dual-channel';
+
+
+    if ($mode == 'shared-channel') {
+        $chan->addConsumer(new DebugConsumer($cons1, 1, $conn));
+    } else {
+        // Create a more channels to receive messages on
+        for ($k = 0; $k < 5; $k++) {
+            $chan2 = $conn->getChannel();
+            $qOk = $chan2->invoke($chan2->basic('qos', array('prefetch-count' => 5, 'global' => false)));
+            $cons2 = $chan2->basic('consume', array('queue' => $Q,
+                                                    'no-local' => true,
+                                                    'no-ack' => false,
+                                                    'exclusive' => false,
+                                                    'no-wait' => false));
+            $chan2->addConsumer(new DebugConsumer($cons2, 1+$k, $conn));
+        }
+    }
 
     // Consume messages forever, blocks indefinitely
 

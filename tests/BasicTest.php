@@ -79,6 +79,9 @@ class XmlBindingTest extends PHPUnit_Framework_TestCase
 
 
 
+
+
+
     /**
      * Publish a couple of messages, then check that they've arrived on the server
      */
@@ -105,8 +108,12 @@ class XmlBindingTest extends PHPUnit_Framework_TestCase
      */
     function testBasicGet () {
         $basicGet = self::$chan->basic('get', array('queue' => self::$queueName));
+        $this->assertEquals($basicGet->getClassProto()->getSpecName(), 'basic');
+        $this->assertEquals($basicGet->getMethodProto()->getSpecName(), 'get');
         for ($i = 0; $i < 5; $i++) {
             $getOk = self::$chan->invoke($basicGet);
+            $this->assertEquals($getOk->getClassProto()->getSpecName(), 'basic');
+            $this->assertEquals($getOk->getMethodProto()->getSpecName(), 'get-ok');
             $this->assertNotEmpty($getOk->getContent());
             $delTag = $getOk->getField('delivery-tag');
             $this->assertNotEmpty($delTag);
@@ -116,8 +123,5 @@ class XmlBindingTest extends PHPUnit_Framework_TestCase
         }
     }
 
-
-    function testAgainLikeWeDidLastSummer () {
-    }
 
 }
