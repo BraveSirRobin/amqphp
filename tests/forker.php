@@ -1,5 +1,23 @@
 <?php
 /**
+ * 
+ * Copyright (C) 2010, 2011  Robin Harvey (harvey.robin@gmail.com)
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ */
+/**
  * This one forks worker threads based on a config file
  */
 use amqp_091 as amqp;
@@ -10,7 +28,6 @@ require __DIR__ . '/../amqp.php';
 
 
 $CONFIG = @parse_ini_file(__DIR__ . '/forker.ini') OR die("Fault: missing config file!\n");
-//var_dump($CONFIG);
 
 include "{$CONFIG['consumerClass']}.php";
 include "{$CONFIG['producerClass']}.php";
@@ -26,7 +43,7 @@ if (! ($N_PROCS = $CONFIG['numConsumers'] + $CONFIG['numProducers'])) {
 }
 
 $PIDS = array();
-printf("Test begins, %d children (%d producers, %d consumers)\n", $N_PROCS, $CONFIG['numProducers'], $CONFIG['numConsumers']);
+printf("Test begins [PID=%d], %d children (%d producers, %d consumers)\n", posix_getpid(), $N_PROCS, $CONFIG['numProducers'], $CONFIG['numConsumers']);
 for ($i = 0; $i < $N_PROCS; $i++) {
     $clazz = ($i < $CONFIG['numConsumers']) ? $CONFIG['consumerClass'] : $CONFIG['producerClass'];
 
@@ -51,10 +68,6 @@ for ($i = 0; $i < $N_PROCS; $i++) {
         break;
     }
 }
-
-printf("Done.  PIDs are %s\n", implode(', ', $PIDS));
-
-
 
 pcntl_signal(SIGINT, 'sigHand'); 
 pcntl_signal(SIGTERM, 'sigHand');
@@ -111,6 +124,8 @@ function sigHand () {
     die;
 }
 
+/** Utility class for process handlers - write subclasses to run a process
+    and override the start() method. */
 class Forker
 {
     protected $n;

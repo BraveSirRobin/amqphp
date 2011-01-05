@@ -1,5 +1,22 @@
 <?php
+/**
+ * 
+ * Copyright (C) 2010, 2011  Robin Harvey (harvey.robin@gmail.com)
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
 
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ */
 use amqp_091 as amqp;
 use amqp_091\protocol;
 use amqp_091\wire;
@@ -9,8 +26,7 @@ class ForkerConsumer extends Forker
 {
 
     function start () {
-        $sleep = rand(2,5);
-        echo "ForkerConsumer {$this->n} starts with sleep $sleep\n";
+        printf("ForkerConsumer %d [PID=%d]\n", $this->n, posix_getpid());
         $this->initConnection();
         $this->prepareChannels();
 
@@ -20,10 +36,9 @@ class ForkerConsumer extends Forker
         if (! pcntl_signal(SIGTERM, array($this, 'sigHand'))) {
             echo "Failed to install SIGTERM in consumer {$this->n}\n";
         }
-        //sleep($sleep);
         $this->conn->startConsuming();
         $this->shutdownConnection();
-        echo "ForkerConsumer {$this->n} exits\n";
+        printf("ForkerConsumer %d [PID=%d] exits\n", $this->n, posix_getpid());
     }
 
     private $sigHandled = false;
@@ -57,13 +72,27 @@ class ForkerConsumer extends Forker
 class TraceConsumer extends amqp\SimpleConsumer
 {
     private $i;
+    private $n = 0;
     function __construct (wire\Method $consume = null, $i) {
         parent::__construct($consume);
         $this->i = $i;
     }
 
     function handleDelivery (wire\Method $meth, amqp\Channel $chan) {
-        echo "[d{$this->i}]";
+        $pl = $meth->getContent();
+        if (false !== ($p = strpos($pl, ' '))) {
+            $md5 = substr($pl, 0, $p);
+            $e = (md5(substr($pl, $p+1)) == $md5) ? 'K' : 'F';
+        } else {
+            $e = '#';
+        }
+
+        $this->n++;
+        if ($e == 'F') {
+            echo "[d{$this->i}{$e}]";
+        } else if (($this->n % 100) == 0) {
+            echo '.';
+        }
         return $this->ack($meth);
     }
 
