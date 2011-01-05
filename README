@@ -1,0 +1,6 @@
+Robin Harvey, 2011
+
+This is a pure PHP implementation of the amqp 0.9.1 protocol.
+This version has been tested against RabbitMQ 2+.  Please note
+that PHP5.3+ is required, and some of the test scripts use
+pcntl functions and forking.
