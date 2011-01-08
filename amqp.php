@@ -26,7 +26,7 @@
 
 /**
  * TODO:
- *  (1) Confirm if the split read Method buffering needs to be per-channel - not clear from spec
+ *  (1) Reproduce interleaved messages (lots of channels, large messages, small frame size)
  *  (2) Test with split method, content header frames (maybe set the frameMax to silly value in setup?)
  *  (3) Implement exceptions for Amqp 'events', i.e. channel / connection exceptions, etc.
  *  (4) Consider switching to use the higher level stream socket PHP funcs - could
@@ -604,7 +604,6 @@ class Connection
      * be placed in local queue
      */
     private function deliverAll () {
-        //printf("(+DLVR %d)", count($this->unDelivered));
         while ($this->unDelivered) {
             $meth = array_shift($this->unDelivered);
             if (isset($this->chans[$meth->getWireChannel()])) {
@@ -650,9 +649,6 @@ class Channel
     /** As set by the channel.flow Amqp method, controls whether content can be sent or not */
     private $flow = true;
 
-    /** Required for RMQ */
-    private $ticket;
-
     /** Flag set when the underlying Amqp channel has been closed due to an exception */
     private $destroyed = false;
 
@@ -677,19 +673,6 @@ class Channel
         $meth = new wire\Method(protocol\ClassFactory::GetMethod('channel', 'open'), $this->chanId);
         $meth->setField('reserved-1', '');
         $resp = $this->myConn->sendMethod($meth);
-
-        $meth = new wire\Method(protocol\ClassFactory::GetMethod('access', 'request'), $this->chanId);
-        $meth->setField('realm', $this->myConn->getVHost());
-        $meth->setField('exclusive', false);
-        $meth->setField('passive', true);
-        $meth->setField('active', true);
-        $meth->setField('write', true);
-        $meth->setField('read', true);
-
-        $resp = $this->myConn->sendMethod($meth);
-        if (! ($this->ticket = $resp->getField('ticket'))) {
-            throw new \Exception("Channel setup failed (3)", 9858);
-        }
     }
 
     /**
@@ -715,10 +698,7 @@ class Channel
         $m = new wire\Method($meth, $this->chanId);
         $clsF = $cls->getSpecFields();
         $mthF = $meth->getSpecFields();
-        if (in_array('reserved-1', $mthF)) {
-            // Helper for RMQ!!!!
-            $args['reserved-1'] = $this->ticket;
-        }
+
         if ($meth->getSpecHasContent() && $clsF) {
             foreach (array_merge(array_combine($clsF, array_fill(0, count($clsF), null)), $args) as $k => $v) {
                 $m->setClassField($k, $v);
