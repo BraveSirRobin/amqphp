@@ -772,6 +772,7 @@ class Method
             $this->mode = 'read';
             $this->readContruct($src);
         } else {
+            var_dump($src);
             throw new \Exception("Unsupported source type", 87423);
         }
     }
