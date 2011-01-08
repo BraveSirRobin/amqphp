@@ -1,6 +1,49 @@
+			    AMQPHP Notes.
+			     ------------
+
 Robin Harvey, 2011
 
-This is a pure PHP implementation of the amqp 0.9.1 protocol.
-This version has been tested against RabbitMQ 2+.  Please note
-that PHP5.3+ is required, and some of the test scripts use
-pcntl functions and forking.
+
+This is  a pure PHP implementation  of the amqp  0.9.1 protocol.  This
+version has been tested against RabbitMQ 2+.  Please note that PHP5.3+
+is  required, and some  of the  test scripts  use pcntl  functions and
+forking.
+
+
+
+			   Getting Started.
+			   ----------------
+
+First you need  to generate the Amqp protocol  bindings, there's a PHP
+script  to  do  this  in  the 'tools'  subdirectory,  simple  run  the
+generate-bindings.php  script  and  copy  the generated  code  to  the
+correct location.
+
+ * cd tools/
+ * php generate-bindings.php
+ * mv gencode ../
+
+You should now  be able to run  one of the test scripts,  from the CLI
+it's probably  best to run  tests/forker.php - you can  manipulate the
+RabbitMQ connection parameters and  the number of proucers / consumers
+in the INI file.  Enjoy!
+
+
+			  Running the tests.
+			  ------------------
+
+The tests scripts to run demos are:
+
+ * tests/forker.php
+ * tests/BasicTest.php
+
+The former can be run stand-alone from the CLI - this will use the PHP
+pcntl  functions   to  fork  off  producer   and  consumer  processes.
+BasicTest.php is a PHPUnit test  class and can be run through PHPUnit.
+The INI files specify  RMQ connection parameters and other interesting
+run time values.
+
+The  forker.php script  requires a  large data  file to  be  placed in
+tests/data/large-file.txt -  this is  used to generate  randomly sized
+(potentially very large)  messages.  This file should be  at least 4KB
+in size.

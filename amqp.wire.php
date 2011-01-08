@@ -210,11 +210,6 @@ class Reader extends Protocol
 
     function bytesRemaining () { return $this->binLen - $this->p; }
 
-    function cheatDebug () {
-        printf("\nCheat debug: %d, %d, %d\n", $this->binLen, $this->p, strlen($this->bin));
-        return substr($this->bin, $this->p);
-    }
-
     function getReadPointer () { return $this->p; }
 
     function getRemainingBuffer () {
@@ -781,7 +776,6 @@ class Method
         }
     }
 
-    private $TRACE = '';
 
     /** Helper: parse the incoming message from $src */
     /** TODO: Use generated validation methods??? */
@@ -796,19 +790,15 @@ class Method
 
         if ($this->reader) {
             // Complete an incomplete frame;
-            //printf("  -- append additional content to existing reader\n");
             $this->reader->append($bin);
             $src = $this->reader;
             $this->lfhCache = true;
-            $this->TRACE .= 'Z';
         } else {
             $src = new Reader($bin);
         }
 
         while (! $src->isSpent()) {
-            $this->TRACE .= 'a';
             if (true === ($_fh = $this->extractFrameHeader($src))) {
-                $this->TRACE .= 'Y' . $src->bytesRemaining() . '~' . hexdump($src->cheatDebug()) . '~';
                 // Must read again to get the whole frame header
                 break;
             } else {
@@ -823,37 +813,29 @@ class Method
             case 1:
                 // Load in method and method fields
                 if (true === $this->readMethodContent($src, $wireSize)) {
-                    $this->TRACE .= 'b';
                     $frmeFlag = false;
                     $break = true;
                 } else if ($this->methProto->getSpecHasContent()) {
-                    $this->TRACE .= 'c';
                     break;
                 } else {
-                    $this->TRACE .= 'd';
                     $break = true;
                     break;
                 }
                 break;
             case 2:
                 // Load in content header and property flags
-                $this->TRACE .= 'e';
                 if (true === $this->readContentHeaderContent($src, $wireSize)) {
                     $frmeFlag = false;
                     $break = true;
-                    $this->TRACE .= 'f';
                 }
                 break;
             case 3:
-                $this->TRACE .= 'g';
                 if (true === $this->readBodyContent($src, $wireSize)) {
                     // Split frame, return early
                     $frmeFlag = false;
                     $break = true;
-                    $this->TRACE .= 'h';
                 } else if ($src->isSpent() || $this->readConstructComplete()) {
                     $break = true;
-                    $this->TRACE .= 'j';
                 }
                 break;
             default:
@@ -861,28 +843,23 @@ class Method
             }
 
             if ($frmeFlag && $src->read('octet') != $FRME) {
-                throw new \Exception(sprintf("Framing exception - missed frame end (%s.%s) - (%d,%d,%d,%d) %s [%d, %d] %d",
+                throw new \Exception(sprintf("Framing exception - missed frame end (%s.%s) - (%d,%d,%d,%d) [%d, %d]",
                                              $this->classProto->getSpecName(),
                                              $this->methProto->getSpecName(),
-                                             $this->rcState, // 7
-                                             $break, // 1
-                                             $src->isSpent(), // 1
-                                             $this->readConstructComplete(), // 0
-                                             $this->TRACE, // Zah
+                                             $this->rcState,
+                                             $break,
+                                             $src->isSpent(),
+                                             $this->readConstructComplete(),
                                              strlen($this->content),
-                                             $this->contentSize,
-                                             rand(0, 100000)
+                                             $this->contentSize
                                              ), 8763);
-            } else if ($frmeFlag) {
-                $this->TRACE .= 'F';
             }
+
             if ($break) {
                 break;
             }
         }
-        if (! $this->readConstructComplete()) {
-            $this->TRACE .= sprintf("-[%d,%d]-", strlen($this->content), $this->contentSize);
-        }
+
         $this->reader = $src;
         $this->bytesRead += $src->getReadPointer();
     }
@@ -1075,7 +1052,6 @@ class Method
 
     function toBin () {
         if ($this->mode == 'read') {
-            echo printBacktrace(debug_backtrace());
             trigger_error('Invalid serialize operation on a read mode method', E_USER_WARNING);
             return '';
         }

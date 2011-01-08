@@ -55,8 +55,8 @@ const DEBUG = false;
  */
 class ConnectionFactory
 {
-    private $host = 'localhost'; // cannot vary after instantiation
-    private $port = 5672; // cannot vary after instantiation
+    private $host = 'localhost';
+    private $port = 5672;
     private $username = 'guest';
     private $userpass = 'guest';
     private $vhost = '/';
@@ -296,9 +296,7 @@ class Connection
         $read = $ex = array($this->sock);
         $write = null;
         $buff = $tmp = '';
-        //$st = microtime(true);
         $select = socket_select($read, $write, $ex, 5, 0); // TODO: parameterise wait interval
-        //printf("(R_SEL %s)", bcsub((string) microtime(true), (string) $st, 4));
         if ($select === false) {
             $errNo = socket_last_error();
             if ($errNo == SOCKET_EINTR) {
@@ -576,7 +574,6 @@ class Connection
                     // Deliver Channel messages immediately
                     $chanR = $chan->handleChannelMessage($meth);
                     if ($chanR instanceof wire\Method) {
-                        //printf("(%s.%s)", $chanR->getClassProto()->getSpecName(), $chanR->getMethodProto()->getSpecName());
                         $this->sendMethod($chanR, true); // SMR
                     } else if ($chanR === true) {
                         // This is required to support sending channel messages
@@ -619,7 +616,6 @@ class Connection
                 $this->unDeliverable[] = $meth;
             }
         }
-        //printf("(-DLVR %d)", count($this->unDelivered));
     }
 
     function getUndeliverableMessages ($chan) {
@@ -694,7 +690,6 @@ class Channel
         if (! ($this->ticket = $resp->getField('ticket'))) {
             throw new \Exception("Channel setup failed (3)", 9858);
         }
-        //printf("  Channel %d set up\n", $this->chanId);
     }
 
     /**
@@ -763,7 +758,7 @@ class Channel
     function handleChannelMessage (wire\Method $meth) {
         $sid = "{$meth->getClassProto()->getSpecName()}.{$meth->getMethodProto()->getSpecName()}";
 
-        switch ($sid) { //$meth->getMethodProto()->getSpecName()) {
+        switch ($sid) {
         case 'channel.flow':
             // TODO: Make sure that when shut off, the current message send is cancelled
             $this->flow = ! $this->flow;

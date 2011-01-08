@@ -21,8 +21,14 @@ use amqp_091 as amqp;
 use amqp_091\protocol;
 use amqp_091\wire;
 
-require('amqp.php');
+require(__DIR__ . '/../amqp.php');
+/*
 
+   The test code in this file is deprecated - please use either forker.php or
+   BasicTest.php to run tests.
+
+
+ */
 
 
 
