@@ -24,19 +24,19 @@ class ForkerProducer extends Forker
 
     const WAFFLE_SIZE = 4096;
 
-    private $basicPub;
-    private $chan;
-    private $sigHandled = false;
+    protected $basicPub;
+    protected $chan;
+    protected $sigHandled = false;
 
-    private $smallMsgMin;
-    private $smallMsgMax;
-    private $largeMsgMin;
-    private $largeMsgMax;
+    protected $smallMsgMin;
+    protected $smallMsgMax;
+    protected $largeMsgMin;
+    protected $largeMsgMax;
 
-    private $waffle;
+    protected $waffle;
 
-    private $prodNumLoops;
-    private $prodSleepMillis;
+    protected $prodNumLoops;
+    protected $prodSleepMillis;
 
     function start () {
         printf("ForkerProducer %d [PID=%d]\n", $this->n, posix_getpid());
@@ -84,6 +84,8 @@ class ForkerProducer extends Forker
             } else {
                 $this->sendSmallMessage();
             }
+            // Always poll after sending in case there's an exception message waiting to be process
+            $this->pollQueue();
             if ($this->prodSleepMillis) {
                 usleep($this->prodSleepMillis);
             }
@@ -106,12 +108,18 @@ class ForkerProducer extends Forker
     }
 
 
+    function returnCrashPayload () {
+        return file_get_contents('/tmp/amqp-meth-debug.ir3rMv');
+    }
+
+
 
     function sendLargeMessage () {
         $buff = $this->getNBytesOfWaffle(rand($this->largeMsgMin, $this->largeMsgMax));
         $buff = md5($buff) . ' ' . $buff;
         //echo "\{LGE: $buff\}";
         $this->basicPub->setContent($buff);
+        //$this->basicPub->setContent($this->returnCrashPayload());
         $this->chan->invoke($this->basicPub);
     }
 
@@ -120,9 +128,15 @@ class ForkerProducer extends Forker
         $buff = md5($buff) . ' ' . $buff;
         //echo "\{SML: $buff\}";
         $this->basicPub->setContent($buff);
+        //$this->basicPub->setContent($this->returnCrashPayload());
         $this->chan->invoke($this->basicPub);
     }
 
+    function pollQueue () {
+        $qDecl = $this->chan->queue('declare', array('queue' => $this->fParams['queueName']));
+        $declOk = $this->chan->invoke($qDecl);
+        return $declOk->getField('message-count');
+    }
 
     /** Ronseal! */
     function getNBytesOfWaffle ($n) {
@@ -142,7 +156,7 @@ class ForkerProducer extends Forker
         }
     }
 
-    private function acquireWaffle () {
+    protected function acquireWaffle () {
         if (! $this->waffle) {
             if (! ($fp = fopen(__DIR__ . '/data/large-file.txt', 'r'))) {
                 throw new Exception("Failed to open large file to acquire waffle", 9654);

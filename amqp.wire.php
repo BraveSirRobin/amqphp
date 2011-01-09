@@ -740,20 +740,23 @@ class Method
         includes total of method, content header, message body */
     private $bytesRead = 0;
 
+    /** Helper: extract and return a frame header */
+    private $lfh; // Used to remember the frame header for split reads
+    private $lfhCache = false; // Flag flipped to trigger read continue for split reads
 
-    function getReadStateAsString () {
-        // Mostly for dev only
-        $buff = '';
-        if ($this->rcState & self::ST_METH_READ) {
-            $buff .= "  Method header is read\n";
+
+
+    function debugDumpContents () {
+        echo "\nDump Method Object\n";
+        printf("  rcState: %d\n  mode: %s\n  frameMax: %d\n  wireChannel: %d\n  contentSize: %d\n",
+               $this->rcState, $this->mode, $this->frameMax, $this->wireChannel, $this->contentSize);
+        $tmpFile = tempnam('/tmp', 'amqp-meth-debug.');
+        file_put_contents($tmpFile, $this->content);
+        echo "Content in temp file group $tmpFile\n";
+        foreach ($this->toBin() as $i => $part) {
+            printf("  Part %d: %d bytes:\n%s\n", $i, strlen($part), hexdump(substr($part, 0, 32)));
+            file_put_contents("{$tmpFile}.{$i}", $part);
         }
-        if ($this->rcState & self::ST_CHEAD_READ) {
-            $buff .= "  Content header is read\n";
-        }
-        if ($this->rcState & self::ST_BODY_READ) {
-            $buff .= "  Content body is read\n";
-        }
-        return $buff;
     }
 
 
@@ -865,9 +868,6 @@ class Method
         $this->bytesRead += $src->getReadPointer();
     }
 
-    /** Helper: extract and return a frame header */
-    private $lfh; // Used to remember the frame header for split reads
-    private $lfhCache = false; // Flag flipped to trigger read continue for split reads
     private function extractFrameHeader(Reader $src) {
         if ($src->isSpent(7)) {
             return true;
@@ -962,9 +962,6 @@ class Method
 
 
 
-
-    /** Append message body content from $src */
-    private $frameShortfall = 0;
     private function readBodyContent (Reader $src, $wireSize) {
         if ($src->isSpent($wireSize + 1)) {
             return true;
@@ -1076,7 +1073,11 @@ class Method
             $tmp = (string) $this->content;
             $i = 0;
             $frameSize = $this->frameSize - 8;
-            while ($chunk = substr($tmp, ($i * $frameSize), $frameSize)) {
+            while (true) {
+                $chunk = substr($tmp, ($i * $frameSize), $frameSize);
+                if (strlen($chunk) == 0) {
+                    break;
+                }
                 $w = new Writer;
                 $w->write(3, 'octet');
                 $w->write($this->wireChannel, 'short');

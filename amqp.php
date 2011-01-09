@@ -49,93 +49,73 @@ const DEBUG = false;
 
 
 
-/**
- * Class to create connections to a single RabbitMQ endpoint.  If connections
- * to multiple servers are required, use multiple factories
- */
-class ConnectionFactory
-{
-    private $host = 'localhost';
-    private $port = 5672;
-    private $username = 'guest';
-    private $userpass = 'guest';
-    private $vhost = '/';
-    private $sReadTimeoutUSecs = 500;
-    private $sReadTimeoutSecs = 2;
-
-
-    function __construct (array $params = array()) {
-        foreach ($params as $pname => $pval) {
-            switch ($pname) {
-            case 'host':
-            case 'port':
-            case 'username':
-            case 'userpass':
-            case 'vhost':
-            case 'sReadTimeoutSecs':
-            case 'sReadTimeoutUSecs':
-                $this->{$pname} = $pval;
-                break;
-            }
-        }
-    }
-
-    function newConnection () {
-        if (! ($sock = socket_create(AF_INET, SOCK_STREAM, SOL_TCP))) {
-            throw new \Exception("Failed to create inet socket", 7895);
-        } else if (! socket_connect($sock, $this->host, $this->port)) {
-            throw new \Exception("Failed to connect inet socket {$sock}, {$this->host}, {$this->port}", 7564);
-        }
-        if (false === socket_set_option($sock, SOL_SOCKET, SO_RCVTIMEO,
-                                        array('sec' => $this->sReadTimeoutSecs, 'usec'=> $this->sReadTimeoutUSecs))) {
-            throw new Exception("Failed to set read timeout on socket", 9756);
-        }
-        return new Connection($sock, $this->username, $this->userpass, $this->vhost);
-    }
-}
-
 class Connection
 {
     const READ_LEN = 4096;
 
-    private static $ClientProperties = array('product' => 'My Amqp implementation',
-                                             'version' => '0.01',
+    /** Default client-properties field used during connection setup */
+    private static $ClientProperties = array('product' => 'RobinTheBrave-amqphp',
+                                             'version' => '0.5',
                                              'platform' => 'Linux baby!',
-                                             'copyright' => 'Copyright (c) 2010 Robin Harvey (harvey.robin@gmail.com)',
-                                             'information' => 'Property of Robin Harvey');
+                                             'copyright' => 'Copyright (c) 2010,2011 Robin Harvey (harvey.robin@gmail.com)',
+                                             'information' => 'This software is released under the terms of the GNU LGPL: http://www.gnu.org/licenses/lgpl-3.0.txt');
 
+    /** List of class fields that are settable connection params */
+    private static $CProps = array('host', 'port', 'username', 'userpass', 'vhost', 'frameMax', 'chanMax', 'signalDispatch');
+
+    /** Connection params */
     private $sock; // TCP socket
+    private $host = 'localhost';
+    private $port = 5672;
+    private $username;
+    private $userpass;
+    private $vhost;
+    private $frameMax = 65536; // Negotated during setup.
+    private $chanMax = 50; // Negotated during setup.
+    private $signalDispatch = true;
+
+    /** Bytes written, received through this connection */
     private $bw = 0;
     private $br = 0;
 
     private $chans = array(); // Format: array(<chan-id> => Channel)
     private $nextChan = 1;
-    private $chanMax; // Negotated during setup.
-    private $frameMax; // Negotated during setup.
 
-    /** Broker connection params, specified in constructor */
-    private $username;
-    private $userpass;
-    private $vhost;
 
     /** Flag set when connection is in read blocking mode, waiting for messages */
     private $blocking = false;
+
     /** Flag is picked up in consume loop and causes it to exit immediately */
     private $consumeHalt = false;
 
-    private $signalDispatch = true;
 
-    function __construct ($sock, $username, $userpass, $vhost) {
-        $this->sock = $sock;
-        $this->username = $username;
-        $this->userpass = $userpass;
-        $this->vhost = $vhost;
-        $this->initConnection();
+
+    private $connected = false;
+
+
+    function __construct (array $params = array()) {
+        $this->setConnectionParams($params);
+    }
+
+    /**
+     * Assoc array sets the connection parameters
+     */
+    function setConnectionParams (array $params) {
+        foreach (self::$CProps as $pn) {
+            if (isset($params[$pn])) {
+                $this->$pn = $params[$pn];
+                //printf("   Set %s to %s\n", $pn, $this->$pn);
+            }
+        }
     }
 
 
     /** Shutdown child channels and then the connection  */
     function shutdown () {
+        if (! $this->connected) {
+            trigger_error("Cannot shut a closed connection", 3496);
+            return;
+        }
         foreach (array_keys($this->chans) as $cName) {
             $this->chans[$cName]->shutdown();
         }
@@ -152,7 +132,7 @@ class Connection
              trigger_error("Unclean connection shutdown (2)", E_USER_WARNING);
              return;
         }
-        //printf("num undelivered:\n%d\n", count($this->unDelivered));
+
         if (! ($meth = new wire\Method($raw)) &&
             $meth->getClassProto() &&
             $meth->getClassProto()->getSpecName() == 'connection' &&
@@ -161,11 +141,24 @@ class Connection
             trigger_error("Channel protocol shudown fault", E_USER_WARNING);
         }
         $this->close();
+        $thiss->connected = false;
     }
 
 
+    /** If not already connected, connect to the target broker and do Amqp connection setup */
+    function connect (array $params = array()) {
+        if ($this->connected) {
+            trigger_error("", E_USER_WARNING);
+            return;
+        }
+        $this->setConnectionParams($params);
+        // Establish the TCP connection
+        if (! ($this->sock = socket_create(AF_INET, SOCK_STREAM, SOL_TCP))) {
+            throw new \Exception("Failed to create inet socket", 7895);
+        } else if (! socket_connect($this->sock, $this->host, $this->port)) {
+            throw new \Exception("Failed to connect inet socket {$sock}, {$this->host}, {$this->port}", 7564);
+        }
 
-    private function initConnection () {
         if (! ($this->write(wire\PROTOCOL_HEADER))) {
             // No bytes written?
             throw new \Exception("Connection initialisation failed (1)", 9873);
@@ -200,9 +193,15 @@ class Connection
         }
         $meth = new wire\Method($raw);
 
-        $this->chanMax = $meth->getField('channel-max');
-        $this->frameMax = $meth->getField('frame-max');
-        //printf("Got  channel %d, frameMax %d\n", $this->chanMax, $this->frameMax);
+        $chanMax = $meth->getField('channel-max');
+        $frameMax = $meth->getField('frame-max');
+        //printf("\nBefore-Negotiate: (chanMax, frameMax):\nServer: (%d, %d)\nClient: (%d, %d)\n",
+        //$chanMax, $frameMax, $this->chanMax, $this->frameMax);
+        // TODO: Add API stuff to allow negoptiation policies
+        $this->chanMax = ($chanMax < $this->chanMax) ? $chanMax : $this->chanMax;
+        $this->frameMax = ($frameMax < $this->frameMax) ? $frameMax : $this->frameMax;
+        //printf("\nAfter-Negotiate: (chanMax, frameMax):\nClient: (%d, %d)\n",
+        //$this->chanMax, $this->frameMax);
 
 
         // Expect tune
@@ -238,6 +237,7 @@ class Connection
         if (! ($meth->getMethodProto()->getSpecIndex() == 41 && $meth->getClassProto()->getSpecIndex() == 10)) {
             throw new \Exception("Connection initialisation failed (13)", 9885);
         }
+        $this->connected = true;
     }
 
     private function getClientProperties () {
@@ -277,6 +277,10 @@ class Connection
     }
 
     private function initNewChannel () {
+        if (! $this->connected) {
+            trigger_error("Connection is not connected - cannot create Channel", E_USER_WARNING);
+            return null;
+        }
         $newChan = $this->nextChan++;
         if ($this->chanMax > 0 && $newChan > $this->chanMax) {
             throw new \Exception("Channels are exhausted!", 23756);

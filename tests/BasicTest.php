@@ -38,8 +38,9 @@ class XmlBindingTest extends PHPUnit_Framework_TestCase
         self::$exchangeType = $sParams['exchangeType'];
         self::$queueName = $sParams['queueName'];
 
-        $connFact = new amqp\ConnectionFactory($sParams);
-        self::$conn = $connFact->newConnection();
+        //$connFact = new amqp\ConnectionFactory($sParams);
+        //self::$conn = $connFact->newConnection();
+        self::$conn = new amqp\Connection($sParams);
         self::$chan = self::$conn->getChannel();
 
         // Declare the exchange

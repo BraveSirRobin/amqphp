@@ -62,7 +62,9 @@ class ForkerConsumer extends Forker
                                                   'no-ack' => false,
                                                   'exclusive' => false,
                                                   'no-wait' => false));
-            $chan->addConsumer(new TraceConsumer($cons, $i));
+            for ($j = 0; $j < $this->fParams['consumersPerChannel']; $j++) {
+                $chan->addConsumer(new TraceConsumer($cons, ($i * $this->fParams['consumersPerChannel']) + $j));
+            }
         }
     }
 }
@@ -89,8 +91,9 @@ class TraceConsumer extends amqp\SimpleConsumer
 
         $this->n++;
         if ($e == 'F') {
-            echo "[d{$this->i}{$e}]";
-        } else if (($this->n % 100) == 0) {
+            printf("\nChecksum failed (%s):\n\$this->i: %d\nOrig MD5: %s\nActual MD5: %s\nContent-Length: %s\n",
+                   $e, $this->i, $md5, md5(substr($pl, $p+1)), strlen($pl));
+        } else if (($this->n % 10) == 0) {
             echo '.';
         }
         return $this->ack($meth);

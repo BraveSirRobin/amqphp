@@ -57,7 +57,7 @@ for ($i = 0; $i < $N_PROCS; $i++) {
             $pHandler = new $clazz($i, $CONFIG);
             $pHandler->_start();
         } catch (Exception $e) {
-            printf("[O] Child {$i} failed:\n%s\n", $e->getMessage());
+            printf("[O] Child %d (%d) failed:\n%s\n", posix_getpid(), $i, $e->getMessage());
         }
         die;
         break;
@@ -155,8 +155,10 @@ class Forker
     function start () { echo "Forker $n starts\n"; }
 
     function initConnection () {
-        $connFact = new amqp\ConnectionFactory($this->fParams);
-        $this->conn = $connFact->newConnection();
+        //$connFact = new amqp\ConnectionFactory($this->fParams);
+        //$this->conn = $connFact->newConnection();
+        $this->conn = new amqp\Connection($this->fParams);
+        $this->conn->connect();
     }
 
     function prepareChannel () {
@@ -188,4 +190,19 @@ class Forker
     function shutdownConnection () {
         $this->conn->shutdown();
     }
+}
+
+// Pretty print the given backtrace, from debug_backtrace, return as string
+function printBacktrace ($bt) {
+    $r = '';
+    foreach ($bt as $t) {
+        if (isset($t['type']) && ($t['type'] == '->' || $t['type'] == '::')) {
+            $r .= sprintf("Class call %s%s%s at %s [%s]\n", $t['class'], $t['type'], $t['function'], basename($t['file']), $t['line']);
+        } else if (isset($t['function'])) {
+            $r .= sprintf("Function call %s at %s [%s]\n", $t['function'], basename($t['file']), $t['line']);
+        } else {
+            $r .= sprintf("File %s [%s]\n", basename($t['file']), $t['line']);
+        }
+    }
+    return $r;
 }
