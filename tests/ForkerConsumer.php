@@ -37,7 +37,9 @@ class ForkerConsumer extends Forker
             echo "Failed to install SIGTERM in consumer {$this->n}\n";
         }
         $this->conn->startConsuming();
-        $this->shutdownConnection();
+        if (! $this->sigHandled) {
+            $this->shutdownConnection();
+        }
         printf("ForkerConsumer %d [PID=%d] exits\n", $this->n, posix_getpid());
     }
 

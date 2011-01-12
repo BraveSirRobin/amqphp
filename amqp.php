@@ -49,6 +49,92 @@ const DEBUG = false;
 
 
 
+
+
+
+
+/**
+ * Wrapper for a single socket
+ */
+class Socket
+{
+    const READ_SELECT = 1;
+    const WRITE_SELECT = 2;
+    const READ_LENGTH = 4096;
+
+    private $sock;
+    private $connected = false;
+
+    function __construct ($host, $port) {
+        $this->host = $host;
+        $this->port = $port;
+    }
+
+    function connect () {
+        if (! ($this->sock = socket_create(AF_INET, SOCK_STREAM, SOL_TCP))) {
+            throw new \Exception("Failed to create inet socket", 7895);
+        } else if (! socket_connect($this->sock, $this->host, $this->port)) {
+            throw new \Exception("Failed to connect inet socket {$sock}, {$this->host}, {$this->port}", 7564);
+        }
+        $this->connected = true;
+    }
+
+    function select ($tvSec, $tvUsec = 0, $rw = self::READ_SELECT) {
+        $read = $write = $ex = null;
+        if ($rw & self::READ_SELECT) {
+            $read = $ex = array($this->sock);
+        }
+        if ($rw & self::WRITE_SELECT) {
+            $write = $ex = array($this->sock);
+        }
+        if (! $read && ! $write) {
+            throw new \Exception("Select must read and/or write", 9864);
+        }
+        return socket_select($read, $write, $ex, $tvSec, $tvUsec);
+    }
+
+    function lastError () {
+        return socket_last_error();
+    }
+
+    function strError () {
+        return socket_strerror($this->lastError());
+    }
+
+    function readAll ($readLen = self::READ_LENGTH) {
+        $buff = '';
+        while (@socket_recv($this->sock, $tmp, $readLen, MSG_DONTWAIT)) {
+            $buff .= $tmp;
+        }
+        return $buff;
+    }
+
+    function write ($buff) {
+        $bw = 0;
+        $contentLength = strlen($buff);
+        while (true) {
+            if (($tmp = socket_write($this->sock, $buff)) === false) {
+                throw new \Exception(sprintf("\nSocket write failed: %s\n",
+                                             $this->strError()), 7854);
+            }
+            $bw += $tmp;
+            if ($bw < $contentLength) {
+                $buff = substr($buff, $bw);
+            } else {
+                break;
+            }
+        }
+        return $bw;
+    }
+
+    function close () {
+        $this->connected = false;
+        socket_close($this->sock);
+    }
+}
+
+
+
 class Connection
 {
     const READ_LEN = 4096;
@@ -104,7 +190,6 @@ class Connection
         foreach (self::$CProps as $pn) {
             if (isset($params[$pn])) {
                 $this->$pn = $params[$pn];
-                //printf("   Set %s to %s\n", $pn, $this->$pn);
             }
         }
     }
@@ -113,7 +198,7 @@ class Connection
     /** Shutdown child channels and then the connection  */
     function shutdown () {
         if (! $this->connected) {
-            trigger_error("Cannot shut a closed connection", 3496);
+            trigger_error("Cannot shut a closed connection", E_USER_WARNING);
             return;
         }
         foreach (array_keys($this->chans) as $cName) {
@@ -140,8 +225,8 @@ class Connection
             $meth->getMethodProto()->getSpecName() == 'close-ok') {
             trigger_error("Channel protocol shudown fault", E_USER_WARNING);
         }
-        $this->close();
-        $thiss->connected = false;
+        $this->sock->close();
+        $this->connected = false;
     }
 
 
@@ -153,12 +238,8 @@ class Connection
         }
         $this->setConnectionParams($params);
         // Establish the TCP connection
-        if (! ($this->sock = socket_create(AF_INET, SOCK_STREAM, SOL_TCP))) {
-            throw new \Exception("Failed to create inet socket", 7895);
-        } else if (! socket_connect($this->sock, $this->host, $this->port)) {
-            throw new \Exception("Failed to connect inet socket {$sock}, {$this->host}, {$this->port}", 7564);
-        }
-
+        $this->sock = new Socket($this->host, $this->port);
+        $this->sock->connect();
         if (! ($this->write(wire\PROTOCOL_HEADER))) {
             // No bytes written?
             throw new \Exception("Connection initialisation failed (1)", 9873);
@@ -297,22 +378,17 @@ class Connection
 
     /** Still 'synchronous', doesn't rely on frame end at end of buffer */
     private function read () {
-        $read = $ex = array($this->sock);
-        $write = null;
-        $buff = $tmp = '';
-        $select = socket_select($read, $write, $ex, 5, 0); // TODO: parameterise wait interval
+        $select = $this->sock->select(5);
         if ($select === false) {
-            $errNo = socket_last_error();
+            $errNo = $this->sock->lastError();
             if ($errNo == SOCKET_EINTR) {
                 // Select returned because we received a signal, dispatch to signal handlers, if present
                 pcntl_signal_dispatch();
             }
-            $errStr = socket_strerror($errNo);
+            $errStr = $this->sock->strError();
             throw new \Exception ("[1] Read block select produced an error: [$errNo] $errStr", 9963);
-        } else if ($select > 0 && $read) {
-            while (@socket_recv($this->sock, $tmp, self::READ_LEN, MSG_DONTWAIT)) {
-                $buff .= $tmp;
-            }
+        } else if ($select > 0) {
+            $buff = $this->sock->readAll();
         }
         if (DEBUG) {
             echo "\n<read>\n";
@@ -330,27 +406,9 @@ class Connection
                 echo "\n<write>\n";
                 echo wire\hexdump($buff);
             }
-            $contentLength = strlen($buff);
-            $bw = 0;
-            while (true) {
-                if (($tmp = socket_write($this->sock, $buff)) === false) {
-                    throw new \Exception(sprintf("\nSocket write failed: %s\n",
-                                                 socket_strerror(socket_last_error())), 7854);
-                }
-                $bw += $tmp;
-                $this->bw += $tmp;
-                if ($bw < $contentLength) {
-                    $buff = substr($buff, $bw);
-                } else {
-                    break;
-                }
-            }
+            $bw = $this->sock->write($buff);
         }
         return $bw;
-    }
-    /**  Low level socket close function */
-    private function close () {
-        socket_close($this->sock);
     }
 
 
@@ -471,29 +529,28 @@ class Connection
 
         while (true) {
             $this->deliverAll();
-            $read = $ex = array($this->sock);
-            $write = null;
             if ($this->consumeHalt) {
                 $this->consumeHalt = false;
                 break;
             } else if ($this->signalDispatch) {
                 pcntl_signal_dispatch();
+                if (! $this->connected) {
+                    trigger_error("Connection is no longer connected, force exit of consume loop.", E_USER_WARNING);
+                    return;
+                }
             }
             $select = is_null($this->blockTmSecs) ?
-                @socket_select($read, $write, $exc, null)
-                : @socket_select($read, $write, $ex, $this->blockTmSecs, $this->blockTmMillis);
+                $this->sock->select(null)
+                : $this->sock->select($this->blockTmSecs, $this->blockTmMillis);
             if ($select === false) {
-                $errNo = socket_last_error();
+                $errNo = $this->sock->lastError();
                 if ($this->signalDispatch && $errNo == SOCKET_EINTR) {
                     pcntl_signal_dispatch();
                 }
-                $errStr = socket_strerror($errNo);
+                $errStr = $this->sock->strError();
                 throw new \Exception ("[2] Read block select produced an error: [$errNo] $errStr", 9963);
-            } else if ($select > 0 && $read) {
-                $buff = $tmp = '';
-                while (@socket_recv($this->sock, $tmp, self::READ_LEN, MSG_DONTWAIT)) {
-                    $buff .= $tmp;
-                }
+            } else if ($select > 0) {
+                $buff = $this->sock->readAll();
                 if ($buff && ($meths = $this->readMessages($buff))) {
                     $this->unDelivered = array_merge($this->unDelivered, $meths);
                 } else if (! $buff) {
