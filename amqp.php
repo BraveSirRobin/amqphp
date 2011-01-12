@@ -49,12 +49,8 @@ const DEBUG = false;
 
 
 
-
-
-
-
 /**
- * Wrapper for a single socket
+ * Wrapper for a _single_ socket
  */
 class Socket
 {
@@ -74,11 +70,12 @@ class Socket
         if (! ($this->sock = socket_create(AF_INET, SOCK_STREAM, SOL_TCP))) {
             throw new \Exception("Failed to create inet socket", 7895);
         } else if (! socket_connect($this->sock, $this->host, $this->port)) {
-            throw new \Exception("Failed to connect inet socket {$sock}, {$this->host}, {$this->port}", 7564);
+            throw new \Exception("Failed to connect inet socket ({$this->host}, {$this->port})", 7564);
         }
         $this->connected = true;
     }
 
+    /** TODO: this function can't be used for read/write, only one at a time! */
     function select ($tvSec, $tvUsec = 0, $rw = self::READ_SELECT) {
         $read = $write = $ex = null;
         if ($rw & self::READ_SELECT) {
@@ -92,6 +89,25 @@ class Socket
         }
         return socket_select($read, $write, $ex, $tvSec, $tvUsec);
     }
+
+    /** Call select to wait for content then read and return it all */
+    function read () {
+        $select = $this->select(5);
+        if ($select === false) {
+            return false;
+        } else if ($select > 0) {
+            $buff = $this->readAll();
+        }
+        if (DEBUG) {
+            echo "\n<read>\n";
+            echo wire\hexdump($buff);
+        }
+        return $buff;
+    }
+
+
+
+
 
     function lastError () {
         return socket_last_error();
@@ -134,11 +150,98 @@ class Socket
 }
 
 
+class StreamSocket
+{
+    const READ_SELECT = 1;
+    const WRITE_SELECT = 2;
+    const READ_LENGTH = 4096;
+
+
+    function __construct ($host, $port) {
+        $this->host = $host;
+        $this->port = $port;
+    }
+
+    function connect () {
+        //$this->sock = stream_socket_client("tcp://{$this->host}:{$this->port}", $errno, $errstr, 30);
+        $this->sock = fsockopen($this->host, $this->port, $errno, $errstr);
+        if (! $this->sock) {
+            throw new \Exception("Failed to connect stream socket {$this->host}:{$this->port}, ($errno, $errstr)", 7568);
+        }
+    }
+
+    function select ($tvSec, $tvUsec = 0, $rw = self::READ_SELECT) {
+        $read = $write = $ex = null;
+        if ($rw & self::READ_SELECT) {
+            $read = $ex = array($this->sock);
+        }
+        if ($rw & self::WRITE_SELECT) {
+            $write = $ex = array($this->sock);
+        }
+        if (! $read && ! $write) {
+            throw new \Exception("Select must read and/or write", 9864);
+        }
+        //echo "  Call Select\n";
+        $ret = stream_select($read, $write, $ex, $tvSec, $tvUsec);
+        //echo "   SELECT ($tvSec, $tvUsec) -> $ret\n";
+        return $ret;
+    }
+
+    function lastError () {
+        return 0;
+    }
+
+    function strError () {
+        return '';
+    }
+
+    function readAll ($readLen = self::READ_LENGTH) {
+        $buff = '';
+        //printf("Read - EOF: %b", feof($this->sock));
+        do {
+            $stream_meta_data = stream_get_meta_data($this->sock); //Added line
+            //printf("READ START, (foef=%b) (bytes remain=%d)\n", feof($this->sock), $stream_meta_data['unread_bytes']);
+            $buff .= fread($this->sock, $readLen);
+            $stream_meta_data = stream_get_meta_data($this->sock); //Added line
+            //printf("READ END, (foef=%b) (bytes remain=%d)\n", feof($this->sock), $stream_meta_data['unread_bytes']);
+            $readLen = min($stream_meta_data['unread_bytes'], $readLen);
+        } while ($stream_meta_data['unread_bytes'] > 0);
+        //echo "~~~(read returns)\n";
+        return $buff;
+    }
+
+    function read () {
+        return $this->readAll();
+    }
+
+    function write ($buff) {
+        $bw = 0;
+        $contentLength = strlen($buff);
+        while (true) {
+            if (($tmp = fwrite($this->sock, $buff)) === false) {
+                throw new \Exception(sprintf("\nStream write failed: %s\n",
+                                             $this->strError()), 7854);
+            }
+            $bw += $tmp;
+            if ($bw < $contentLength) {
+                $buff = substr($buff, $bw);
+            } else {
+                break;
+            }
+        }
+        return $bw;
+
+    }
+
+    function close () {
+        fclose($this->sock);
+    }
+
+}
+
 
 class Connection
 {
-    const READ_LEN = 4096;
-
     /** Default client-properties field used during connection setup */
     private static $ClientProperties = array('product' => 'RobinTheBrave-amqphp',
                                              'version' => '0.5',
@@ -150,7 +253,7 @@ class Connection
     private static $CProps = array('host', 'port', 'username', 'userpass', 'vhost', 'frameMax', 'chanMax', 'signalDispatch');
 
     /** Connection params */
-    private $sock; // TCP socket
+    private $sock; // Socket class
     private $host = 'localhost';
     private $port = 5672;
     private $username;
@@ -319,6 +422,7 @@ class Connection
             throw new \Exception("Connection initialisation failed (13)", 9885);
         }
         $this->connected = true;
+        echo "  Connection setup complete!\n";
     }
 
     private function getClientProperties () {
@@ -376,12 +480,14 @@ class Connection
     function getVHost() { return $this->vhost; }
 
 
-    /** Still 'synchronous', doesn't rely on frame end at end of buffer */
+    /** Still 'synchronous', doesn't rely on frame end at end of buffer 
     private function read () {
+        //return $this->sock->readAll();
+
         $select = $this->sock->select(5);
         if ($select === false) {
             $errNo = $this->sock->lastError();
-            if ($errNo == SOCKET_EINTR) {
+            if ($this->signalDispatch && $errNo == SOCKET_EINTR) {
                 // Select returned because we received a signal, dispatch to signal handlers, if present
                 pcntl_signal_dispatch();
             }
@@ -396,6 +502,26 @@ class Connection
         }
         return $buff;
     }
+    */
+
+
+    private function read () {
+        $ret = $this->sock->read();
+        if ($ret === false) {
+            $errNo = $this->sock->lastError();
+            if ($this->signalDispatch && $errNo == SOCKET_EINTR) {
+                pcntl_signal_dispatch();
+            }
+            $errStr = $this->sock->strError();
+            throw new \Exception ("[1] Read block select produced an error: [$errNo] $errStr", 9963);
+        }
+        if (DEBUG) {
+            echo "\n<read>\n";
+            echo wire\hexdump($ret);
+        }
+        return $ret;
+    }
+
 
 
     /** Low level protocol write function.  Accepts either single values or

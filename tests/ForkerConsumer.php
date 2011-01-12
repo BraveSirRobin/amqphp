@@ -96,7 +96,7 @@ class TraceConsumer extends amqp\SimpleConsumer
             printf("\nChecksum failed (%s):\n\$this->i: %d\nOrig MD5: %s\nActual MD5: %s\nContent-Length: %s\n",
                    $e, $this->i, $md5, md5(substr($pl, $p+1)), strlen($pl));
         } else if (($this->n % 10) == 0) {
-            echo '.';
+            echo 'KK';
         }
         return $this->ack($meth);
     }
