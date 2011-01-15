@@ -208,6 +208,9 @@ class Reader extends Protocol
         return ($this->p + $n >= $this->binLen);
     }
 
+    // Debug: remove!
+    function getBin () { return $this->bin; }
+
     function bytesRemaining () { return $this->binLen - $this->p; }
 
     function getReadPointer () { return $this->p; }
@@ -760,6 +763,7 @@ class Method
     }
 
 
+
     /**
      * @param mixed   $src    String = A complete Amqp frame = read mode
      *                        XmlSpecMethod = The type of message this should be = write mode
@@ -790,13 +794,11 @@ class Method
         }
         $FRME = 206; // TODO!!  UN-HARD CODE!!
         $break = false;
-        $frmeFlag = true;
 
         if ($this->reader) {
             // Complete an incomplete frame;
             $this->reader->append($bin);
             $src = $this->reader;
-            $this->lfhCache = true;
         } else {
             $src = new Reader($bin);
         }
@@ -813,32 +815,27 @@ class Method
             } else if ($this->wireChannel != $wireChannel) {
                 throw new \Exception("Method must not be given content from more than one channel", 7694);
             }
+            if ($src->isSpent($wireSize + 1)) {
+                // make sure that the whole frame (including frame end) is available in the buffer, if
+                // not, break out now so that the connection will read again.
+                $this->lfhCache = true;
+                break;
+            }
             switch ($wireType) {
             case 1:
                 // Load in method and method fields
-                if (true === $this->readMethodContent($src, $wireSize)) {
-                    $frmeFlag = false;
+                $this->readMethodContent($src, $wireSize);
+                if (! $this->methProto->getSpecHasContent()) {
                     $break = true;
-                } else if ($this->methProto->getSpecHasContent()) {
-                    break;
-                } else {
-                    $break = true;
-                    break;
                 }
                 break;
             case 2:
                 // Load in content header and property flags
-                if (true === $this->readContentHeaderContent($src, $wireSize)) {
-                    $frmeFlag = false;
-                    $break = true;
-                }
+                $this->readContentHeaderContent($src, $wireSize);
                 break;
             case 3:
-                if (true === $this->readBodyContent($src, $wireSize)) {
-                    // Split frame, return early
-                    $frmeFlag = false;
-                    $break = true;
-                } else if ($src->isSpent() || $this->readConstructComplete()) {
+                $this->readBodyContent($src, $wireSize);
+                if ($this->readConstructComplete()) {
                     $break = true;
                 }
                 break;
@@ -846,7 +843,7 @@ class Method
                 throw new \Exception(sprintf("Unsupported frame type %d", $wireType), 8674);
             }
 
-            if ($frmeFlag && $src->read('octet') != $FRME) {
+            if ($src->read('octet') != $FRME) {
                 throw new \Exception(sprintf("Framing exception - missed frame end (%s.%s) - (%d,%d,%d,%d) [%d, %d]",
                                              $this->classProto->getSpecName(),
                                              $this->methProto->getSpecName(),
@@ -865,13 +862,14 @@ class Method
         }
 
         $this->reader = $src;
-        $this->bytesRead += $src->getReadPointer();
+        $this->bytesRead += $src->getReadPointer(); // TODO: Remove!
     }
 
     private function extractFrameHeader(Reader $src) {
         if ($src->isSpent(7)) {
             return true;
         }
+
         if ($this->lfhCache) {
             $this->lfhCache = false;
             return $this->lfh;
@@ -889,9 +887,6 @@ class Method
 
     /** Read a full method frame from $src */
     private function readMethodContent (Reader $src, $wireSize) {
-        if ($src->isSpent($wireSize + 1)) {
-            return true;
-        }
         $st = $src->getReadPointer();
         $this->wireClassId = $src->read('short');
         $this->wireMethodId = $src->read('short');
@@ -913,11 +908,39 @@ class Method
         $this->rcState = $this->rcState | self::ST_METH_READ;
     }
 
+
+    function debugDumpReadingMethod () {
+        printf("\nRead method debug:\n\n  rcState: %s\n  wireClassId: %s\n  wireMethodId: %s\n  wireChannel: %s\n  contentSize: %s\n",
+               $this->rcState, $this->wireClassId, $this->wireMethodId, $this->wireChannel, $this->contentSize);
+        if ($this->classFields) {
+            printf("(class fields)\n");
+            foreach ($this->classFields as $n => $f) {
+                printf("   %s => %s\n", $n, $f);
+            }
+        } else {
+            printf("(no class fields)\n");
+        }
+        if ($this->content) {
+            $tmpFile = tempnam('/tmp', 'amqp-meth-debug.');
+            file_put_contents($tmpFile, $this->content);
+            printf("(direct content saved in file %s)\n", $tmpFile);
+        } else {
+            printf("(no direct content)\n");
+        }
+
+        if ($this->reader && ($bin = $this->reader->getBin())) {
+            $tmpFile = tempnam('/tmp', 'amqp-meth-debug.');
+            file_put_contents($tmpFile, $bin);
+            printf("(indirect content saved in file %s)\n", $tmpFile);
+        } else {
+            printf("(no indirect content)\n");
+        }
+    }
+
+
+
     /** Read a full content header frame from src */
     private function readContentHeaderContent (Reader $src, $wireSize) {
-        if ($src->isSpent($wireSize + 1)) {
-            return true;
-        }
         $st = $src->getReadPointer();
         $wireClassId = $src->read('short');
         $src->read('short'); // pointless weight field
@@ -963,9 +986,6 @@ class Method
 
 
     private function readBodyContent (Reader $src, $wireSize) {
-        if ($src->isSpent($wireSize + 1)) {
-            return true;
-        }
         $this->content .= $src->readN($wireSize);
         $this->rcState = $this->rcState | self::ST_BODY_READ;
     }

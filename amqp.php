@@ -176,7 +176,7 @@ class StreamSocket
             $read = $ex = array($this->sock);
         }
         if ($rw & self::WRITE_SELECT) {
-            $write = $ex = array($this->sock);
+            $write = array($this->sock);
         }
         if (! $read && ! $write) {
             throw new \Exception("Select must read and/or write", 9864);
@@ -198,21 +198,84 @@ class StreamSocket
     function readAll ($readLen = self::READ_LENGTH) {
         $buff = '';
         //printf("Read - EOF: %b", feof($this->sock));
+        $URB = -1;
         do {
+            //echo "R{$URB}";
             $stream_meta_data = stream_get_meta_data($this->sock); //Added line
-            //printf("READ START, (foef=%b) (bytes remain=%d)\n", feof($this->sock), $stream_meta_data['unread_bytes']);
+            //printf("READ START, (bytes remain=%d)\n", $stream_meta_data['unread_bytes']);
             $buff .= fread($this->sock, $readLen);
             $stream_meta_data = stream_get_meta_data($this->sock); //Added line
-            //printf("READ END, (foef=%b) (bytes remain=%d)\n", feof($this->sock), $stream_meta_data['unread_bytes']);
+            //echo ".";
+            //printf("READ END, (bytes remain=%d)\n", $stream_meta_data['unread_bytes']);
             $readLen = min($stream_meta_data['unread_bytes'], $readLen);
+            $URB = $stream_meta_data['unread_bytes'];
         } while ($stream_meta_data['unread_bytes'] > 0);
         //echo "~~~(read returns)\n";
+        //echo "=| ";
         return $buff;
     }
 
     function read () {
         return $this->readAll();
     }
+
+
+    /*
+    function read () {
+        $select = $this->select(5);
+        if ($select === false) {
+            return false;
+        } else if ($select > 0) {
+            $buff = $this->readAll();
+        }
+        if (DEBUG) {
+            echo "\n<read>\n";
+            echo wire\hexdump($buff);
+        }
+        return $buff;
+    }
+    */
+
+    /*
+    function readAll ($readLen = self::READ_LENGTH) {
+        $buff = '';
+        //printf("Read - EOF: %b", feof($this->sock));
+        while (true) {
+            echo "1";
+            $stream_meta_data = stream_get_meta_data($this->sock); //Added line
+            printf("[%d]", $stream_meta_data['unread_bytes']);
+            $tmp = fread($this->sock, $readLen);
+            if ($tmp === false) {
+                throw new \Exception("Failed to fread", 5093);
+            } else if ($tmp === '') {
+                echo "2";
+                break;
+            }
+            echo "3 ";
+            $buff .= $tmp;
+        }
+        echo "---X  ";
+        //echo "~~~(read returns)\n";
+        return $buff;
+    }
+
+    */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     function write ($buff) {
         $bw = 0;
@@ -229,8 +292,8 @@ class StreamSocket
                 break;
             }
         }
+        fflush($this->sock);
         return $bw;
-
     }
 
     function close () {
@@ -341,7 +404,7 @@ class Connection
         }
         $this->setConnectionParams($params);
         // Establish the TCP connection
-        $this->sock = new Socket($this->host, $this->port);
+        $this->sock = new StreamSocket($this->host, $this->port);
         $this->sock->connect();
         if (! ($this->write(wire\PROTOCOL_HEADER))) {
             // No bytes written?
@@ -422,7 +485,7 @@ class Connection
             throw new \Exception("Connection initialisation failed (13)", 9885);
         }
         $this->connected = true;
-        echo "  Connection setup complete!\n";
+        echo "\n\n\n\n  Connection setup complete!\n\n";
     }
 
     private function getClientProperties () {
@@ -744,10 +807,10 @@ class Connection
      */
     private function readMessages ($buff) {
         if (is_null($this->incompleteMethod)) {
-            $meth = new wire\Method($buff);
+            try { $meth = new wire\Method($buff); } catch (\Exception $e) { printf("\n\nExit point 1:\n%s", $meth->debugDumpContents()); }
         } else {
             $meth = $this->incompleteMethod;
-            $meth->readContruct($buff);
+            try { $meth->readContruct($buff); } catch (\Exception $e) { $meth->debugDumpReadingMethod(); printf("\n\nExit point 2 [%s]:\n%s", $e->getMessage(), wire\hexdump($buff)); die; }
             $this->incompleteMethod = null;
         }
         $allMeths = array(); // Collect all method here
@@ -775,7 +838,7 @@ class Connection
                 break;
             }
             if (! $meth->getReader()->isSpent()) {
-                $meth = new wire\Method($meth->getReader()->getRemainingBuffer());
+                try { $meth = new wire\Method($meth->getReader()->getRemainingBuffer()); } catch (\Exception $e) { printf("\n\nExit point 3:\n%s", $meth->debugDumpContents()); }
             } else {
                 break;
             }
@@ -860,6 +923,7 @@ class Channel
         $meth = new wire\Method(protocol\ClassFactory::GetMethod('channel', 'open'), $this->chanId);
         $meth->setField('reserved-1', '');
         $resp = $this->myConn->sendMethod($meth);
+        echo "Channel setup complete!\n\n";
     }
 
     /**
