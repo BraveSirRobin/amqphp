@@ -60,6 +60,7 @@ class Socket
 
     private $sock;
     private $connected = false;
+    private $interrupt = false;
 
     function __construct ($host, $port) {
         $this->host = $host;
@@ -87,7 +88,17 @@ class Socket
         if (! $read && ! $write) {
             throw new \Exception("Select must read and/or write", 9864);
         }
-        return socket_select($read, $write, $ex, $tvSec, $tvUsec);
+        $this->interrupt = false;
+        $ret = socket_select($read, $write, $ex, $tvSec, $tvUsec);
+        if ($ret === false && $this->lastError() == SOCKET_EINTR) {
+            $this->interrupt = true;
+        }
+        return $ret;
+    }
+
+    /** Return true if the last call to select was interrupted */
+    function selectInterrupted () {
+        return $this->interrupt;
     }
 
     /** Call select to wait for content then read and return it all */
@@ -98,15 +109,8 @@ class Socket
         } else if ($select > 0) {
             $buff = $this->readAll();
         }
-        if (DEBUG) {
-            echo "\n<read>\n";
-            echo wire\hexdump($buff);
-        }
         return $buff;
     }
-
-
-
 
 
     function lastError () {
@@ -156,6 +160,10 @@ class StreamSocket
     const WRITE_SELECT = 2;
     const READ_LENGTH = 4096;
 
+    private $host;
+    private $port;
+    private $interrupt = false;
+
 
     function __construct ($host, $port) {
         $this->host = $host;
@@ -163,7 +171,6 @@ class StreamSocket
     }
 
     function connect () {
-        //$this->sock = stream_socket_client("tcp://{$this->host}:{$this->port}", $errno, $errstr, 30);
         $this->sock = fsockopen($this->host, $this->port, $errno, $errstr);
         if (! $this->sock) {
             throw new \Exception("Failed to connect stream socket {$this->host}:{$this->port}, ($errno, $errstr)", 7568);
@@ -181,11 +188,23 @@ class StreamSocket
         if (! $read && ! $write) {
             throw new \Exception("Select must read and/or write", 9864);
         }
-        //echo "  Call Select\n";
+        $this->interrupt = false;
         $ret = stream_select($read, $write, $ex, $tvSec, $tvUsec);
-        //echo "   SELECT ($tvSec, $tvUsec) -> $ret\n";
+        if ($ret === false) {
+            // A bit of an assumption here, but I can't see any more reliable method to
+            // detect an interrupt using the streams API (unlike SOCKET_EINTR with the
+            // sockets API)
+            $this->interrupt = true;
+        }
         return $ret;
     }
+
+
+    /** Return true if the last call to select was interrupted */
+    function selectInterrupted () {
+        return $this->interrupt;
+    }
+
 
     function lastError () {
         return 0;
@@ -197,84 +216,17 @@ class StreamSocket
 
     function readAll ($readLen = self::READ_LENGTH) {
         $buff = '';
-        //printf("Read - EOF: %b", feof($this->sock));
-        $URB = -1;
         do {
-            //echo "R{$URB}";
-            $stream_meta_data = stream_get_meta_data($this->sock); //Added line
-            //printf("READ START, (bytes remain=%d)\n", $stream_meta_data['unread_bytes']);
             $buff .= fread($this->sock, $readLen);
-            $stream_meta_data = stream_get_meta_data($this->sock); //Added line
-            //echo ".";
-            //printf("READ END, (bytes remain=%d)\n", $stream_meta_data['unread_bytes']);
-            $readLen = min($stream_meta_data['unread_bytes'], $readLen);
-            $URB = $stream_meta_data['unread_bytes'];
-        } while ($stream_meta_data['unread_bytes'] > 0);
-        //echo "~~~(read returns)\n";
-        //echo "=| ";
+            $smd = stream_get_meta_data($this->sock);
+            $readLen = min($smd['unread_bytes'], $readLen);
+        } while ($smd['unread_bytes'] > 0);
         return $buff;
     }
 
     function read () {
         return $this->readAll();
     }
-
-
-    /*
-    function read () {
-        $select = $this->select(5);
-        if ($select === false) {
-            return false;
-        } else if ($select > 0) {
-            $buff = $this->readAll();
-        }
-        if (DEBUG) {
-            echo "\n<read>\n";
-            echo wire\hexdump($buff);
-        }
-        return $buff;
-    }
-    */
-
-    /*
-    function readAll ($readLen = self::READ_LENGTH) {
-        $buff = '';
-        //printf("Read - EOF: %b", feof($this->sock));
-        while (true) {
-            echo "1";
-            $stream_meta_data = stream_get_meta_data($this->sock); //Added line
-            printf("[%d]", $stream_meta_data['unread_bytes']);
-            $tmp = fread($this->sock, $readLen);
-            if ($tmp === false) {
-                throw new \Exception("Failed to fread", 5093);
-            } else if ($tmp === '') {
-                echo "2";
-                break;
-            }
-            echo "3 ";
-            $buff .= $tmp;
-        }
-        echo "---X  ";
-        //echo "~~~(read returns)\n";
-        return $buff;
-    }
-
-    */
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
     function write ($buff) {
@@ -308,7 +260,7 @@ class Connection
     /** Default client-properties field used during connection setup */
     private static $ClientProperties = array('product' => 'RobinTheBrave-amqphp',
                                              'version' => '0.5',
-                                             'platform' => 'Linux baby!',
+                                             'platform' => 'PHP 5.3 +',
                                              'copyright' => 'Copyright (c) 2010,2011 Robin Harvey (harvey.robin@gmail.com)',
                                              'information' => 'This software is released under the terms of the GNU LGPL: http://www.gnu.org/licenses/lgpl-3.0.txt');
 
@@ -442,13 +394,8 @@ class Connection
 
         $chanMax = $meth->getField('channel-max');
         $frameMax = $meth->getField('frame-max');
-        //printf("\nBefore-Negotiate: (chanMax, frameMax):\nServer: (%d, %d)\nClient: (%d, %d)\n",
-        //$chanMax, $frameMax, $this->chanMax, $this->frameMax);
-        // TODO: Add API stuff to allow negoptiation policies
         $this->chanMax = ($chanMax < $this->chanMax) ? $chanMax : $this->chanMax;
         $this->frameMax = ($frameMax < $this->frameMax) ? $frameMax : $this->frameMax;
-        //printf("\nAfter-Negotiate: (chanMax, frameMax):\nClient: (%d, %d)\n",
-        //$this->chanMax, $this->frameMax);
 
 
         // Expect tune
@@ -485,7 +432,6 @@ class Connection
             throw new \Exception("Connection initialisation failed (13)", 9885);
         }
         $this->connected = true;
-        echo "\n\n\n\n  Connection setup complete!\n\n";
     }
 
     private function getClientProperties () {
@@ -543,36 +489,13 @@ class Connection
     function getVHost() { return $this->vhost; }
 
 
-    /** Still 'synchronous', doesn't rely on frame end at end of buffer 
-    private function read () {
-        //return $this->sock->readAll();
-
-        $select = $this->sock->select(5);
-        if ($select === false) {
-            $errNo = $this->sock->lastError();
-            if ($this->signalDispatch && $errNo == SOCKET_EINTR) {
-                // Select returned because we received a signal, dispatch to signal handlers, if present
-                pcntl_signal_dispatch();
-            }
-            $errStr = $this->sock->strError();
-            throw new \Exception ("[1] Read block select produced an error: [$errNo] $errStr", 9963);
-        } else if ($select > 0) {
-            $buff = $this->sock->readAll();
-        }
-        if (DEBUG) {
-            echo "\n<read>\n";
-            echo wire\hexdump($buff);
-        }
-        return $buff;
-    }
-    */
-
-
+    /** Read all available content from the wire, if an error / interrupt is
+        detected, dispatch signal handlers and raise an exception */
     private function read () {
         $ret = $this->sock->read();
         if ($ret === false) {
             $errNo = $this->sock->lastError();
-            if ($this->signalDispatch && $errNo == SOCKET_EINTR) {
+            if ($this->signalDispatch && $this->sock->selectInterrupted()) {
                 pcntl_signal_dispatch();
             }
             $errStr = $this->sock->strError();
@@ -733,7 +656,7 @@ class Connection
                 : $this->sock->select($this->blockTmSecs, $this->blockTmMillis);
             if ($select === false) {
                 $errNo = $this->sock->lastError();
-                if ($this->signalDispatch && $errNo == SOCKET_EINTR) {
+                if ($this->signalDispatch && $this->sock->selectInterrupted()) {
                     pcntl_signal_dispatch();
                 }
                 $errStr = $this->sock->strError();
@@ -923,7 +846,6 @@ class Channel
         $meth = new wire\Method(protocol\ClassFactory::GetMethod('channel', 'open'), $this->chanId);
         $meth->setField('reserved-1', '');
         $resp = $this->myConn->sendMethod($meth);
-        echo "Channel setup complete!\n\n";
     }
 
     /**
