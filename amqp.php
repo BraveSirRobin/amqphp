@@ -62,9 +62,10 @@ class Socket
     private $connected = false;
     private $interrupt = false;
 
-    function __construct ($host, $port) {
-        $this->host = $host;
-        $this->port = $port;
+    //function __construct ($host, $port) {
+    function __construct ($params) {
+        $this->host = $params['host'];
+        $this->port = $params['port'];
     }
 
     function connect () {
@@ -153,7 +154,30 @@ class Socket
     }
 }
 
+/*
+For SSL w. client certs:
 
+Set up your certca, server and client client certs exactly as per this:
+               http://www.rabbitmq.com/ssl.html
+
+..then some additional steps for the php client cert..
+
+cat client/key.pem > phpcert.pem
+cat client/cert.pem >> phpcert.pem
+cat testca/cacert.pem >> phpcert.pem
+as per the this:
+  http://uk2.php.net/manual/en/function.stream-socket-client.php#77497
+
+.. similarly for the php server cert..
+server/key.pem > php-server-cert.pem
+server/cert.pem >> php-server-cert.pem
+testca/cacert.pem >> php-server-cert.pem
+
+Now, use phpcert.pem for the php client cert, and php-server-cert.pem
+for the php server cert.  You can now do client authentication and
+peer verification!
+
+ */
 class StreamSocket
 {
     const READ_SELECT = 1;
@@ -165,16 +189,19 @@ class StreamSocket
     private $interrupt = false;
 
 
-    function __construct ($host, $port) {
-        $this->host = $host;
-        $this->port = $port;
+    //function __construct ($host, $port) {
+    function __construct ($params) {
+        $this->url = $params['url'];
+        $this->context = $params['context'];
     }
 
     function connect () {
-        $this->sock = fsockopen($this->host, $this->port, $errno, $errstr);
+        $context = ($this->context) ? stream_context_create($this->context) : null;
+        $this->sock = stream_socket_client($this->url, $errno, $errstr, ini_get("default_socket_timeout"), STREAM_CLIENT_CONNECT, $context);
         if (! $this->sock) {
-            throw new \Exception("Failed to connect stream socket {$this->host}:{$this->port}, ($errno, $errstr)", 7568);
+            throw new \Exception("Failed to connect stream socket {$this->url}, ($errno, $errstr)", 7568);
         }
+
     }
 
     function select ($tvSec, $tvUsec = 0, $rw = self::READ_SELECT) {
@@ -265,12 +292,14 @@ class Connection
                                              'information' => 'This software is released under the terms of the GNU LGPL: http://www.gnu.org/licenses/lgpl-3.0.txt');
 
     /** List of class fields that are settable connection params */
-    private static $CProps = array('host', 'port', 'username', 'userpass', 'vhost', 'frameMax', 'chanMax', 'signalDispatch');
+    private static $CProps = array('socketImpl', 'socketParams', 'username', 'userpass', 'vhost', 'frameMax', 'chanMax', 'signalDispatch');
 
     /** Connection params */
     private $sock; // Socket class
-    private $host = 'localhost';
-    private $port = 5672;
+    /*private $host = 'localhost';
+      private $port = 5672;*/
+    private $socketImpl = 'Socket';
+    private $socketParams = array('host' => 'localhost', 'port' => 5672);
     private $username;
     private $userpass;
     private $vhost;
@@ -348,6 +377,14 @@ class Connection
     }
 
 
+    private function initSocket () {
+        if (! isset($this->socketImpl)) {
+            throw new \Exception("No socket implementation specified", 7545);
+        }
+        $this->sock = new $this->socketImpl($this->socketParams);
+    }
+
+
     /** If not already connected, connect to the target broker and do Amqp connection setup */
     function connect (array $params = array()) {
         if ($this->connected) {
@@ -356,7 +393,8 @@ class Connection
         }
         $this->setConnectionParams($params);
         // Establish the TCP connection
-        $this->sock = new StreamSocket($this->host, $this->port);
+        //$this->sock = new StreamSocket($this->host, $this->port);
+        $this->initSocket();
         $this->sock->connect();
         if (! ($this->write(wire\PROTOCOL_HEADER))) {
             // No bytes written?

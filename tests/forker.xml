@@ -1,0 +1,56 @@
+<?xml version="1.0"?>
+
+<runConfig>
+  <username>testing</username>
+  <userpass>letmein</userpass>
+  <vhost>robin</vhost>
+  <exchange>unit-test-basic</exchange>
+  <exchangeType>fanout</exchangeType>
+  <queueName>unit-test-basic-q1</queueName>
+
+  <frameMax>4096</frameMax>
+
+  <!-- Script settings -->
+  <numConsumers>2</numConsumers>
+  <numProducers>10</numProducers>
+  <consumerClass>ForkerConsumer</consumerClass>
+  <producerClass>ForkerProducer</producerClass>
+  <parentSleepMillis>5000</parentSleepMillis>
+
+  <consumerChannels>2</consumerChannels>
+  <consumerPrefetch>1</consumerPrefetch>
+  <consumersPerChannel>1</consumersPerChannel>
+
+  <prodSmallMsgPercent>5</prodSmallMsgPercent>
+
+  <!-- Producer message size bounds (bytes) -->
+  <smallMsgMin>1</smallMsgMin>
+  <smallMsgMax>8192</smallMsgMax>
+  <largeMsgMin>20400</largeMsgMin>
+  <largeMsgMax>102400</largeMsgMax>
+
+  <prodNumLoops>0</prodNumLoops>
+  <prodSleepMillis>1000</prodSleepMillis>
+
+  <!-- Transport params - these are passed to the socket class
+  <socketImpl>\amqp_091\StreamSocket</socketImpl>
+  <socketParams>
+    <url>ssl://localhost:5671</url>
+    <context>
+      <ssl>
+	<local_cert>/home/robin/rmq-ssl/phpcert.pem</local_cert>
+	<verify_peer>1</verify_peer>
+	<cafile>/home/robin/rmq-ssl/php-server-cert.pem</cafile>
+      </ssl>
+    </context>
+  </socketParams>
+  -->
+
+  <!-- Sample config for plain sockets connection, comment out the stream socket and uncomment this to use. -->
+  <socketImpl>\amqp_091\Socket</socketImpl> <!-- Name of socket transport class -->
+  <socketParams>
+    <host>localhost</host>
+    <port>5672</port>
+  </socketParams>
+
+</runConfig>
