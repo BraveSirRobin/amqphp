@@ -27,7 +27,8 @@ use amqp_091\wire;
 require __DIR__ . '/../amqp.php';
 
 
-$CONFIG = @parse_ini_file(__DIR__ . '/forker.ini') OR die("Fault: missing config file!\n");
+$CONFIG = XmlToArray(simplexml_load_file(__DIR__ . '/forker.xml')) OR die("Fault: failed to read configs!\n");
+//$CONFIG = @parse_ini_file(__DIR__ . '/forker.ini') OR die("Fault: missing config file!\n");
 
 include "{$CONFIG['consumerClass']}.php";
 include "{$CONFIG['producerClass']}.php";
@@ -205,4 +206,19 @@ function printBacktrace ($bt) {
         }
     }
     return $r;
+}
+
+/** Used to convert configuration XML in to array.  No attributes please!  */
+function XmlToArray (SimpleXmlElement $simp) {
+    $ret = array();
+    foreach ($simp->children() as $v) {
+        if ($v->count()) {
+            $ret[$v->getName()] = XmlToArray($v);
+        } else if (preg_match('/^\d+$/', (string) $v)) {
+            $ret[$v->getName()] = (int) $v;
+        } else {
+            $ret[$v->getName()] = (string) $v;
+        }
+    }
+    return $ret;
 }

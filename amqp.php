@@ -188,8 +188,6 @@ class StreamSocket
     private $port;
     private $interrupt = false;
 
-
-    //function __construct ($host, $port) {
     function __construct ($params) {
         $this->url = $params['url'];
         $this->context = $params['context'];
@@ -296,8 +294,6 @@ class Connection
 
     /** Connection params */
     private $sock; // Socket class
-    /*private $host = 'localhost';
-      private $port = 5672;*/
     private $socketImpl = 'Socket';
     private $socketParams = array('host' => 'localhost', 'port' => 5672);
     private $username;
@@ -392,8 +388,6 @@ class Connection
             return;
         }
         $this->setConnectionParams($params);
-        // Establish the TCP connection
-        //$this->sock = new StreamSocket($this->host, $this->port);
         $this->initSocket();
         $this->sock->connect();
         if (! ($this->write(wire\PROTOCOL_HEADER))) {
@@ -517,7 +511,6 @@ class Connection
         if ($this->chanMax > 0 && $newChan > $this->chanMax) {
             throw new \Exception("Channels are exhausted!", 23756);
         }
-        // HERE:  Channel setup code calls back to connection, which can't find channel.  Chicken / Egg
         $this->chans[$newChan] = new Channel($this, $newChan, $this->frameMax);
         $this->chans[$newChan]->initChannel();
         return $this->chans[$newChan];
@@ -548,8 +541,7 @@ class Connection
 
 
 
-    /** Low level protocol write function.  Accepts either single values or
-        arrays of content */
+    /** Low level protocol write function.  Accepts either single values or arrays of content */
     private function write ($buffs) {
         foreach ((array) $buffs as $buff) {
             if (DEBUG) {
