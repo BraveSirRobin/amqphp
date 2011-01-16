@@ -227,6 +227,11 @@ class Reader extends Protocol
     }
 
 
+    function rewind ($n) {
+        $this->p -= $n;
+    }
+
+
     /** Used to fetch a string of length $n from the buffer, updates the internal pointer  */
     function readN ($n) {
         //        printf("readN : \$n: %d, \$this->p: %d, buffLen: %d\n", $n, $this->p, strlen($this->bin));
@@ -721,6 +726,9 @@ class Method
     const ST_CHEAD_READ = 2;
     const ST_BODY_READ = 4;
 
+    /** Used as a signal when returned from readConstruct */
+    const PARTIAL_FRAME = 7;
+
     private $rcState = 0; // Holds a bitmask of ST_* consts
 
     private $methProto; // XmlSpecMethod
@@ -732,20 +740,16 @@ class Method
 
     private $frameMax; // Max frame size in bytes
 
-    private $wireChannel; // Read from Amqp frame
+    private $wireChannel = null; // Read from Amqp frame
     private $wireMethodId; // Read from Amqp method frame
     private $wireClassId; // Read from Amqp method frame
     private $contentSize; // Read from Amqp content header frame
 
     private $reader; // read mode Reader
 
-    /** Total number of bytes read from the wire for this object,
-        includes total of method, content header, message body */
-    private $bytesRead = 0;
-
     /** Helper: extract and return a frame header */
     private $lfh; // Used to remember the frame header for split reads
-    private $lfhCache = false; // Flag flipped to trigger read continue for split reads
+    //private $lfhCache = false; // Flag flipped to trigger read continue for split reads
 
 
 
@@ -769,43 +773,55 @@ class Method
      *                        XmlSpecMethod = The type of message this should be = write mode
      * @param int     $chan   Target channel - required for write mode only
      */
-    function __construct ($src, $chan = 0) {
+    function __construct (abstrakt\XmlSpecMethod $src = null, $chan = 0) {
         if ($src instanceof abstrakt\XmlSpecMethod) {
             $this->methProto = $src;
             $this->classProto = $this->methProto->getClass();
             $this->mode = 'write';
             $this->wireChannel = $chan;
-        } else if (is_string($src)) {
-            $this->mode = 'read';
-            $this->readContruct($src);
-        } else {
-            var_dump($src);
-            throw new \Exception("Unsupported source type", 87423);
         }
     }
 
+    /** Check the given reader to see if it's on the same channel as this */
+    function canReadFrom (Reader $src) {
+        if (is_null($this->wireChannel)) {
+            echo "<VB>";
+            return true;
+        }
+        if (true === ($_fh = $this->extractFrameHeader($src))) {
+            return false; // ??
+        }
+        list($wireType, $wireChannel, $wireSize) = $_fh;
+        $ret = ($wireChannel == $this->wireChannel);
+        $src->rewind(7);
+        return $ret;
+    }
 
-    /** Helper: parse the incoming message from $src */
-    /** TODO: Use generated validation methods??? */
-    function readContruct ($bin) {
+    /**
+     * Helper: parse the incoming message from $src.
+     * @return   mixed     false => error, true => complete, PARTIAL_FRAME = split frame detected.
+     */
+    function readConstruct (Reader $src) {
         if ($this->mode == 'write') {
             trigger_error('Invalid read construct operation on a read mode method', E_USER_WARNING);
-            return '';
+            return false;
         }
         $FRME = 206; // TODO!!  UN-HARD CODE!!
         $break = false;
+        $ret = true;
 
-        if ($this->reader) {
+        /*if ($this->reader) {
             // Complete an incomplete frame;
             $this->reader->append($bin);
             $src = $this->reader;
         } else {
             $src = new Reader($bin);
-        }
+            }*/
 
         while (! $src->isSpent()) {
             if (true === ($_fh = $this->extractFrameHeader($src))) {
                 // Must read again to get the whole frame header
+                $ret = self::PARTIAL_FRAME; // return signal
                 break;
             } else {
                 list($wireType, $wireChannel, $wireSize) = $_fh;
@@ -813,12 +829,17 @@ class Method
             if (! $this->wireChannel) {
                 $this->wireChannel = $wireChannel;
             } else if ($this->wireChannel != $wireChannel) {
-                throw new \Exception("Method must not be given content from more than one channel", 7694);
+                //throw new \Exception("Method must not be given content from more than one channel", 7694);
+                echo "<ITL>";
+                $src->rewind(7);
+                return true;
             }
             if ($src->isSpent($wireSize + 1)) {
                 // make sure that the whole frame (including frame end) is available in the buffer, if
                 // not, break out now so that the connection will read again.
-                $this->lfhCache = true;
+                //$this->lfhCache = true;
+                $src->rewind(7);
+                $ret = self::PARTIAL_FRAME; // return signal
                 break;
             }
             switch ($wireType) {
@@ -861,8 +882,8 @@ class Method
             }
         }
 
-        $this->reader = $src;
-        $this->bytesRead += $src->getReadPointer(); // TODO: Remove!
+        //$this->reader = $src;
+        return $ret;
     }
 
     private function extractFrameHeader(Reader $src) {
@@ -870,10 +891,10 @@ class Method
             return true;
         }
 
-        if ($this->lfhCache) {
-            $this->lfhCache = false;
-            return $this->lfh;
-        }
+        //if ($this->lfhCache) {
+        //    $this->lfhCache = false;
+        //    return $this->lfh;
+        //}
         if (null === ($wireType = $src->read('octet'))) {
             throw new \Exception('Failed to read type from frame', 875);
         } else if (null === ($wireChannel = $src->read('short'))) {
@@ -927,7 +948,7 @@ class Method
         } else {
             printf("(no direct content)\n");
         }
-
+        /*
         if ($this->reader && ($bin = $this->reader->getBin())) {
             $tmpFile = tempnam('/tmp', 'amqp-meth-debug.');
             file_put_contents($tmpFile, $bin);
@@ -935,6 +956,7 @@ class Method
         } else {
             printf("(no indirect content)\n");
         }
+        */
     }
 
 
@@ -1001,7 +1023,6 @@ class Method
         }
     }
 
-    function getBytesRead () { return $this->bytesRead; }
 
     function setField ($name, $val) {
         if ($this->mode === 'read') {
@@ -1051,13 +1072,15 @@ class Method
         return $this->content;
     }
 
+    // DEPRECATED = REMOVE!!!!
+    /*
     function getReader () {
         if ($this->mode != 'read') {
             trigger_error("Invalid read mode operation on a non-reading Method", E_USER_WARNING);
             return null;
         }
         return $this->reader;
-    }
+        }*/
 
     function getMethodProto () { return $this->methProto; }
     function getClassProto () { return $this->classProto; }

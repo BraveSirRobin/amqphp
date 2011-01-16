@@ -12,14 +12,14 @@
 
   <!-- Script settings -->
   <numConsumers>2</numConsumers>
-  <numProducers>10</numProducers>
+  <numProducers>0</numProducers>
   <consumerClass>ForkerConsumer</consumerClass>
   <producerClass>ForkerProducer</producerClass>
   <parentSleepMillis>5000</parentSleepMillis>
 
   <consumerChannels>2</consumerChannels>
   <consumerPrefetch>1</consumerPrefetch>
-  <consumersPerChannel>1</consumersPerChannel>
+  <consumersPerChannel>4</consumersPerChannel>
 
   <prodSmallMsgPercent>5</prodSmallMsgPercent>
 

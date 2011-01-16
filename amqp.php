@@ -361,11 +361,12 @@ class Connection
              return;
         }
 
-        if (! ($meth = new wire\Method($raw)) &&
-            $meth->getClassProto() &&
-            $meth->getClassProto()->getSpecName() == 'connection' &&
-            $meth->getMethodProto() &&
-            $meth->getMethodProto()->getSpecName() == 'close-ok') {
+        $meth = new wire\Method();
+        $meth->readConstruct(new wire\Reader($raw)); // RFR-K
+        if (! ($meth->getClassProto() &&
+               $meth->getClassProto()->getSpecName() == 'connection' &&
+               $meth->getMethodProto() &&
+               $meth->getMethodProto()->getSpecName() == 'close-ok')) {
             trigger_error("Channel protocol shudown fault", E_USER_WARNING);
         }
         $this->sock->close();
@@ -401,7 +402,8 @@ class Connection
             // Unexpected AMQP version
             throw new \Exception("Connection initialisation failed (3)", 9875);
         }
-        $meth = new wire\Method($raw);
+        $meth = new wire\Method(); // RFR-K
+        $meth->readConstruct(new wire\Reader($raw));
 
         // Expect start
         if ($meth->getMethodProto()->getSpecIndex() == 10 && $meth->getClassProto()->getSpecIndex() == 10) {
@@ -422,7 +424,8 @@ class Connection
         if (! ($raw = $this->read())) {
             throw new \Exception("Connection initialisation failed (7)", 9879);
         }
-        $meth = new wire\Method($raw);
+        $meth = new wire\Method(); // RFR-K
+        $meth->readConstruct(new wire\Reader($raw));
 
         $chanMax = $meth->getField('channel-max');
         $frameMax = $meth->getField('frame-max');
@@ -459,7 +462,8 @@ class Connection
         if (! ($raw = $this->read())) {
             throw new \Exception("Connection initialisation failed (11)", 9884);
         }
-        $meth = new wire\Method($raw);
+        $meth = new wire\Method(); // RFR-K
+        $meth->readConstruct(new wire\Reader($raw));
         if (! ($meth->getMethodProto()->getSpecIndex() == 41 && $meth->getClassProto()->getSpecIndex() == 10)) {
             throw new \Exception("Connection initialisation failed (13)", 9885);
         }
@@ -620,7 +624,8 @@ class Connection
 
     private $unDelivered = array();
     private $unDeliverable = array();
-    private $incompleteMethod = null;
+    private $incompleteMethod = null; // REMOVE
+    private $incompleteMethods = array();
 
 
     /**
@@ -668,9 +673,16 @@ class Connection
             throw new \Exception("Multiple simultaneous read blocking not supported", 6362);
         }
         $this->blocking = true;
+        $DBG = '';
 
         while (true) {
-            $this->deliverAll();
+            try { $this->deliverAll(); }
+            catch (\Exception $e) {
+                printf("Delivery exit 1:\n%s\n", $e->getMessage());
+                $tmpFile = tempnam('/tmp', 'amqp-meth-last-read.');
+                file_put_contents($tmpFile, $DBG);
+                echo "Content in last read in file $tmpFile\n";
+            }
             if ($this->consumeHalt) {
                 $this->consumeHalt = false;
                 break;
@@ -692,14 +704,20 @@ class Connection
                 $errStr = $this->sock->strError();
                 throw new \Exception ("[2] Read block select produced an error: [$errNo] $errStr", 9963);
             } else if ($select > 0) {
-                $buff = $this->sock->readAll();
+                $buff = $DBG = $this->sock->readAll();
                 if ($buff && ($meths = $this->readMessages($buff))) {
                     $this->unDelivered = array_merge($this->unDelivered, $meths);
                 } else if (! $buff) {
                     throw new \Exception("Empty read in blocking select loop : " . strlen($buff), 9864);
                 }
             }
-            $this->deliverAll();
+            try { $this->deliverAll(); }
+            catch (\Exception $e) {
+                printf("Delivery exit 2:\n%s\n", $e->getMessage());
+                $tmpFile = tempnam('/tmp', 'amqp-meth-last-read.');
+                file_put_contents($tmpFile, $DBG);
+                echo "Content in last read in file $tmpFile\n";
+            }
         }
         $this->blocking = false;
     }
@@ -758,12 +776,12 @@ class Connection
      * TODO: Consider changing the code to stop using Method->getReader()->getRemainingBuffer()
      * - I suspect this is not a very memory-efficient implementation.
      */
-    private function readMessages ($buff) {
+    private function OLDreadMessages ($buff) {
         if (is_null($this->incompleteMethod)) {
-            try { $meth = new wire\Method($buff); } catch (\Exception $e) { printf("\n\nExit point 1:\n%s", $meth->debugDumpContents()); }
+            try { $meth = new wire\Method($buff); } catch (\Exception $e) { printf("\n\nExit point 1:\n%s", $e->getMessage()); } // RFR
         } else {
             $meth = $this->incompleteMethod;
-            try { $meth->readContruct($buff); } catch (\Exception $e) { $meth->debugDumpReadingMethod(); printf("\n\nExit point 2 [%s]:\n%s", $e->getMessage(), wire\hexdump($buff)); die; }
+            try { $meth->readConstruct($buff); } catch (\Exception $e) { $meth->debugDumpReadingMethod(); printf("\n\nExit point 2 [%s]:\n%s", $e->getMessage(), wire\hexdump($buff)); die; }
             $this->incompleteMethod = null;
         }
         $allMeths = array(); // Collect all method here
@@ -791,13 +809,84 @@ class Connection
                 break;
             }
             if (! $meth->getReader()->isSpent()) {
-                try { $meth = new wire\Method($meth->getReader()->getRemainingBuffer()); } catch (\Exception $e) { printf("\n\nExit point 3:\n%s", $meth->debugDumpContents()); }
+                try { $meth = new wire\Method($meth->getReader()->getRemainingBuffer()); } catch (\Exception $e) { printf("\n\nExit point 3:\n%s", $meth->debugDumpContents()); } // RFR
             } else {
                 break;
             }
         }
         return $allMeths;
     }
+
+
+
+    private $readSrc = null;
+    private function readMessages ($buff) {
+        if (is_null($this->readSrc)) {
+            $src = new wire\Reader($buff);
+        } else {
+            $src = $this->readSrc;
+            $src->append($buff);
+            $this->readSrc = null;
+        }
+
+        $allMeths = array(); // Collect all method here
+        while (true) {
+            $meth = null;
+            // Check to see if the content can complete any locally held incomplete messages
+            if ($this->incompleteMethods) {
+                foreach ($this->incompleteMethods as $im) {
+                    if ($im->canReadFrom($src)) {
+                        echo "<IM>";
+                        $meth = $im;
+                        $rcr = $meth->readConstruct($src);
+                        break;
+                    }
+                }
+            }
+            if (! $meth) {
+                $meth = new wire\Method;
+                $this->incompleteMethods[] = $meth;
+                $rcr = $meth->readConstruct($src);
+            }
+
+            if ($meth->readConstructComplete()) {
+                if ($rcr === wire\Method::PARTIAL_FRAME) {
+                    echo "\n\n\n\n\n\n\n\nWHAAAAAAAAAAAAAAAAAAAAAAAAAAAAARRRRRRRRRR!!!!!!!!!!!\n\n\n\n\n\n\n\n\n\n";
+                }
+                if (false !== ($p = array_search($meth, $this->incompleteMethods, true))) {
+                    unset($this->incompleteMethods[$p]);
+                }
+                if ($meth->getWireChannel() == 0) {
+                    // Deliver Connection messages immediately
+                    $this->handleConnectionMessage($meth);
+                } else if ($meth->getWireClassId() == 20 &&
+                           ($chan = $this->chans[$meth->getWireChannel()])) {
+                    // Deliver Channel messages immediately
+                    $chanR = $chan->handleChannelMessage($meth);
+                    if ($chanR instanceof wire\Method) {
+                        $this->sendMethod($chanR, true); // SMR
+                    } else if ($chanR === true) {
+                        // This is required to support sending channel messages
+                        $allMeths[] = $meth;
+                    }
+                } else {
+                    $allMeths[] = $meth;
+                }
+            }/* else {
+                $this->incompleteMethods[] = $meth;
+                }*/
+
+            if ($rcr === wire\Method::PARTIAL_FRAME) {
+                $this->readSrc = $src;
+                break;
+            } else if ($src->isSpent()) {
+                break;
+            }
+        }
+        return $allMeths;
+    }
+
+
 
 
     /**
