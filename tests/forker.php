@@ -32,7 +32,7 @@ require __DIR__ . '/../amqp.php';
 $CONFIG = XmlToArray(simplexml_load_file(__DIR__ . '/forker.xml')) OR die("Fault: failed to read configs!\n");
 if ($CONFIG['saveMessagesDir']) {
     if (is_dir($CONFIG['saveMessagesDir'])) {
-        define('RUN_TEMP_DIR', tempnam($CONFIG['saveMessagesDir'], 'foker-run-'));
+        define('RUN_TEMP_DIR', tempnam($CONFIG['saveMessagesDir'], 'forker-run-'));
         unlink(RUN_TEMP_DIR);
         if (! mkdir(RUN_TEMP_DIR)) {
             echo "Failed to create global temp dir " . RUN_TEMP_DIR . "\n";

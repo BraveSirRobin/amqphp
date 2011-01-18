@@ -119,7 +119,20 @@ class TraceConsumer extends amqp\SimpleConsumer
             $this->n = 0;
         }
         if (RUN_TEMP_DIR) {
-            file_put_contents("{$this->tempDir}/${md5}.out", $pl);
+            $outFile = "{$this->tempDir}/${md5}.out";
+            if (is_file($outFile)) {
+                // Check if it's the same message
+                $tmpFile = tempnam(RUN_TEMP_DIR,  'file-clash-check-');
+                file_put_contents($tmpFile, $pl);
+                if (exec("diff {$outFile} {$tmpFile}")) {
+                    printf("Message delivered twice (content is different): md5: %s, clash file: %s\n",
+                           $md5, $tmpFile);
+                } else {
+                    printf("Message delivered twice (content is identical): md5: %s\n", $md5);
+                }
+            } else {
+                file_put_contents($outFile, $pl);
+            }
         }
         return $this->ack($meth);
     }
