@@ -190,11 +190,12 @@ class StreamSocket
 
     function __construct ($params) {
         $this->url = $params['url'];
-        $this->context = $params['context'];
+        $this->context = isset($params['context']) ? $params['context'] : array();
     }
 
     function connect () {
-        $context = ($this->context) ? stream_context_create($this->context) : null;
+        //$context = ($this->context) ? stream_context_create($this->context) : null;
+        $context = stream_context_create($this->context);
         $this->sock = stream_socket_client($this->url, $errno, $errstr, ini_get("default_socket_timeout"), STREAM_CLIENT_CONNECT, $context);
         if (! $this->sock) {
             throw new \Exception("Failed to connect stream socket {$this->url}, ($errno, $errstr)", 7568);
@@ -290,7 +291,8 @@ class Connection
                                              'information' => 'This software is released under the terms of the GNU LGPL: http://www.gnu.org/licenses/lgpl-3.0.txt');
 
     /** List of class fields that are settable connection params */
-    private static $CProps = array('socketImpl', 'socketParams', 'username', 'userpass', 'vhost', 'frameMax', 'chanMax', 'signalDispatch');
+    private static $CProps = array('socketImpl', 'socketParams', 'username', 'userpass', 'vhost', 'frameMax', 'chanMax', 'signalDispatch',
+                                   'blockTmSecs', 'blockTmMillis');
 
     /** Connection params */
     private $sock; // Socket class
@@ -302,10 +304,10 @@ class Connection
     private $frameMax = 65536; // Negotated during setup.
     private $chanMax = 50; // Negotated during setup.
     private $signalDispatch = true;
+    private $blockTmSecs = null; // Passed to socket 'select' methods
+    private $blockTmMillis = 0; // Passed to socket 'select' methods
 
-    /** Bytes written, received through this connection */
-    private $bw = 0;
-    private $br = 0;
+
 
     private $chans = array(); // Format: array(<chan-id> => Channel)
     private $nextChan = 1;
@@ -317,9 +319,12 @@ class Connection
     /** Flag is picked up in consume loop and causes it to exit immediately */
     private $consumeHalt = false;
 
+    private $unDelivered = array(); // List of undelivered messages, Format: array(<wire\Method>)
+    private $unDeliverable = array(); // List of undeliverable messages, Format: array(<wire\Method>)
+    private $incompleteMethods = array(); // List of partial messages, Format: array(<wire\Method>)
+    private $readSrc = null; // wire\Reader, used between reads when partial frames are read from the wire
 
-
-    private $connected = false;
+    private $connected = false; // Flag flipped after protcol connection setup is complete
 
 
     function __construct (array $params = array()) {
@@ -548,22 +553,11 @@ class Connection
     /** Low level protocol write function.  Accepts either single values or arrays of content */
     private function write ($buffs) {
         foreach ((array) $buffs as $buff) {
-            if (DEBUG) {
-                echo "\n<write>\n";
-                echo wire\hexdump($buff);
-            }
             $bw = $this->sock->write($buff);
         }
         return $bw;
     }
 
-
-    function getBytesWritten () {
-        return $this->bw;
-    }
-    function getBytesRead () {
-        return $this->br;
-    }
 
 
     /**
@@ -606,8 +600,6 @@ class Connection
 
     function isBlocking () { return $this->isBlocking; }
 
-    private $blockTmSecs = null;
-    private $blockTmMillis = 0;
 
     function setBlockingTimeoutSecs ($nSecs) {
         if (is_null($nSecs)) {
@@ -620,12 +612,6 @@ class Connection
     function setBlockingTimeoutMillis ($nMillis) {
         $this->blockTmMillis = (int) $nMillis;
     }
-
-
-    private $unDelivered = array();
-    private $unDeliverable = array();
-    private $incompleteMethod = null; // REMOVE
-    private $incompleteMethods = array();
 
 
     /**
@@ -773,53 +759,7 @@ class Connection
     /**
      * Convert the given raw wire content in to Method objects.  Connection and channel
      * messages are delivered immediately and not returned.
-     * TODO: Consider changing the code to stop using Method->getReader()->getRemainingBuffer()
-     * - I suspect this is not a very memory-efficient implementation.
      */
-    private function OLDreadMessages ($buff) {
-        if (is_null($this->incompleteMethod)) {
-            try { $meth = new wire\Method($buff); } catch (\Exception $e) { printf("\n\nExit point 1:\n%s", $e->getMessage()); } // RFR
-        } else {
-            $meth = $this->incompleteMethod;
-            try { $meth->readConstruct($buff); } catch (\Exception $e) { $meth->debugDumpReadingMethod(); printf("\n\nExit point 2 [%s]:\n%s", $e->getMessage(), wire\hexdump($buff)); die; }
-            $this->incompleteMethod = null;
-        }
-        $allMeths = array(); // Collect all method here
-        while (true) {
-            if ($meth->readConstructComplete()) {
-                if ($meth->getWireChannel() == 0) {
-                    // Deliver Connection messages immediately
-                    $this->handleConnectionMessage($meth);
-                } else if ($meth->getWireClassId() == 20 &&
-                           ($chan = $this->chans[$meth->getWireChannel()])) {
-                    // Deliver Channel messages immediately
-                    $chanR = $chan->handleChannelMessage($meth);
-                    if ($chanR instanceof wire\Method) {
-                        $this->sendMethod($chanR, true); // SMR
-                    } else if ($chanR === true) {
-                        // This is required to support sending channel messages
-                        $allMeths[] = $meth;
-                    }
-                } else {
-                    $allMeths[] = $meth;
-                }
-            } else {
-                // Special case for a split message, return here so that $this->incompleteMethod remains set
-                $this->incompleteMethod = $meth;
-                break;
-            }
-            if (! $meth->getReader()->isSpent()) {
-                try { $meth = new wire\Method($meth->getReader()->getRemainingBuffer()); } catch (\Exception $e) { printf("\n\nExit point 3:\n%s", $meth->debugDumpContents()); } // RFR
-            } else {
-                break;
-            }
-        }
-        return $allMeths;
-    }
-
-
-
-    private $readSrc = null;
     private function readMessages ($buff) {
         if (is_null($this->readSrc)) {
             $src = new wire\Reader($buff);
@@ -836,7 +776,7 @@ class Connection
             if ($this->incompleteMethods) {
                 foreach ($this->incompleteMethods as $im) {
                     if ($im->canReadFrom($src)) {
-                        echo "<IM>";
+                        //echo "<IM>";
                         $meth = $im;
                         $rcr = $meth->readConstruct($src);
                         break;

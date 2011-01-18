@@ -25,8 +25,11 @@ use amqp_091\wire;
 class ForkerConsumer extends Forker
 {
 
+    private $tempDir;
+
     function start () {
         printf("ForkerConsumer %d [PID=%d]\n", $this->n, posix_getpid());
+        $this->initSaveDir();
         $this->initConnection();
         $this->prepareChannels();
 
@@ -52,6 +55,17 @@ class ForkerConsumer extends Forker
         }
     }
 
+
+    function initSaveDir () {
+        if (RUN_TEMP_DIR) {
+            $this->tempDir = tempnam(RUN_TEMP_DIR, 'consumer-' . posix_getpid());
+            unlink($this->tempDir);
+            if (! mkdir($this->tempDir)) {
+                throw new \Exception("Failed to create tempdir for consumer", 8965);
+            }
+        }
+    }
+
     private function prepareChannels () {
         for ($i = 0; $i < $this->fParams['consumerChannels']; $i++) {
             // QOS: set prefetch count to 5.
@@ -65,7 +79,9 @@ class ForkerConsumer extends Forker
                                                   'exclusive' => false,
                                                   'no-wait' => false));
             for ($j = 0; $j < $this->fParams['consumersPerChannel']; $j++) {
-                $chan->addConsumer(new TraceConsumer($cons, ($i * $this->fParams['consumersPerChannel']) + $j));
+                $consumer = new TraceConsumer($cons, ($i * $this->fParams['consumersPerChannel']) + $j);
+                $consumer->tempDir = $this->tempDir;
+                $chan->addConsumer($consumer);
             }
         }
     }
@@ -77,6 +93,7 @@ class TraceConsumer extends amqp\SimpleConsumer
 {
     private $i;
     private $n = 0;
+    public $tempDir;
     function __construct (wire\Method $consume = null, $i) {
         parent::__construct($consume);
         $this->i = $i;
@@ -96,9 +113,13 @@ class TraceConsumer extends amqp\SimpleConsumer
             printf("\nChecksum failed (%s):\n\$this->i: %d\nOrig MD5: %s\nActual MD5: %s\nContent-Length: %s\n",
                    $e, $this->i, $md5, md5(substr($pl, $p+1)), strlen($pl));
             $meth->debugDumpReadingMethod();
-            throw new \Exception("Goto error handler ;-)");
-        } else if (($this->n % 10) == 0) {
+            //throw new \Exception("Goto error handler ;-)");
+        } else if (($this->n % 200) == 0) {
             echo '.';
+            $this->n = 0;
+        }
+        if (RUN_TEMP_DIR) {
+            file_put_contents("{$this->tempDir}/${md5}.out", $pl);
         }
         return $this->ack($meth);
     }

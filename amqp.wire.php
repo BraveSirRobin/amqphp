@@ -745,13 +745,6 @@ class Method
     private $wireClassId; // Read from Amqp method frame
     private $contentSize; // Read from Amqp content header frame
 
-    private $reader; // read mode Reader
-
-    /** Helper: extract and return a frame header */
-    private $lfh; // Used to remember the frame header for split reads
-    //private $lfhCache = false; // Flag flipped to trigger read continue for split reads
-
-
 
     function debugDumpContents () {
         echo "\nDump Method Object\n";
@@ -785,7 +778,6 @@ class Method
     /** Check the given reader to see if it's on the same channel as this */
     function canReadFrom (Reader $src) {
         if (is_null($this->wireChannel)) {
-            echo "<VB>";
             return true;
         }
         if (true === ($_fh = $this->extractFrameHeader($src))) {
@@ -810,13 +802,6 @@ class Method
         $break = false;
         $ret = true;
 
-        /*if ($this->reader) {
-            // Complete an incomplete frame;
-            $this->reader->append($bin);
-            $src = $this->reader;
-        } else {
-            $src = new Reader($bin);
-            }*/
 
         while (! $src->isSpent()) {
             if (true === ($_fh = $this->extractFrameHeader($src))) {
@@ -830,14 +815,12 @@ class Method
                 $this->wireChannel = $wireChannel;
             } else if ($this->wireChannel != $wireChannel) {
                 //throw new \Exception("Method must not be given content from more than one channel", 7694);
-                echo "<ITL>";
                 $src->rewind(7);
                 return true;
             }
             if ($src->isSpent($wireSize + 1)) {
                 // make sure that the whole frame (including frame end) is available in the buffer, if
                 // not, break out now so that the connection will read again.
-                //$this->lfhCache = true;
                 $src->rewind(7);
                 $ret = self::PARTIAL_FRAME; // return signal
                 break;
@@ -882,7 +865,6 @@ class Method
             }
         }
 
-        //$this->reader = $src;
         return $ret;
     }
 
@@ -891,10 +873,6 @@ class Method
             return true;
         }
 
-        //if ($this->lfhCache) {
-        //    $this->lfhCache = false;
-        //    return $this->lfh;
-        //}
         if (null === ($wireType = $src->read('octet'))) {
             throw new \Exception('Failed to read type from frame', 875);
         } else if (null === ($wireChannel = $src->read('short'))) {
@@ -902,7 +880,7 @@ class Method
         } else if (null === ($wireSize = $src->read('long'))) {
             throw new \Exception('Failed to read size from frame', 8715);
         }
-        return ($this->lfh = array($wireType, $wireChannel, $wireSize));
+        return array($wireType, $wireChannel, $wireSize);
     }
 
 
@@ -948,15 +926,6 @@ class Method
         } else {
             printf("(no direct content)\n");
         }
-        /*
-        if ($this->reader && ($bin = $this->reader->getBin())) {
-            $tmpFile = tempnam('/tmp', 'amqp-meth-debug.');
-            file_put_contents($tmpFile, $bin);
-            printf("(indirect content saved in file %s)\n", $tmpFile);
-        } else {
-            printf("(no indirect content)\n");
-        }
-        */
     }
 
 
@@ -1072,15 +1041,6 @@ class Method
         return $this->content;
     }
 
-    // DEPRECATED = REMOVE!!!!
-    /*
-    function getReader () {
-        if ($this->mode != 'read') {
-            trigger_error("Invalid read mode operation on a non-reading Method", E_USER_WARNING);
-            return null;
-        }
-        return $this->reader;
-        }*/
 
     function getMethodProto () { return $this->methProto; }
     function getClassProto () { return $this->classProto; }

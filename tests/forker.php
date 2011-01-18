@@ -27,8 +27,25 @@ use amqp_091\wire;
 require __DIR__ . '/../amqp.php';
 
 
+
+
 $CONFIG = XmlToArray(simplexml_load_file(__DIR__ . '/forker.xml')) OR die("Fault: failed to read configs!\n");
-//$CONFIG = @parse_ini_file(__DIR__ . '/forker.ini') OR die("Fault: missing config file!\n");
+if ($CONFIG['saveMessagesDir']) {
+    if (is_dir($CONFIG['saveMessagesDir'])) {
+        define('RUN_TEMP_DIR', tempnam($CONFIG['saveMessagesDir'], 'foker-run-'));
+        unlink(RUN_TEMP_DIR);
+        if (! mkdir(RUN_TEMP_DIR)) {
+            echo "Failed to create global temp dir " . RUN_TEMP_DIR . "\n";
+            die;
+        }
+        printf("Messages will be saved to run dir %s\n", RUN_TEMP_DIR);
+    } else {
+        printf(" [ERROR] - message save dir does not exist: [%s]\n", $CONFIG['saveMessagesDir']);
+    }
+} else {
+    define('RUN_TEMP_DIR', false);
+    printf("Message saving is switched off\n");
+}
 
 include "{$CONFIG['consumerClass']}.php";
 include "{$CONFIG['producerClass']}.php";

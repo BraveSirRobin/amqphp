@@ -38,6 +38,8 @@ class ForkerProducer extends Forker
     protected $prodNumLoops;
     protected $prodSleepMillis;
 
+    private $tempDir;
+
     function start () {
         printf("ForkerProducer %d [PID=%d]\n", $this->n, posix_getpid());
         if (! pcntl_signal(SIGINT, array($this, 'sigHand'))) {
@@ -46,6 +48,7 @@ class ForkerProducer extends Forker
         if (! pcntl_signal(SIGTERM, array($this, 'sigHand'))) {
             echo "Failed to install SIGTERM in producer {$this->n}\n";
         }
+        $this->initSaveDir();
         $this->initConnection();
         $this->prepareAndRun();
         if ( ! $this->sigHandled) {
@@ -53,6 +56,17 @@ class ForkerProducer extends Forker
         }
         printf("ForkerConsumer %d [PID=%d] exits\n", $this->n, posix_getpid());
     }
+
+    function initSaveDir () {
+        if (RUN_TEMP_DIR) {
+            $this->tempDir = tempnam(RUN_TEMP_DIR, 'producer-' . posix_getpid());
+            unlink($this->tempDir);
+            if (! mkdir($this->tempDir)) {
+                throw new \Exception("Failed to create tempdir for consumer", 8965);
+            }
+        }
+    }
+
 
     /**
      * Main entry point.
@@ -84,8 +98,11 @@ class ForkerProducer extends Forker
             } else {
                 $this->sendSmallMessage();
             }
-            // Always poll after sending in case there's an exception message waiting to be process
-            $this->pollQueue();
+
+            if ($this->fParams['prodForceRead']) {
+                // Helpful for buggy producers - force a read and pick up errors quicker
+                $this->pollQueue();
+            }
             if ($this->prodSleepMillis) {
                 usleep($this->prodSleepMillis);
             }
@@ -116,20 +133,28 @@ class ForkerProducer extends Forker
 
     function sendLargeMessage () {
         $buff = $this->getNBytesOfWaffle(rand($this->largeMsgMin, $this->largeMsgMax));
-        $buff = md5($buff) . ' ' . $buff;
+        $md5 = md5($buff);
+        $buff = $md5 . ' ' . $buff;
         //echo "\{LGE: $buff\}";
         $this->basicPub->setContent($buff);
         //$this->basicPub->setContent($this->returnCrashPayload());
         $this->chan->invoke($this->basicPub);
+        if (RUN_TEMP_DIR) {
+            file_put_contents("{$this->tempDir}/{$md5}.out", $buff);
+        }
     }
 
     function sendSmallMessage() {
         $buff = $this->getNBytesOfWaffle(rand($this->smallMsgMin, $this->smallMsgMax));
-        $buff = md5($buff) . ' ' . $buff;
+        $md5 = md5($buff);
+        $buff = $md5 . ' ' . $buff;
         //echo "\{SML: $buff\}";
         $this->basicPub->setContent($buff);
         //$this->basicPub->setContent($this->returnCrashPayload());
         $this->chan->invoke($this->basicPub);
+        if (RUN_TEMP_DIR) {
+            file_put_contents("{$this->tempDir}/{$md5}.out", $buff);
+        }
     }
 
     function pollQueue () {
