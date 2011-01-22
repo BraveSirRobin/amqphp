@@ -208,7 +208,6 @@ class Reader extends Protocol
         return ($this->p + $n >= $this->binLen);
     }
 
-    // Debug: remove!
     function getBin () { return $this->bin; }
 
     function bytesRemaining () { return $this->binLen - $this->p; }
@@ -234,7 +233,6 @@ class Reader extends Protocol
 
     /** Used to fetch a string of length $n from the buffer, updates the internal pointer  */
     function readN ($n) {
-        //        printf("readN : \$n: %d, \$this->p: %d, buffLen: %d\n", $n, $this->p, strlen($this->bin));
         $ret = substr($this->bin, $this->p, $n);
         $this->p += strlen($ret);
         return $ret;
@@ -746,21 +744,6 @@ class Method
     private $contentSize; // Read from Amqp content header frame
 
 
-    function debugDumpContents () {
-        echo "\nDump Method Object\n";
-        printf("  rcState: %d\n  mode: %s\n  frameMax: %d\n  wireChannel: %d\n  contentSize: %d\n",
-               $this->rcState, $this->mode, $this->frameMax, $this->wireChannel, $this->contentSize);
-        $tmpFile = tempnam('/tmp', 'amqp-meth-debug.');
-        file_put_contents($tmpFile, $this->content);
-        echo "Content in temp file group $tmpFile\n";
-        foreach ($this->toBin() as $i => $part) {
-            printf("  Part %d: %d bytes:\n%s\n", $i, strlen($part), hexdump(substr($part, 0, 32)));
-            file_put_contents("{$tmpFile}.{$i}", $part);
-        }
-    }
-
-
-
     /**
      * @param mixed   $src    String = A complete Amqp frame = read mode
      *                        XmlSpecMethod = The type of message this should be = write mode
@@ -906,28 +889,6 @@ class Method
         }
         $this->rcState = $this->rcState | self::ST_METH_READ;
     }
-
-
-    function debugDumpReadingMethod () {
-        printf("\nRead method debug:\n\n  rcState: %s\n  wireClassId: %s\n  wireMethodId: %s\n  wireChannel: %s\n  contentSize: %s\n",
-               $this->rcState, $this->wireClassId, $this->wireMethodId, $this->wireChannel, $this->contentSize);
-        if ($this->classFields) {
-            printf("(class fields)\n");
-            foreach ($this->classFields as $n => $f) {
-                printf("   %s => %s\n", $n, $f);
-            }
-        } else {
-            printf("(no class fields)\n");
-        }
-        if ($this->content) {
-            $tmpFile = tempnam('/tmp', 'amqp-meth-debug.');
-            file_put_contents($tmpFile, $this->content);
-            printf("(direct content saved in file %s)\n", $tmpFile);
-        } else {
-            printf("(no direct content)\n");
-        }
-    }
-
 
 
     /** Read a full content header frame from src */
@@ -1088,7 +1049,6 @@ class Method
                 $ret[] = $w->getBuffer() . $chunk . proto\FRAME_END;
                 $i++;
             }
-            //printf("Send content frame with %d parts\n", $i);
         }
         return $ret;
     }

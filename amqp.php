@@ -662,13 +662,7 @@ class Connection
         $DBG = '';
 
         while (true) {
-            try { $this->deliverAll(); }
-            catch (\Exception $e) {
-                printf("Delivery exit 1:\n%s\n", $e->getMessage());
-                $tmpFile = tempnam('/tmp', 'amqp-meth-last-read.');
-                file_put_contents($tmpFile, $DBG);
-                echo "Content in last read in file $tmpFile\n";
-            }
+            $this->deliverAll();
             if ($this->consumeHalt) {
                 $this->consumeHalt = false;
                 break;
@@ -697,13 +691,7 @@ class Connection
                     throw new \Exception("Empty read in blocking select loop : " . strlen($buff), 9864);
                 }
             }
-            try { $this->deliverAll(); }
-            catch (\Exception $e) {
-                printf("Delivery exit 2:\n%s\n", $e->getMessage());
-                $tmpFile = tempnam('/tmp', 'amqp-meth-last-read.');
-                file_put_contents($tmpFile, $DBG);
-                echo "Content in last read in file $tmpFile\n";
-            }
+            $this->deliverAll();
         }
         $this->blocking = false;
     }
@@ -776,7 +764,6 @@ class Connection
             if ($this->incompleteMethods) {
                 foreach ($this->incompleteMethods as $im) {
                     if ($im->canReadFrom($src)) {
-                        //echo "<IM>";
                         $meth = $im;
                         $rcr = $meth->readConstruct($src);
                         break;
@@ -790,9 +777,6 @@ class Connection
             }
 
             if ($meth->readConstructComplete()) {
-                if ($rcr === wire\Method::PARTIAL_FRAME) {
-                    echo "\n\n\n\n\n\n\n\nWHAAAAAAAAAAAAAAAAAAAAAAAAAAAAARRRRRRRRRR!!!!!!!!!!!\n\n\n\n\n\n\n\n\n\n";
-                }
                 if (false !== ($p = array_search($meth, $this->incompleteMethods, true))) {
                     unset($this->incompleteMethods[$p]);
                 }
