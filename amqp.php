@@ -367,7 +367,7 @@ class Connection
         }
 
         $meth = new wire\Method();
-        $meth->readConstruct(new wire\Reader($raw)); // RFR-K
+        $meth->readConstruct(new wire\Reader($raw));
         if (! ($meth->getClassProto() &&
                $meth->getClassProto()->getSpecName() == 'connection' &&
                $meth->getMethodProto() &&
@@ -407,7 +407,7 @@ class Connection
             // Unexpected AMQP version
             throw new \Exception("Connection initialisation failed (3)", 9875);
         }
-        $meth = new wire\Method(); // RFR-K
+        $meth = new wire\Method();
         $meth->readConstruct(new wire\Reader($raw));
 
         // Expect start
@@ -429,14 +429,14 @@ class Connection
         if (! ($raw = $this->read())) {
             throw new \Exception("Connection initialisation failed (7)", 9879);
         }
-        $meth = new wire\Method(); // RFR-K
+        $meth = new wire\Method();
         $meth->readConstruct(new wire\Reader($raw));
 
         $chanMax = $meth->getField('channel-max');
         $frameMax = $meth->getField('frame-max');
-        $this->chanMax = ($chanMax < $this->chanMax) ? $chanMax : $this->chanMax;
-        $this->frameMax = ($frameMax < $this->frameMax) ? $frameMax : $this->frameMax;
 
+        $this->chanMax = ($chanMax < $this->chanMax) ? $chanMax : $this->chanMax;
+        $this->frameMax = ($this->frameMax == 0 || $frameMax < $this->frameMax) ? $frameMax : $this->frameMax;
 
         // Expect tune
         if ($meth->getMethodProto()->getSpecIndex() == 30 && $meth->getClassProto()->getSpecIndex() == 10) {
@@ -467,7 +467,7 @@ class Connection
         if (! ($raw = $this->read())) {
             throw new \Exception("Connection initialisation failed (11)", 9884);
         }
-        $meth = new wire\Method(); // RFR-K
+        $meth = new wire\Method();
         $meth->readConstruct(new wire\Reader($raw));
         if (! ($meth->getMethodProto()->getSpecIndex() == 41 && $meth->getClassProto()->getSpecIndex() == 10)) {
             throw new \Exception("Connection initialisation failed (13)", 9885);
@@ -588,10 +588,10 @@ class Connection
                 $em .= " Additionally, connection closure ack send failed";
                 $n = 7566;
             }
-            $this->close();
+            $this->sock->close();
             throw new \Exception($em, $n);
         } else {
-            $this->close();
+            $this->sock->close();
             throw new \Exception(sprintf("Unexpected channel message (%s.%s), connection closed",
                                          $meth->getClassProto()->getSpecName(), $meth->getMethodProto()->getSpecName()), 96356);
         }
@@ -796,9 +796,7 @@ class Connection
                 } else {
                     $allMeths[] = $meth;
                 }
-            }/* else {
-                $this->incompleteMethods[] = $meth;
-                }*/
+            }
 
             if ($rcr === wire\Method::PARTIAL_FRAME) {
                 $this->readSrc = $src;

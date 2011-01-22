@@ -9,7 +9,7 @@
   <exchangeType>fanout</exchangeType>
   <queueName>unit-test-basic-q1</queueName>
 
-  <frameMax>4096</frameMax>
+  <frameMax>8192</frameMax><!-- Set to zero to use broker suggested value -->
 
   <!-- Test parent / global test settings -->
   <parentSleepMillis>5000</parentSleepMillis>
@@ -17,7 +17,7 @@
 
   <!-- Test consumer settings -->
   <numConsumers>2</numConsumers>
-  <numProducers>8</numProducers>
+  <numProducers>6</numProducers>
   <consumerClass>ForkerConsumer</consumerClass>
   <producerClass>ForkerProducer</producerClass>
   <consumerChannels>2</consumerChannels>
@@ -30,7 +30,7 @@
   <smallMsgMax>8192</smallMsgMax>
   <largeMsgMin>20400</largeMsgMin>
   <largeMsgMax>102400</largeMsgMax>
-  <prodNumLoops>1000</prodNumLoops><!-- Set to zero for open-ended run. -->
+  <prodNumLoops>0</prodNumLoops><!-- Set to zero for open-ended run. -->
   <prodSleepMillis>10</prodSleepMillis>
   <prodForceRead>1</prodForceRead>
 
@@ -38,7 +38,7 @@
   <!-- Transport params - these are passed to the socket class
   <socketImpl>\amqp_091\StreamSocket</socketImpl>
   <socketParams>
-    <url>tcp://localhost:5672</url>
+    <url>ssl://localhost:5671</url>
     <context>
       <ssl>
 	<local_cert>/home/robin/rmq-ssl/phpcert.pem</local_cert>
@@ -46,6 +46,7 @@
 	<cafile>/home/robin/rmq-ssl/php-server-cert.pem</cafile>
       </ssl>
     </context>
+
   </socketParams>-->
 
   <!-- Sample config for plain sockets connection, comment out the stream socket and uncomment this to use. -->

@@ -797,7 +797,6 @@ class Method
             if (! $this->wireChannel) {
                 $this->wireChannel = $wireChannel;
             } else if ($this->wireChannel != $wireChannel) {
-                //throw new \Exception("Method must not be given content from more than one channel", 7694);
                 $src->rewind(7);
                 return true;
             }

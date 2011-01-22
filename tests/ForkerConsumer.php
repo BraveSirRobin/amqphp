@@ -114,7 +114,7 @@ class TraceConsumer extends amqp\SimpleConsumer
                    $e, $this->i, $md5, md5(substr($pl, $p+1)), strlen($pl));
             $meth->debugDumpReadingMethod();
             //throw new \Exception("Goto error handler ;-)");
-        } else if (($this->n % 200) == 0) {
+        } else {//if (($this->n % 200) == 0) {
             echo '.';
             $this->n = 0;
         }
