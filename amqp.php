@@ -26,11 +26,8 @@
 
 /**
  * TODO:
- *  (1) Reproduce interleaved messages (lots of channels, large messages, small frame size)
- *  (2) Test with split method, content header frames (maybe set the frameMax to silly value in setup?)
+ *  (1) Add support for heartbeats?
  *  (3) Implement exceptions for Amqp 'events', i.e. channel / connection exceptions, etc.
- *  (4) Consider switching to use the higher level stream socket PHP funcs - could
- *      be helpful to be able to use built-in SSL (+ client certs?!)
  *  (5) Implement default profiles - probably best to use a code generation approach
  */
 
@@ -194,7 +191,6 @@ class StreamSocket
     }
 
     function connect () {
-        //$context = ($this->context) ? stream_context_create($this->context) : null;
         $context = stream_context_create($this->context);
         $this->sock = stream_socket_client($this->url, $errno, $errstr, ini_get("default_socket_timeout"), STREAM_CLIENT_CONNECT, $context);
         if (! $this->sock) {
@@ -295,9 +291,9 @@ class Connection
                                    'blockTmSecs', 'blockTmMillis');
 
     /** Connection params */
-    private $sock; // Socket class
-    private $socketImpl = 'Socket';
-    private $socketParams = array('host' => 'localhost', 'port' => 5672);
+    private $sock; // Socket wrapper object
+    private $socketImpl = 'Socket'; // Socket impl class name
+    private $socketParams = array('host' => 'localhost', 'port' => 5672); // Construct params for $socketImpl
     private $username;
     private $userpass;
     private $vhost;
@@ -396,8 +392,7 @@ class Connection
         $this->setConnectionParams($params);
         $this->initSocket();
         $this->sock->connect();
-        if (! ($this->write(wire\PROTOCOL_HEADER))) {
-            // No bytes written?
+        if (! $this->write(wire\PROTOCOL_HEADER)) {
             throw new \Exception("Connection initialisation failed (1)", 9873);
         }
         if (! ($raw = $this->read())) {
@@ -454,27 +449,15 @@ class Connection
         }
 
         // Now call connection.open
-        $meth = new wire\Method(protocol\ClassFactory::GetMethod('connection', 'open'));
-        $meth->setField('virtual-host', $this->vhost);
-        $meth->setField('reserved-1', '');
-        $meth->setField('reserved-2', '');
-
-        if (! ($this->write($meth->toBin()))) {
-            throw new \Exception("Connection initialisation failed (10)", 9883);
-        }
-
-        // Expect open-ok
-        if (! ($raw = $this->read())) {
-            throw new \Exception("Connection initialisation failed (11)", 9884);
-        }
-        $meth = new wire\Method();
-        $meth->readConstruct(new wire\Reader($raw));
-        if (! ($meth->getMethodProto()->getSpecIndex() == 41 && $meth->getClassProto()->getSpecIndex() == 10)) {
+        $meth = $this->constructMethod('connection', array('open', array('virtual-host' => $this->vhost)));
+        $meth = $this->invoke($meth);
+        if (! $meth || ! ($meth->getMethodProto()->getSpecIndex() == 41 && $meth->getClassProto()->getSpecIndex() == 10)) {
             throw new \Exception("Connection initialisation failed (13)", 9885);
         }
         $this->connected = true;
     }
 
+    /** Helper: return the client properties parameter used in connection setup. */
     private function getClientProperties () {
         /* Build table to use long strings - RMQ seems to require this. */
         $t = new wire\Table;
@@ -484,6 +467,7 @@ class Connection
         return $t;
     }
 
+    /** Helper: return the Sasl response parameter used in connection setup. */
     private function getSaslResponse () {
         $t = new wire\Table();
         $t['LOGIN'] = new wire\TableField($this->username, 'S');
@@ -493,7 +477,10 @@ class Connection
         return substr($w->getBuffer(), 4);
     }
 
-
+    /**
+     * Channel accessor / factory method, call with no params to create a new channel, or with
+     * a channel number to access an existing channel by number
+     */
     function getChannel ($num = false) {
         return ($num === false) ? $this->initNewChannel() : $this->chans[$num];
     }
@@ -552,8 +539,9 @@ class Connection
 
     /** Low level protocol write function.  Accepts either single values or arrays of content */
     private function write ($buffs) {
+        $bw = 0;
         foreach ((array) $buffs as $buff) {
-            $bw = $this->sock->write($buff);
+            $bw += $this->sock->write($buff);
         }
         return $bw;
     }
@@ -603,7 +591,7 @@ class Connection
 
     function setBlockingTimeoutSecs ($nSecs) {
         if (is_null($nSecs)) {
-            $this->blockTmSecs = null;
+             $this->blockTmSecs = null;
         } else {
             $this->blockTmSecs = (int) $nSecs;
         }
@@ -652,7 +640,7 @@ class Connection
     /**
      * Blocks indefinitely waiting for messages to consume.  This routine is designed to
      * handle large prefetch count values by reading all wire content each time it becomes
-     * available then delivereing in order.
+     * available then delivering in order.
      */
     private function consumeSelectLoop () {
         if ($this->blocking) {
@@ -705,7 +693,7 @@ class Connection
      *                                  that this mechanism can also be triggered via. the use of
      *                                  an Amqp no-wait domain field set to true
      */
-    function sendMethod (wire\Method $inMeth, $noWait=false) {
+    function invoke (wire\Method $inMeth, $noWait=false) {
         if (! ($this->write($inMeth->toBin()))) {
             throw new \Exception("Send message failed (1)", 5623);
         }
@@ -780,15 +768,16 @@ class Connection
                 if (false !== ($p = array_search($meth, $this->incompleteMethods, true))) {
                     unset($this->incompleteMethods[$p]);
                 }
-                if ($meth->getWireChannel() == 0) {
-                    // Deliver Connection messages immediately
+                if ($this->connected && $meth->getWireChannel() == 0) {
+                    // Deliver Connection messages immediately, but only if the connection
+                    // is already set up.
                     $this->handleConnectionMessage($meth);
                 } else if ($meth->getWireClassId() == 20 &&
                            ($chan = $this->chans[$meth->getWireChannel()])) {
                     // Deliver Channel messages immediately
                     $chanR = $chan->handleChannelMessage($meth);
                     if ($chanR instanceof wire\Method) {
-                        $this->sendMethod($chanR, true); // SMR
+                        $this->invoke($chanR, true); // SMR
                     } else if ($chanR === true) {
                         // This is required to support sending channel messages
                         $allMeths[] = $meth;
@@ -822,7 +811,7 @@ class Connection
             $meth = array_shift($this->unDelivered);
             if (isset($this->chans[$meth->getWireChannel()])) {
                 if (($resp = $this->chans[$meth->getWireChannel()]->handleChannelMessage($meth)) instanceof wire\Method) {
-                    $this->sendMethod($resp, true);
+                    $this->invoke($resp, true);
                 }
             } else {
                 trigger_error("Message delivered on unknown channel", E_USER_WARNING);
@@ -849,6 +838,48 @@ class Connection
             }
         }
     }
+
+
+    /**
+     * Factory method creates wire\Method objects based on class name and parameters.
+     *
+     * @arg  string   $class       Amqp class
+     * @arg  array    $_args       Format: array (<Amqp method name>, <Assoc method/class mixed field array>, <method content>)
+     */
+    function constructMethod ($class, $_args) {
+        $method = (isset($_args[0])) ? $_args[0] : null;
+        $args = (isset($_args[1])) ? $_args[1] : array();
+        $content = (isset($_args[2])) ? $_args[2] : null;
+
+        if (! ($cls = protocol\ClassFactory::GetClassByName($class))) {
+            throw new \Exception("Invalid Amqp class or php method", 8691);
+        } else if (! ($meth = $cls->getMethodByName($method))) {
+            throw new \Exception("Invalid Amqp method", 5435);
+        }
+
+        $m = new wire\Method($meth);
+        $clsF = $cls->getSpecFields();
+        $mthF = $meth->getSpecFields();
+
+        if ($meth->getSpecHasContent() && $clsF) {
+            foreach (array_merge(array_combine($clsF, array_fill(0, count($clsF), null)), $args) as $k => $v) {
+                $m->setClassField($k, $v);
+            }
+        }
+        if ($mthF) {
+            foreach (array_merge(array_combine($mthF, array_fill(0, count($mthF), '')), $args) as $k => $v) {
+                $m->setField($k, $v);
+            }
+        }
+        $m->setContent($content);
+        return $m;
+    }
+
+
+
+
+
+
 }
 
 
@@ -886,7 +917,7 @@ class Channel
     function initChannel () {
         $meth = new wire\Method(protocol\ClassFactory::GetMethod('channel', 'open'), $this->chanId);
         $meth->setField('reserved-1', '');
-        $resp = $this->myConn->sendMethod($meth);
+        $resp = $this->myConn->invoke($meth);
     }
 
     /**
@@ -899,51 +930,31 @@ class Channel
         if ($this->destroyed) {
             throw new \Exception("Attempting to use a destroyed channel", 8766);
         }
-        $method = (isset($_args[0])) ? $_args[0] : null;
-        $args = (isset($_args[1])) ? $_args[1] : array();
-        $content = (isset($_args[2])) ? $_args[2] : null;
-
-        if (! ($cls = protocol\ClassFactory::GetClassByName($class))) {
-            throw new \Exception("Invalid Amqp class or php method", 8691);
-        } else if (! ($meth = $cls->getMethodByName($method))) {
-            throw new \Exception("Invalid Amqp method", 5435);
-        }
-
-        $m = new wire\Method($meth, $this->chanId);
-        $clsF = $cls->getSpecFields();
-        $mthF = $meth->getSpecFields();
-
-        if ($meth->getSpecHasContent() && $clsF) {
-            foreach (array_merge(array_combine($clsF, array_fill(0, count($clsF), null)), $args) as $k => $v) {
-                $m->setClassField($k, $v);
-            }
-        }
-        if ($mthF) {
-            foreach (array_merge(array_combine($mthF, array_fill(0, count($mthF), '')), $args) as $k => $v) {
-                $m->setField($k, $v);
-            }
-        }
-        $m->setContent($content);
+        $m = $this->myConn->constructMethod($class, $_args);
+        $m->setWireChannel($this->chanId);
         $m->setMaxFrameSize($this->frameMax);
-        //$m->setMaxFrameSize(10);
         return $m;
     }
 
+    /**
+     * A wrapper for Connection->invoke() specifically for messages on this channel.
+     */
     function invoke (wire\Method $m) {
         if ($this->destroyed) {
-            trigger_error("Channel is destroyed", E_USER_WARNING);
+            throw new \Exception("Attempting to use a destroyed channel", 8767);
         } else if (! $this->flow) {
             trigger_error("Channel is closed", E_USER_WARNING);
             return;
+        } else if (is_null($tmp = $m->getWireChannel())) {
+            $m->setWireChannel($this->chanId);
+        } else if ($tmp != $this->chanId) {
+            throw new \Exception("Method is invoked through the wrong channel", 7645);
         }
-        if ($this->destroyed) {
-            throw new \Exception("Attempting to use a destroyed channel", 8767);
-        }
-        return $this->myConn->sendMethod($m);
+        return $this->myConn->invoke($m);
     }
 
     /**
-     * Callback from the Connection object for channel frames
+     * Callback from the Connection object for channel frames and messages.
      * @param   $meth           A channel method for this channel
      * @return  mixed           If a method is returned it will be sent by the channel
      *                          If true, the message will be delivered as normal by the Connection
@@ -975,12 +986,12 @@ class Channel
             $tmp = $meth->getMethodProto()->getResponses();
             $closeOk = new wire\Method($tmp[0]);
             $em = "[channel.close] reply-code={$errCode['name']} triggered by $culprit: $eb";
-            $b1 = $this->myConn->getBytesWritten();
-            $this->myConn->sendMethod($closeOk);
-            if ($this->myConn->getBytesWritten() > $b1) {
+
+            try {
+                $this->myConn->invoke($closeOk);
                 $em .= " Channel closed OK";
                 $n = 3687;
-            } else {
+            } catch (\Exception $e) {
                 $em .= " Additionally, channel closure ack send failed";
                 $n = 2435;
             }
@@ -1064,7 +1075,6 @@ class Channel
     }
 
     function onConsumeEnd () {
-        // TODO: Call this?!
         $this->consuming = false;
     }
 }

@@ -1010,6 +1010,7 @@ class Method
     function getWireClassId () { return $this->wireClassId; }
     function getWireMethodId () { return $this->wireMethodId; }
     function setMaxFrameSize ($max) { $this->frameSize = $max; }
+    function setWireChannel ($chan) { $this->wireChannel = $chan; }
 
     function toBin () {
         if ($this->mode == 'read') {
