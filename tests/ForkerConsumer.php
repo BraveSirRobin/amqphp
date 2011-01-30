@@ -112,7 +112,7 @@ class TraceConsumer extends amqp\SimpleConsumer
         if ($e == 'F') {
             printf("\nChecksum failed (%s):\n\$this->i: %d\nOrig MD5: %s\nActual MD5: %s\nContent-Length: %s\n",
                    $e, $this->i, $md5, md5(substr($pl, $p+1)), strlen($pl));
-            $meth->debugDumpReadingMethod();
+            printf("Payload is:\n%s\n", $pl);
             //throw new \Exception("Goto error handler ;-)");
         } else {//if (($this->n % 200) == 0) {
             echo '.';

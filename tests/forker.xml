@@ -17,7 +17,7 @@
 
   <!-- Test consumer settings -->
   <numConsumers>2</numConsumers>
-  <numProducers>6</numProducers>
+  <numProducers>0</numProducers>
   <consumerClass>ForkerConsumer</consumerClass>
   <producerClass>ForkerProducer</producerClass>
   <consumerChannels>2</consumerChannels>
