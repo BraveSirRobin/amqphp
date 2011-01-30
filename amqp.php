@@ -651,6 +651,18 @@ class Connection
 
         while (true) {
             $this->deliverAll();
+            // Ensure there are local components listening
+            $hasConsumers = false;
+            foreach ($this->chans as $chan) {
+                if ($chan->hasConsumers()) {
+                    $hasConsumers = true;
+                    break;
+                }
+            }
+            if (! $hasConsumers) {
+                // There are no consumers attached to any channels.
+                break;
+            }
             if ($this->consumeHalt) {
                 $this->consumeHalt = false;
                 break;
@@ -810,8 +822,13 @@ class Connection
         while ($this->unDelivered) {
             $meth = array_shift($this->unDelivered);
             if (isset($this->chans[$meth->getWireChannel()])) {
-                if (($resp = $this->chans[$meth->getWireChannel()]->handleChannelMessage($meth)) instanceof wire\Method) {
+                $resp = $this->chans[$meth->getWireChannel()]->handleChannelMessage($meth);
+                if ($resp instanceof wire\Method) {
                     $this->invoke($resp, true);
+                } else if (is_array($resp)) {
+                    foreach ($resp as $r) {
+                        $this->invoke($r, true);
+                    }
                 }
             } else {
                 trigger_error("Message delivered on unknown channel", E_USER_WARNING);
@@ -1041,6 +1058,20 @@ class Channel
             }
         }
         $this->consumers[] = array($cons, false);
+    }
+
+    function hasConsumers () {
+        return ! empty($this->consumers);
+    }
+
+    function removeConsumer (Consumer $cons) {
+        foreach ($this->consumers as $i => $c) {
+            if ($c[0] === $cons) {
+                unset($this->consumers[$i]);
+                return true;
+            }
+        }
+        return false;
     }
 
     private function getConsumerForTag ($tag) {

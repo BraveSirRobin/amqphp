@@ -27,7 +27,8 @@ use amqp_091\wire;
 require __DIR__ . '/../amqp.php';
 
 // Messages will be sent to this exchange
-$EX = 'unit-test-basic';
+$EX_NAME = 'most-basic';
+
 
 // Basic RabbitMQ connection settings
 $config = array (
@@ -49,8 +50,8 @@ $publishParams = array('content-type' => 'text/plain',
                        'routing-key' => '',
                        'mandatory' => false,
                        'immediate' => false,
-                       'exchange' => $EX);
-$message = "You payload goes here!";
+                       'exchange' => $EX_NAME);
+$message = "end";
 
 // Create a Message object
 $basicP = $chan->basic('publish', $publishParams, $message);
