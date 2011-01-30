@@ -292,7 +292,7 @@ class Connection
 
     /** Connection params */
     private $sock; // Socket wrapper object
-    private $socketImpl = 'Socket'; // Socket impl class name
+    private $socketImpl = '\amqp_091\Socket'; // Socket impl class name
     private $socketParams = array('host' => 'localhost', 'port' => 5672); // Construct params for $socketImpl
     private $username;
     private $userpass;
