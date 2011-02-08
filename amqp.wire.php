@@ -907,8 +907,8 @@ class Method
             if (null === ($fBlock = $src->read('short'))) {
                 throw new \Exception("Failed to read property flag block", 4548);
             }
-            $binFlags .= decbin($fBlock);
-            if (strlen($binFlags) != 16) {
+            $binFlags .= str_pad(decbin($fBlock), 16, '0', STR_PAD_LEFT);
+            if (0 !== (strlen($binFlags) % 16)) {
                 throw new \Exception("Unexpected message property flags", 8740);
             }
             if (substr($binFlags, -1) == '1') {
