@@ -1020,6 +1020,8 @@ class Channel
             if ($cons = $this->getConsumerForTag($meth->getField('consumer-tag'))) {
                 return $cons->handleDelivery($meth, $this);
             }
+            // TODO: this might happen if a consumer suddenly removes itself
+            // and the prefetch-count is high.
             throw new \Exception("Unknown consumer tag (1) {$meth->getField('consumer-tag')}", 9684);
         case 'basic.cancel-ok':
             if ($cons = $this->getConsumerForTag($meth->getField('consumer-tag'))) {

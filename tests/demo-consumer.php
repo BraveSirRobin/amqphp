@@ -25,6 +25,7 @@ use amqp_091\protocol;
 use amqp_091\wire;
 
 require __DIR__ . '/../amqp.php';
+require __DIR__ . '/demo-common.php';
 
 // Define a very simple Class to receive messages.
 class DemoConsumer extends amqp\SimpleConsumer
@@ -45,11 +46,6 @@ class DemoConsumer extends amqp\SimpleConsumer
 }
 
 
-// Demo script configuration
-$EX_NAME = 'most-basic';
-$EX_TYPE = 'direct';
-$Q = 'most-basic';
-
 // Basic RabbitMQ connection settings
 $config = array (
                  'username' => 'testing',
@@ -63,21 +59,13 @@ $conn = new amqp\Connection($config);
 $conn->connect();
 $chan = $conn->getChannel();
 
-// Send commands to the RabbitMQ server to set up the exchange, queue and
-// queue binding that we will listen to.
-$excDecl = $chan->exchange('declare', array('type' => $EX_TYPE,
-                                            'durable' => true,
-                                            'exchange' => $EX_NAME));
-$eDeclResponse = $chan->invoke($excDecl); // Declare the queue
+initialiseDemo();
 
-
-$qDecl = $chan->queue('declare', array('queue' => $Q)); // Declare the Queue
-$chan->invoke($qDecl);
-
-$qBind = $chan->queue('bind', array('queue' => $Q,
-                                    'routing-key' => '',
-                                    'exchange' => $EX_NAME));
-$chan->invoke($qBind);// Bind Q to EX
+// This step is optional, but recommended for beginners, we're telling
+// RMQ to "only send us one message at once".
+$qosParams = array('prefetch-count' => 1,
+                   'global' => false);
+$qOk = $chan->invoke($chan->basic('qos', $qosParams));
 
 
 // Create a basic.consume Method - this tells the broker that we 

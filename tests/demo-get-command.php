@@ -30,12 +30,8 @@ use amqp_091\protocol;
 use amqp_091\wire;
 
 require __DIR__ . '/../amqp.php';
+require __DIR__ . '/demo-common.php';
 
-
-// Demo script configuration
-$EX_NAME = 'most-basic';
-$EX_TYPE = 'direct';
-$Q = 'most-basic';
 
 // Basic RabbitMQ connection settings
 $config = array (
@@ -50,21 +46,7 @@ $conn = new amqp\Connection($config);
 $conn->connect();
 $chan = $conn->getChannel();
 
-// Send commands to the RabbitMQ server to set up the exchange, queue and
-// queue binding that we will listen to.
-$excDecl = $chan->exchange('declare', array('type' => $EX_TYPE,
-                                            'durable' => true,
-                                            'exchange' => $EX_NAME));
-$eDeclResponse = $chan->invoke($excDecl); // Declare the queue
-
-
-$qDecl = $chan->queue('declare', array('queue' => $Q)); // Declare the Queue
-$chan->invoke($qDecl);
-
-$qBind = $chan->queue('bind', array('queue' => $Q,
-                                    'routing-key' => '',
-                                    'exchange' => $EX_NAME));
-$chan->invoke($qBind);// Bind Q to EX
+initialiseDemo();
 
 // Now, we're ready to read a message
 $getParams = array('queue' => $Q, 'no-ack' => false);

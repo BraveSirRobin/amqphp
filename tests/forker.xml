@@ -17,7 +17,7 @@
 
   <!-- Test consumer settings -->
   <numConsumers>2</numConsumers>
-  <numProducers>0</numProducers>
+  <numProducers>10</numProducers>
   <consumerClass>ForkerConsumer</consumerClass>
   <producerClass>ForkerProducer</producerClass>
   <consumerChannels>2</consumerChannels>
@@ -25,7 +25,7 @@
   <consumersPerChannel>4</consumersPerChannel>
 
   <!-- Test producer settings.  Message bounds are in bytes. -->
-  <prodSmallMsgPercent>80</prodSmallMsgPercent>
+  <prodSmallMsgPercent>20</prodSmallMsgPercent>
   <smallMsgMin>1</smallMsgMin>
   <smallMsgMax>8192</smallMsgMax>
   <largeMsgMin>20400</largeMsgMin>
@@ -35,25 +35,28 @@
   <prodForceRead>1</prodForceRead>
 
 
-  <!-- Transport params - these are passed to the socket class
+  <!-- Transport params - these are passed to the socket class -->
   <socketImpl>\amqp_091\StreamSocket</socketImpl>
   <socketParams>
-    <url>ssl://localhost:5671</url>
+    <url>sslv3://localhost:5671</url>
     <context>
       <ssl>
 	<local_cert>/home/robin/rmq-ssl/phpcert.pem</local_cert>
 	<verify_peer>1</verify_peer>
+	<!--<allow_self_signed>1</allow_self_signed>
+	<capture_peer_cert>1</capture_peer_cert>
+	<capture_peer_cert_chain>1</capture_peer_cert_chain>-->
 	<cafile>/home/robin/rmq-ssl/php-server-cert.pem</cafile>
       </ssl>
     </context>
 
-  </socketParams>-->
+  </socketParams>
 
-  <!-- Sample config for plain sockets connection, comment out the stream socket and uncomment this to use. -->
+  <!-- Sample config for plain sockets connection, comment out the stream socket and uncomment this to use.
   <socketImpl>\amqp_091\Socket</socketImpl>
   <socketParams>
     <host>localhost</host>
     <port>5672</port>
-  </socketParams>
+  </socketParams> -->
 
 </runConfig>

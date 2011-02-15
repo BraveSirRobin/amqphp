@@ -239,3 +239,51 @@ function XmlToArray (SimpleXmlElement $simp) {
     }
     return $ret;
 }
+
+
+/** Return an XML serialized version of meth  */
+function methodToXml (wire\Method $meth) {
+    $w = new XmlWriter;
+    $w->openMemory();
+    $w->setIndent(true);
+    $w->setIndentString('  ');
+    $w->startElement('msg');
+    $w->writeAttribute('class', $meth->getClassProto()->getSpecName());
+    $w->writeAttribute('method', $meth->getMethodProto()->getSpecName());
+    $w->writeAttribute('channel', $meth->getWireChannel());
+    $w->startElement('class-fields');
+    if ($meth->getClassFields()) {
+        foreach ($meth->getClassFields() as $fn => $fv) {
+            $w->startElement('field');
+            $w->writeAttribute('name', $fn);
+            if (is_bool($fv)) {
+                $w->text('(false)');
+            } else {
+                $w->text($fv);
+            }
+            $w->endElement(); // field
+        }
+    }
+    $w->endElement(); // class-fields
+
+
+    $w->startElement('method-fields');
+    if ($meth->getFields()) {
+        foreach ($meth->getFields() as $fn => $fv) {
+            $w->startElement('field');
+            $w->writeAttribute('name', $fn);
+            if (is_bool($fv)) {
+                $w->text('(false)');
+            } else {
+                $w->text($fv);
+            }
+            $w->endElement(); // field
+        }
+    }
+    $w->endElement(); // method-fields
+    $w->startElement('content');
+    $w->text($meth->getContent());
+    $w->endElement(); // content
+    $w->endElement(); // msg
+    return $w->flush();
+}

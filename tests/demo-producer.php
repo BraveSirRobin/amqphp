@@ -25,10 +25,7 @@ use amqp_091\protocol;
 use amqp_091\wire;
 
 require __DIR__ . '/../amqp.php';
-
-// Messages will be sent to this exchange
-$EX_NAME = 'most-basic';
-
+require __DIR__ . '/demo-common.php';
 
 // Basic RabbitMQ connection settings
 $config = array (
@@ -37,11 +34,12 @@ $config = array (
                  'vhost' => 'robin'
                  );
 
-
 // Connect to the RabbitMQ server, set up an Amqp channel
 $conn = new amqp\Connection($config);
 $conn->connect();
 $chan = $conn->getChannel();
+
+initialiseDemo();
 
 // Prepare the 'header parameters' and message content - these will
 // be sent to RabbitMQ
@@ -51,13 +49,17 @@ $publishParams = array('content-type' => 'text/plain',
                        'mandatory' => false,
                        'immediate' => false,
                        'exchange' => $EX_NAME);
-$message = "end";
+
 
 // Create a Message object
-$basicP = $chan->basic('publish', $publishParams, $message);
+$basicP = $chan->basic('publish', $publishParams);
 
-// Send the Message to the RabbitMQ broker using the channel set up earlier.
-$chan->invoke($basicP);
+// Send multiple messages to the RabbitMQ broker using the channel set up earlier.
+$messages = array('Hi!', 'guten Tag', 'ciao', 'buenos días', 'end');
+foreach ($messages as $m) {
+    $basicP->setContent($m);
+    $chan->invoke($basicP);
+}
 
 
 $chan->shutdown();
