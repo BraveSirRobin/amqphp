@@ -631,6 +631,7 @@ class Connection
         if ($this->blocking) {
             throw new \Exception("Stream blocking is already in progress.", 8756);
         }
+        printf(" select: begin loop.\n");
         $this->consumeSelectLoop();
     }
 
@@ -671,7 +672,7 @@ class Connection
             // Ensure there are local components listening
             $hasConsumers = false;
             foreach ($this->chans as $chan) {
-                if ($chan->hasConsumers()) {
+                if ($chan->hasConsumers() || $chan->hasOutstandingConfirms()) {
                     $hasConsumers = true;
                     break;
                 }
@@ -948,6 +949,7 @@ class Channel
 
     /** Store of basic.publish sequence numbers. */
     private $confirmSeqs = array();
+    private $confirmSeq = 0;
 
     /** Flag set during RMQ confirm mode */
     private $confirmMode = false;
@@ -967,6 +969,10 @@ class Channel
     }
 
 
+    function hasOutstandingConfirms () {
+        return (bool) $this->confirmSeqs;
+    }
+
     function setConfirmMode () {
         if ($this->confirmMode) {
             return;
@@ -978,6 +984,7 @@ class Channel
                $confSelectOk->getMethodProto()->getSpecName() == 'select-ok')) {
             throw new \Exception("Failed to selectg confirm mode", 8674);
         }
+        $this->confirmMode = true;
     }
 
 
@@ -1008,9 +1015,6 @@ class Channel
         $m = $this->myConn->constructMethod($class, $_args);
         $m->setWireChannel($this->chanId);
         $m->setMaxFrameSize($this->frameMax);
-
-        // Do numbering of basic.publish during confirm mode
-
         return $m;
     }
 
@@ -1028,6 +1032,16 @@ class Channel
         } else if ($tmp != $this->chanId) {
             throw new \Exception("Method is invoked through the wrong channel", 7645);
         }
+
+        // Do numbering of basic.publish during confirm mode
+        if ($this->confirmMode && $m->getClassProto()->getSpecName() == 'basic'
+            && $m->getMethodProto()->getSpecName() == 'publish') {
+            $this->confirmSeq++;
+            printf("Store expected confirm seq %d\n", $this->confirmSeq);
+            $this->confirmSeqs[] = $this->confirmSeq;
+        }
+
+
         return $this->myConn->invoke($m);
     }
 
@@ -1096,15 +1110,15 @@ class Channel
             throw new \Exception("Unknown consumer tag (3)", 9686);
         case 'basic.return':
             $cb = $this->callbacks['publishReturn'];
-            return $cb($meth);
+            return;
         case 'basic.ack':
-            $this->removeConfirmSeqs($meth);
             $cb = $this->callbacks['publishConfirm'];
-            return $cb($meth);
+            $this->removeConfirmSeqs($meth, $cb);
+            return;
         case 'basic.nack':
-            $this->removeConfirmSeqs($meth);
             $cb = $this->callbacks['publishNack'];
-            return $cb($meth);
+            $this->removeConfirmSeqs($meth, $cb);
+            return;
         default:
             $hd = '';
             foreach ($meth->toBin() as $i => $bin) {
@@ -1115,15 +1129,30 @@ class Channel
     }
 
     /** Helper: remove message sequence record(s) for the given basic.{n}ack (RMQ Confirm key) */
-    private function removeConfirmSeqs (wire\Method $meth) {
+    private function removeConfirmSeqs (wire\Method $meth, \Closure $handler = null) {
         if ($meth->getField('multiple')) {
+
             $dtag = $meth->getField('delivery-tag');
             $this->confirmSeqs = array_filter($this->confirmSeqs, 
-                                              function ($id) use ($dtag) {
-                                                  return ($id > $dtag);
+                                              function ($id) use ($dtag, $handler, $meth) {
+                                                  //            if ($handler)        echo "Do Confirm!\n";
+                                                  if ($id <= $dtag) {
+                                                      if ($handler) {
+                                                          $handler($meth);
+                                                      }
+                                                      return false;
+                                                  } else {
+                                                      return true;
+                                                  }
                                               });
         } else {
-            $this->confirmSeqs = array_diff($this->confirmSeqs, array($meth->getField('delivery-tag')));
+            $dt = $meth->getField('delivery-tag');
+            if (isset($this->confirmSeqs)) {
+                if ($handler) {
+                    $handler($meth);
+                }
+                unset($this->confirmSeqs[array_search($dt, $this->confirmSeqs)]);
+            }
         }
     }
 
