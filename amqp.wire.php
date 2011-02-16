@@ -274,41 +274,48 @@ class Reader extends Protocol
     private function readBoolean () {
         // Buffer 8 bits at a time.
         if ($this->binPackOffset == 0) {
-            $this->binBuffer = array_pop(unpack('C', substr($this->bin, $this->p++, 1)));
+            $tmp = unpack('C', substr($this->bin, $this->p++, 1));
+            $this->binBuffer = reset($tmp);
         }
         return ($this->binBuffer & (1 << $this->binPackOffset)) ? 1 : 0;
     }
 
     private function readShortShortInt () {
-        $i = array_pop(unpack('c', substr($this->bin, $this->p++, 1)));
+        $tmp = unpack('c', substr($this->bin, $this->p++, 1));
+        $i = reset($tmp);
         return $i;
     }
 
     private function readShortShortUInt () {
-        $i = array_pop(unpack('C', substr($this->bin, $this->p++, 1)));
+        $tmp = unpack('C', substr($this->bin, $this->p++, 1));
+        $i = reset($tmp);
         return $i;
     }
 
     private function readShortInt () {
-        $i = array_pop(unpack('s', substr($this->bin, $this->p, 2)));
+        $tmp = unpack('s', substr($this->bin, $this->p, 2));
+        $i = reset($tmp);
         $this->p += 2;
         return $i;
     }
 
     private function readShortUInt () {
-        $i = array_pop(unpack('n', substr($this->bin, $this->p, 2)));
+        $tmp = unpack('n', substr($this->bin, $this->p, 2));
+        $i = reset($tmp);
         $this->p += 2;
         return $i;
     }
 
     private function readLongInt () {
-        $i = array_pop(unpack('L', substr($this->bin, $this->p, 4)));
+        $tmp = unpack('L', substr($this->bin, $this->p, 4));
+        $i = reset($tmp);
         $this->p += 4;
         return $i;
     }
 
     private function readLongUInt () {
-        $i = array_pop(unpack('N', substr($this->bin, $this->p, 4)));
+        $tmp = unpack('N', substr($this->bin, $this->p, 4));
+        $i = reset($tmp);
         $this->p += 4;
         return $i;
     }
@@ -327,13 +334,15 @@ class Reader extends Protocol
     }
 
     private function readFloat () {
-        $i = array_pop(unpack('f', substr($this->bin, $this->p, 4)));
+        $tmp = unpack('f', substr($this->bin, $this->p, 4));
+        $i = reset($tmp);
         $this->p += 4;
         return $i;
     }
 
     private function readDouble () {
-        $i = array_pop(unpack('d', substr($this->bin, $this->p, 8)));
+        $tmp = unpack('d', substr($this->bin, $this->p, 8));
+        $i = reset($tmp);
         $this->p += 8;
         return $i;
     }
@@ -455,7 +464,8 @@ class Writer extends Protocol
                 $this->bin .= pack('C', 0);
             }
         } else {
-            $b = array_pop(unpack('C', substr($this->bin, -1)));
+            $tmp = unpack('C', substr($this->bin, -1));
+            $b = reset($tmp);
             if ($val) {
                 $b += pow(2, $this->binPackOffset);
             }

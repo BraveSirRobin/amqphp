@@ -623,6 +623,17 @@ class Connection
         }
     }
 
+
+    /**
+     * An entry point in to the select loop intended for RMQ Confirms and similar concerns
+     */
+    function select () {
+        if ($this->blocking) {
+            throw new \Exception("Stream blocking is already in progress.", 8756);
+        }
+        $this->consumeSelectLoop();
+    }
+
     /**
      * Flips a flag which triggers an unconditional exit from the consume loop.
      * NOTE: active consumers will not be triggered to send basic.cancel just
@@ -641,6 +652,12 @@ class Connection
      * Blocks indefinitely waiting for messages to consume.  This routine is designed to
      * handle large prefetch count values by reading all wire content each time it becomes
      * available then delivering in order.
+     * TODO: Implement support for preset loop limits:
+     *  1) Absolute timeout (i.e. +30 seconds) - end point in second or millisecond precision
+     *  2) Max loops
+     *  3) Conditional exit (callback)
+     *  4) Conditional exit (automatic) (current impl)
+     *  6) Infinite
      */
     private function consumeSelectLoop () {
         if ($this->blocking) {
@@ -670,7 +687,7 @@ class Connection
                 pcntl_signal_dispatch();
                 if (! $this->connected) {
                     trigger_error("Connection is no longer connected, force exit of consume loop.", E_USER_WARNING);
-                    return;
+                    goto select_end;
                 }
             }
             $select = is_null($this->blockTmSecs) ?
@@ -693,6 +710,7 @@ class Connection
             }
             $this->deliverAll();
         }
+    select_end: // Evil goto!
         $this->blocking = false;
     }
 
@@ -923,11 +941,51 @@ class Channel
     /** Consumers for this channel, format array(array(<Consumer>, <consumer-tag OR false>)+) */
     private $consumers = array();
 
+    /** Channel level callbacks for basic.ack (RMQ confirm feature) and basic.return */
+    private $callbacks = array('publishConfirm' => null,
+                               'publishReturn' => null,
+                               'publishNack' => null);
+
+    /** Store of basic.publish sequence numbers. */
+    private $confirmSeqs = array();
+
+    /** Flag set during RMQ confirm mode */
+    private $confirmMode = false;
+
+
+    function setPublishConfirmCallback (\Closure $c) {
+        $this->callbacks['publishConfirm'] = $c;
+    }
+
+
+    function setPublishReturnCallback (\Closure $c) {
+        $this->callbacks['publishReturn'] = $c;
+    }
+
+    function setPublishNackCallback (\Closure $c) {
+        $this->callbacks['publishNack'] = $c;
+    }
+
+
+    function setConfirmMode () {
+        if ($this->confirmMode) {
+            return;
+        }
+        $confSelect = $this->confirm('select');
+        $confSelectOk = $this->invoke($confSelect);
+        if (! ($confSelectOk instanceof wire\Method) || 
+            ! ($confSelectOk->getClassProto()->getSpecName() == 'confirm' &&
+               $confSelectOk->getMethodProto()->getSpecName() == 'select-ok')) {
+            throw new \Exception("Failed to selectg confirm mode", 8674);
+        }
+    }
+
 
     function __construct (Connection $rConn, $chanId, $frameMax) {
         $this->myConn = $rConn;
         $this->chanId = $chanId;
         $this->frameMax = $frameMax;
+        $this->callbacks['publishConfirm'] = $this->callbacks['publishReturn'] = function () {};
     }
 
 
@@ -950,6 +1008,9 @@ class Channel
         $m = $this->myConn->constructMethod($class, $_args);
         $m->setWireChannel($this->chanId);
         $m->setMaxFrameSize($this->frameMax);
+
+        // Do numbering of basic.publish during confirm mode
+
         return $m;
     }
 
@@ -1033,12 +1094,36 @@ class Channel
                 return $cons->handleRecoveryOk($meth, $this);
             }
             throw new \Exception("Unknown consumer tag (3)", 9686);
+        case 'basic.return':
+            $cb = $this->callbacks['publishReturn'];
+            return $cb($meth);
+        case 'basic.ack':
+            $this->removeConfirmSeqs($meth);
+            $cb = $this->callbacks['publishConfirm'];
+            return $cb($meth);
+        case 'basic.nack':
+            $this->removeConfirmSeqs($meth);
+            $cb = $this->callbacks['publishNack'];
+            return $cb($meth);
         default:
             $hd = '';
             foreach ($meth->toBin() as $i => $bin) {
                 $hd .= sprintf("  --(part %d)--\n%s\n", $i+1, wire\hexdump($bin));
             }
             throw new \Exception("Received unexpected channel method:\n$hd", 8795);
+        }
+    }
+
+    /** Helper: remove message sequence record(s) for the given basic.{n}ack (RMQ Confirm key) */
+    private function removeConfirmSeqs (wire\Method $meth) {
+        if ($meth->getField('multiple')) {
+            $dtag = $meth->getField('delivery-tag');
+            $this->confirmSeqs = array_filter($this->confirmSeqs, 
+                                              function ($id) use ($dtag) {
+                                                  return ($id > $dtag);
+                                              });
+        } else {
+            $this->confirmSeqs = array_diff($this->confirmSeqs, array($meth->getField('delivery-tag')));
         }
     }
 

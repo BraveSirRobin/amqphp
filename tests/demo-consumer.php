@@ -84,3 +84,6 @@ $chan->addConsumer($receiver);
 
 // Instruct the connection object to begin listening for messages
 $conn->startConsuming();
+
+$chan->shutdown();
+$conn->shutdown();
