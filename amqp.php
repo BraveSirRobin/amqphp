@@ -328,8 +328,6 @@ class Connection
     /** Flag set when connection is in read blocking mode, waiting for messages */
     private $blocking = false;
 
-    /** Flag is picked up in consume loop and causes it to exit immediately */
-    private $consumeHalt = false;
 
     private $unDelivered = array(); // List of undelivered messages, Format: array(<wire\Method>)
     private $unDeliverable = array(); // List of undeliverable messages, Format: array(<wire\Method>)
@@ -614,49 +612,107 @@ class Connection
     }
 
 
-    /**
-     * Start unstarted Consumers on all channels, then go in to an endless select
-     * loop, dispatching incoming message deliveries in order.  Can be called from
-     * inside the consume loop, in this case the function will return immediately
-     */
+    // @DEPRECATED
     function startConsuming () {
-        $a = false;
-        foreach ($this->chans as $chan) {
-            $a = $chan->onConsumeStart() || $a;
-        }
-        if (! $a) {
-            throw new \Exception("No consumers found in attached channels", 8755);
-        }
-        if (! $this->blocking) {
-            $this->consumeSelectLoop();
-            foreach ($this->chans as $chan) {
-                $chan->onConsumeEnd();
-            }
-        }
+        trigger_error("startConsuming is deprecated - use select() instead.", E_USER_DEPRECATED);
+        $this->select();
     }
 
 
     /**
-     * An entry point in to the select loop intended for RMQ Confirms and similar concerns
+     * Enter a select loop in order to receive messages from the broker.
+     * Use setSelectMode() to set an exit strategy for the loop.  Do not call
+     * concurrently, this will raise an exception.  Use isBlocking() to test
+     * whether select() should be called.
      */
     function select () {
         if ($this->blocking) {
             throw new \Exception("Stream blocking is already in progress.", 8756);
         }
         $this->consumeSelectLoop();
+        foreach ($this->chans as $chan) {
+            $chan->onSelectEnd();
+        }
+
     }
 
+
+    const SELECT_TIMEOUT = 1;
+    const SELECT_MAXLOOPS = 2;
+    const SELECT_CALLBACK = 3;
+    const SELECT_COND = 4;
+    const SELECT_INFINITE = 5;
+
+    private $selectMode = self::SELECT_COND;
+    private $selectParam;
+
     /**
-     * Flips a flag which triggers an unconditional exit from the consume loop.
-     * NOTE: active consumers will not be triggered to send basic.cancel just
-     * by calling this method!
+     * Set parameters that control how the connection select loop behaves, implements
+     * the following exit strategies:
+     *  1) Absolute timeout - specify a {usec epoch} timeout, loop breaks after this.
+     *     See the PHP man page for microtime(false)
+     *  2) Max loops
+     *  3) Conditional exit (callback)
+     *  4) Conditional exit (automatic) (current impl)
+     *  6) Infinite
+
+     * @param   integer    $mode      One of the SELECT_XXX consts.
+     * @param   ...                   Following 0 or more params are $mode dependant
+     * @return  boolean               True if the mode was set OK
      */
-    function stopConsuming () {
-        if (! $this->blocking) {
+    function setSelectMode () {
+        if ($this->blocking) {
+            trigger_error("Select mode - cannot switch mode whilst blocking", E_USER_WARNING);
             return false;
         }
-        $this->consumeHalt = true;
-        return true;
+        $_args = func_get_args();
+        if (! $_args) {
+            trigger_error("Select mode - no select parameters supplied", E_USER_WARNING);
+            return false;
+        }
+        switch ($mode = array_shift($_args)) {
+        case self::SELECT_TIMEOUT:
+            @list($usecs, $epoch) = $_args;
+            if (! $epoch || $usecs >= 1) {
+                trigger_error("Select mode - invalid timeout params", E_USER_WARNING);
+                return false;
+            } else {
+                if (preg_match("/[^0-9\.]/", (string) $usecs)) {
+                }
+                $this->selectParam = array((string) $usecs, $epoch);
+                $this->selectMode = self::SELECT_TIMEOUT;
+                return true;
+            }
+        case self::SELECT_MAXLOOPS:
+            if (! is_int($ml = array_shift($_args)) || $ml == 0) {
+                trigger_error("Select mode - invalid maxloops params", E_USER_WARNING);
+                return false;
+            } else {
+                $this->selectParam = $ml;
+                $this->selectMode = self::SELECT_MAXLOOPS;
+                return true;
+            }
+        case self::SELECT_CALLBACK:
+            if (! (($cb = array_shift($_args)) instanceof \Closure) ) {
+                trigger_error("Select mode - invalid callback params", E_USER_WARNING);
+                return false;
+            } else {
+                $this->selectParam = array($cb, $_args);
+                $this->selectMode = self::SELECT_CALLBACK;
+                return true;
+            }
+        case self::SELECT_COND:
+            $this->selectMode = self::SELECT_COND;
+            $this->selectParam = null;
+            return true;
+        case self::SELECT_INFINITE:
+            $this->selectMode = self::SELECT_INFINITE;
+            $this->selectParam = null;
+            return true;
+        default:
+            trigger_error("Select mode - mode not found", E_USER_WARNING);
+            return false;
+        }
     }
 
 
@@ -664,38 +720,63 @@ class Connection
      * Blocks indefinitely waiting for messages to consume.  This routine is designed to
      * handle large prefetch count values by reading all wire content each time it becomes
      * available then delivering in order.
-     * TODO: Implement support for preset loop limits:
-     *  1) Absolute timeout (i.e. +30 seconds) - end point in second or millisecond precision
-     *  2) Max loops
-     *  3) Conditional exit (callback)
-     *  4) Conditional exit (automatic) (current impl)
-     *  6) Infinite
      */
     private function consumeSelectLoop () {
         if ($this->blocking) {
             throw new \Exception("Multiple simultaneous read blocking not supported", 6362);
         }
         $this->blocking = true;
-        $DBG = '';
+
+        // Notify all channels
+        foreach ($this->chans as $chan) {
+            $chan->onSelectStart();
+        }
+
+        // Initialise exit strategy
+        switch ($this->selectMode) {
+        case self::SELECT_TIMEOUT:
+            $timeoutStart = microtime();
+            break;
+        case self::SELECT_MAXLOOPS:
+            $loopNum = 0;
+        }
+
 
         while (true) {
             $this->deliverAll();
-            // Ensure there are local components listening
-            $hasConsumers = false;
-            foreach ($this->chans as $chan) {
-                if ($chan->hasConsumers() || $chan->hasOutstandingConfirms()) {
-                    $hasConsumers = true;
-                    break;
+
+            // Check the select parameters to see whether to return this time.
+            switch ($this->selectMode) {
+            case self::SELECT_TIMEOUT:
+                // TODO:
+                break;
+            case self::SELECT_MAXLOOPS:
+                if (++$loopNum > $this->selectParam) {
+                    goto select_end;
                 }
-            }
-            if (! $hasConsumers) {
-                // There are no consumers attached to any channels.
+                break;
+            case self::SELECT_CALLBACK:
+                $fn = $this->selectParam;
+                if (true !== call_user_func_array($this->selectParam[0], $this->selectParam[1])) {
+                    goto select_end;
+                }
+                break;
+            case self::SELECT_COND:
+                // Ensure there are local components listening
+                $hasConsumers = false;
+                foreach ($this->chans as $chan) {
+                    if ($chan->canListen()) {
+                        $hasConsumers = true;
+                        break;
+                    }
+                }
+                if (! $hasConsumers) {
+                    goto select_end;
+                }
                 break;
             }
-            if ($this->consumeHalt) {
-                $this->consumeHalt = false;
-                break;
-            } else if ($this->signalDispatch) {
+
+            if ($this->signalDispatch) {
                 pcntl_signal_dispatch();
                 if (! $this->connected) {
                     trigger_error("Connection is no longer connected, force exit of consume loop.", E_USER_WARNING);
@@ -711,12 +792,14 @@ class Connection
                     pcntl_signal_dispatch();
                 }
                 $errStr = $this->sock->strError();
+                $this->blocking = false;
                 throw new \Exception ("[2] Read block select produced an error: [$errNo] $errStr", 9963);
             } else if ($select > 0) {
-                $buff = $DBG = $this->sock->readAll();
+                $buff = $this->sock->readAll();
                 if ($buff && ($meths = $this->readMessages($buff))) {
                     $this->unDelivered = array_merge($this->unDelivered, $meths);
                 } else if (! $buff) {
+                    $this->blocking = false;
                     throw new \Exception("Empty read in blocking select loop : " . strlen($buff), 9864);
                 }
             }
@@ -917,13 +1000,8 @@ class Connection
         $m->setContent($content);
         return $m;
     }
-
-
-
-
-
-
 }
+
 
 
 class Channel
@@ -1054,9 +1132,8 @@ class Channel
     /**
      * Callback from the Connection object for channel frames and messages.
      * @param   $meth           A channel method for this channel
-     * @return  mixed           If a method is returned it will be sent by the channel
-     *                          If true, the message will be delivered as normal by the Connection
-     *                          Else, $meth will be removed from delivery queue by the Connection
+     * @return  boolean         True:  Add message to internal queue for regular delivery
+     *                          False: Remove message from internal queue
      */
     function handleChannelMessage (wire\Method $meth) {
         $sid = "{$meth->getClassProto()->getSpecName()}.{$meth->getMethodProto()->getSpecName()}";
@@ -1231,6 +1308,15 @@ class Channel
         return ! empty($this->consumers);
     }
 
+    /**
+     * Called from select loop to see whether this object wants to continue looping.
+     * @return  boolean      True:  Request Connection stays in select loop
+     *                       False: Confirm to connection it's OK to exit from loop
+     */
+    function canListen (){
+        return $this->hasConsumers() || $this->hasOutstandingConfirms();
+    }
+
     function removeConsumer (Consumer $cons) {
         foreach ($this->consumers as $i => $c) {
             if ($c[0] === $cons) {
@@ -1251,10 +1337,11 @@ class Channel
     }
 
     /**
-     * Channel callback from Connection->startConsuming() - prepare consumers to receive
+     * Channel callback from Connection->select() - prepare signal raised just
+     * before entering the select loop.
      * @return  boolean         Return true if there are consumers present
      */
-    function onConsumeStart () {
+    function onSelectStart () {
         if (! $this->consumers) {
             return false;
         }
@@ -1269,7 +1356,7 @@ class Channel
         return true;
     }
 
-    function onConsumeEnd () {
+    function onSelectEnd () {
         $this->consuming = false;
     }
 }

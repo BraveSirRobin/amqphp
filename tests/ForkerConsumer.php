@@ -39,7 +39,7 @@ class ForkerConsumer extends Forker
         if (! pcntl_signal(SIGTERM, array($this, 'sigHand'))) {
             echo "Failed to install SIGTERM in consumer {$this->n}\n";
         }
-        $this->conn->startConsuming();
+        $this->conn->select();
         if (! $this->sigHandled) {
             $this->shutdownConnection();
         }
