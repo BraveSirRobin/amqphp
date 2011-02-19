@@ -297,7 +297,7 @@ class Connection
 {
     /** Default client-properties field used during connection setup */
     private static $ClientProperties = array('product' => 'RobinTheBrave-amqphp',
-                                             'version' => '0.5',
+                                             'version' => '0.6',
                                              'platform' => 'PHP 5.3 +',
                                              'copyright' => 'Copyright (c) 2010,2011 Robin Harvey (harvey.robin@gmail.com)',
                                              'information' => 'This software is released under the terms of the GNU LGPL: http://www.gnu.org/licenses/lgpl-3.0.txt');
@@ -388,7 +388,6 @@ class Connection
         }
         $this->sock->close();
         $this->connected = false;
-        $this->dumpUndelivered();
     }
 
 
@@ -644,7 +643,6 @@ class Connection
         if ($this->blocking) {
             throw new \Exception("Stream blocking is already in progress.", 8756);
         }
-        printf(" select: begin loop.\n");
         $this->consumeSelectLoop();
     }
 
@@ -823,20 +821,6 @@ class Connection
                     if ($chanR === true) {
                         $allMeths[] = $meth;
                     }
-                    /*
-                    if ($chanR instanceof wire\Method) {
-                        $this->invoke($chanR, true); // SMR
-                    }  else if (is_array($chanR)) {
-                        // C&Paste-maybe--TODO-- review/remove
-                        foreach ($chanR as $r) {
-                            printf(" [INVOKE RESPONSE(3)]: %s:%s\n", $r->getClassProto()->getSpecName(), $r->getMethodProto()->getSpecName());
-                            $this->invoke($r, true);
-                        }
-                    } else if ($chanR === true) {
-                        // This is required to support sending channel messages
-                        $allMeths[] = $meth;
-                    }
-                    */
                 } else {
                     $allMeths[] = $meth;
                 }
@@ -852,18 +836,6 @@ class Connection
         return $allMeths;
     }
 
-
-    function dumpUndelivered () {
-        // Dev time only!
-        if ($this->unDelivered) {
-            printf("-- Undelivered messages:");
-            foreach ($this->unDelivered as $ud) {
-                printf("--> %s.%s\n", $ud->getClassProto()->getSpecName(), $ud->getMethodProto()->getSpecName());
-            }
-        } else {
-            printf("-- There are no undelivered messages\n");
-        }
-    }
 
     function getUndeliveredMessages () {
         return $this->unDelivered;
@@ -884,17 +856,6 @@ class Connection
                 if ($resp === true) {
                     $allMeths[] = $meth;
                 }
-                /*
-                if ($resp instanceof wire\Method) {
-                    printf(" [INVOKE RESPONSE(1)]: %s:%s\n", $resp->getClassProto()->getSpecName(), $resp->getMethodProto()->getSpecName());
-                    $this->invoke($resp, true);
-                } else if (is_array($resp)) {
-                    foreach ($resp as $r) {
-                        printf(" [INVOKE RESPONSE(2)]: %s:%s\n", $r->getClassProto()->getSpecName(), $r->getMethodProto()->getSpecName());
-                        $this->invoke($r, true);
-                    }
-                }
-                */
             } else {
                 trigger_error("Message delivered on unknown channel", E_USER_WARNING);
                 $this->unDeliverable[] = $meth;
@@ -1083,7 +1044,6 @@ class Channel
         if ($this->confirmMode && $m->getClassProto()->getSpecName() == 'basic'
             && $m->getMethodProto()->getSpecName() == 'publish') {
             $this->confirmSeq++;
-            printf("Store expected confirm seq %d\n", $this->confirmSeq);
             $this->confirmSeqs[] = $this->confirmSeq;
         }
 

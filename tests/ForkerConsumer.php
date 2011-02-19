@@ -73,11 +73,11 @@ class ForkerConsumer extends Forker
             $qOk = $chan->invoke($chan->basic('qos', array('prefetch-count' => (int) $this->fParams['consumerPrefetch'],
                                                            'global' => false)));
 
-            $cons = $chan->basic('consume', array('queue' => $this->fParams['queueName'],
-                                                  'no-local' => true,
-                                                  'no-ack' => false,
-                                                  'exclusive' => false,
-                                                  'no-wait' => false));
+            $cons = array('queue' => $this->fParams['queueName'],
+                          'no-local' => true,
+                          'no-ack' => false,
+                          'exclusive' => false,
+                          'no-wait' => false);
             for ($j = 0; $j < $this->fParams['consumersPerChannel']; $j++) {
                 $consumer = new TraceConsumer($cons, ($i * $this->fParams['consumersPerChannel']) + $j);
                 $consumer->tempDir = $this->tempDir;
@@ -94,7 +94,7 @@ class TraceConsumer extends amqp\SimpleConsumer
     private $i;
     private $n = 0;
     public $tempDir;
-    function __construct (wire\Method $consume = null, $i) {
+    function __construct (array $consume = null, $i) {
         parent::__construct($consume);
         $this->i = $i;
     }
@@ -134,7 +134,7 @@ class TraceConsumer extends amqp\SimpleConsumer
                 file_put_contents($outFile, $pl);
             }
         }
-        return $this->ack($meth);
+        return amqp\CONSUMER_ACK;
     }
 
 }

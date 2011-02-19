@@ -55,7 +55,30 @@ $publishParams = array('content-type' => 'text/plain',
 $basicP = $chan->basic('publish', $publishParams);
 
 // Send multiple messages to the RabbitMQ broker using the channel set up earlier.
-$messages = array('Hi!', 'guten Tag', 'ciao', 'buenos días', 'end');
+$messages = array('Hi!', 'guten Tag', 'ciao', 'buenos días');
+
+// $data['class']}($data['method'], $data['args'], $data['payload']
+$eval = array(
+              'class' => 'basic',
+              'method' => 'publish',
+              'args' => $publishParams,
+              'payload' => 'FINGERS!'
+              );
+
+$messages[] = 'eval:' . serialize($eval);
+
+$eval = array(
+              'class' => 'queue',
+              'method' => 'declare',
+              'args' => array('queue' => 'most-basic'),
+              'payload' => null
+              );
+
+$messages[] = 'eval:' . serialize($eval);
+
+
+//$messages[] = 'end';
+
 foreach ($messages as $m) {
     $basicP->setContent($m);
     $chan->invoke($basicP);
