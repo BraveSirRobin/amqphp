@@ -124,6 +124,10 @@ class Socket
         while (@socket_recv($this->sock, $tmp, $readLen, MSG_DONTWAIT)) {
             $buff .= $tmp;
         }
+        if (DEBUG) {
+            echo "\n<read>\n";
+            echo wire\hexdump($buff);
+        }
         return $buff;
     }
 
@@ -131,6 +135,10 @@ class Socket
         $bw = 0;
         $contentLength = strlen($buff);
         while (true) {
+            if (DEBUG) {
+                echo "\n<write>\n";
+                echo wire\hexdump($buff);
+            }
             if (($tmp = socket_write($this->sock, $buff)) === false) {
                 throw new \Exception(sprintf("\nSocket write failed: %s\n",
                                              $this->strError()), 7854);
@@ -243,6 +251,10 @@ class StreamSocket
             $smd = stream_get_meta_data($this->sock);
             $readLen = min($smd['unread_bytes'], $readLen);
         } while ($smd['unread_bytes'] > 0);
+        if (DEBUG) {
+            echo "\n<read>\n";
+            echo wire\hexdump($buff);
+        }
         return $buff;
     }
 
@@ -255,6 +267,10 @@ class StreamSocket
         $bw = 0;
         $contentLength = strlen($buff);
         while (true) {
+            if (DEBUG) {
+                echo "\n<write>\n";
+                echo wire\hexdump($buff);
+            }
             if (($tmp = fwrite($this->sock, $buff)) === false) {
                 throw new \Exception(sprintf("\nStream write failed: %s\n",
                                              $this->strError()), 7854);
@@ -372,6 +388,7 @@ class Connection
         }
         $this->sock->close();
         $this->connected = false;
+        $this->dumpUndelivered();
     }
 
 
@@ -527,10 +544,6 @@ class Connection
             }
             $errStr = $this->sock->strError();
             throw new \Exception ("[1] Read block select produced an error: [$errNo] $errStr", 9963);
-        }
-        if (DEBUG) {
-            echo "\n<read>\n";
-            echo wire\hexdump($ret);
         }
         return $ret;
     }
@@ -809,6 +822,12 @@ class Connection
                     $chanR = $chan->handleChannelMessage($meth);
                     if ($chanR instanceof wire\Method) {
                         $this->invoke($chanR, true); // SMR
+                    }  else if (is_array($chanR)) {
+                        // C&Paste-maybe--TODO-- review/remove
+                        foreach ($chanR as $r) {
+                            printf(" [INVOKE RESPONSE(3)]: %s:%s\n", $r->getClassProto()->getSpecName(), $r->getMethodProto()->getSpecName());
+                            $this->invoke($r, true);
+                        }
                     } else if ($chanR === true) {
                         // This is required to support sending channel messages
                         $allMeths[] = $meth;
@@ -829,6 +848,21 @@ class Connection
     }
 
 
+    function dumpUndelivered () {
+        // Dev time only!
+        if ($this->unDelivered) {
+            printf("-- Undelivered messages:");
+            foreach ($this->unDelivered as $ud) {
+                printf("--> %s.%s\n", $ud->getClassProto()->getSpecName(), $ud->getMethodProto()->getSpecName());
+            }
+        } else {
+            printf("-- There are no undelivered messages\n");
+        }
+    }
+
+    function getUndeliveredMessages () {
+        return $this->unDelivered;
+    }
 
 
     /**
@@ -843,9 +877,11 @@ class Connection
             if (isset($this->chans[$meth->getWireChannel()])) {
                 $resp = $this->chans[$meth->getWireChannel()]->handleChannelMessage($meth);
                 if ($resp instanceof wire\Method) {
+                    printf(" [INVOKE RESPONSE(1)]: %s:%s\n", $resp->getClassProto()->getSpecName(), $resp->getMethodProto()->getSpecName());
                     $this->invoke($resp, true);
                 } else if (is_array($resp)) {
                     foreach ($resp as $r) {
+                        printf(" [INVOKE RESPONSE(2)]: %s:%s\n", $r->getClassProto()->getSpecName(), $r->getMethodProto()->getSpecName());
                         $this->invoke($r, true);
                     }
                 }
@@ -1135,7 +1171,6 @@ class Channel
             $dtag = $meth->getField('delivery-tag');
             $this->confirmSeqs = array_filter($this->confirmSeqs, 
                                               function ($id) use ($dtag, $handler, $meth) {
-                                                  //            if ($handler)        echo "Do Confirm!\n";
                                                   if ($id <= $dtag) {
                                                       if ($handler) {
                                                           $handler($meth);
@@ -1226,7 +1261,9 @@ class Channel
     }
 }
 
-// Interface for a simple blocking consumer - modelled on the RMQ Java here:
+
+
+// Interface for a consumer callback handler object, based on the RMQ java on here:
 // http://www.rabbitmq.com/releases/rabbitmq-java-client/v2.2.0/rabbitmq-java-client-javadoc-2.2.0/com/rabbitmq/client/Consumer.html
 interface Consumer
 {
@@ -1272,7 +1309,7 @@ class SimpleConsumer implements Consumer
      * @param  boolean         $requeue   Flag on the returned method, see docs for basic.reject field "requeue"
      * @return wire\Method                A method which rejects the input
      */
-    protected function reject (wire\Method $meth, $requeue=true) {
+    function reject (wire\Method $meth, $requeue=true) {
         $resp = new wire\Method(protocol\ClassFactory::GetMethod('basic', 'reject'), $meth->getWireChannel());
         $resp->setField('delivery-tag', $meth->getField('delivery-tag'));
         $resp->setField('requeue', $requeue);
@@ -1285,10 +1322,11 @@ class SimpleConsumer implements Consumer
      * @param  boolean         $multiple  A flag for the returned method, see docs for basic.ack field "multiple"
      * @return wire\Method                A method which acks the input
      */
-    protected function ack (wire\Method $meth, $multiple=false) {
+    function ack (wire\Method $meth, $multiple=false) {
         $resp = new wire\Method(protocol\ClassFactory::GetMethod('basic', 'ack'), $meth->getWireChannel());
         $resp->setField('delivery-tag', $meth->getField('delivery-tag'));
         $resp->setField('multiple', $multiple);
+        printf("{ACK %s}", $resp->getField('delivery-tag'));
         return $resp;
     }
 
@@ -1298,10 +1336,11 @@ class SimpleConsumer implements Consumer
      * @param  boolean         $noWait    A flag for the returned method, see docs for basic.cancel field "no-wait"
      * @return wire\Method                A method which cancels consuming for the consumer that received the input message
      */
-    protected function cancel (wire\Method $meth, $noWait=false) {
+    protected function cancel (wire\Method $meth, $noWait=true) {
         $resp = new wire\Method(protocol\ClassFactory::GetMethod('basic', 'cancel'), $meth->getWireChannel());
         $resp->setField('consumer-tag', $meth->getField('consumer-tag'));
         $resp->setField('no-wait', $noWait);
+        printf("{CNL %s}", $meth->getField('delivery-tag'));
         return $resp;
     }
 }

@@ -38,6 +38,7 @@ class DemoConsumer extends amqp\SimpleConsumer
             return array($this->ack($meth), $this->cancel($meth));
         } else if ($meth->getContent() == 'reject') {
             // Reject the message and instruct the broker NOT to requeue it
+            echo "Reject tou!\n";
             return $this->reject($meth, false);
         } else {
             return $this->ack($meth);
@@ -84,6 +85,20 @@ $chan->addConsumer($receiver);
 
 // Instruct the connection object to begin listening for messages
 $conn->startConsuming();
+
+
+
+
+// Hackedy hack!!
+if ($unDel = $conn->getUndeliveredMessages()) {
+    foreach ($unDel as $d) {
+        printf("Hackedy hack: Reject the undelivered %s.%s\n", $d->getClassProto()->getSpecName(), $d->getMethodProto()->getSpecName());
+        var_dump($conn->invoke($receiver->reject($d)));
+    }
+} else {
+    echo "\n\n\n\n\WHAR?\n\n\n\n";
+}
+
 
 $chan->shutdown();
 $conn->shutdown();
