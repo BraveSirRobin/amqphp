@@ -35,13 +35,16 @@ class DemoConsumer extends amqp\SimpleConsumer
         printf("[message received]\n%s\n", $meth->getContent());
         if ($meth->getContent() == 'end') {
             $chan->removeConsumer($this);
-            return array($this->ack($meth), $this->cancel($meth));
+            //return array($this->ack($meth), $this->cancel($meth));
+            return array(amqp\CONSUMER_ACK, amqp\CONSUMER_CANCEL);
         } else if ($meth->getContent() == 'reject') {
             // Reject the message and instruct the broker NOT to requeue it
             echo "Reject tou!\n";
-            return $this->reject($meth, false);
+            //return $this->reject($meth, false);
+            return amqp\CONSUMER_REJECT;
         } else {
-            return $this->ack($meth);
+            //return $this->ack($meth);
+            return amqp\CONSUMER_ACK;
         }
     }
 }
@@ -71,14 +74,13 @@ $qOk = $chan->invoke($chan->basic('qos', $qosParams));
 
 // Create a basic.consume Method - this tells the broker that we 
 // want to consume messages from the given $Q
-$basicC = $chan->basic('consume', array('queue' => $Q,
-                                        'no-local' => true,
-                                        'no-ack' => false,
-                                        'exclusive' => false,
-                                        'no-wait' => false));
 
 // Create a DemoConsumer object to receive messages
-$receiver = new DemoConsumer($basicC);
+$receiver = new DemoConsumer(array('queue' => $Q,
+                                   'no-local' => true,
+                                   'no-ack' => false,
+                                   'exclusive' => false,
+                                   'no-wait' => false));
 echo "Start Consume\n";
 // Attach our consumer receiver object to the channel
 $chan->addConsumer($receiver);

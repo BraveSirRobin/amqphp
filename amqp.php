@@ -820,6 +820,10 @@ class Connection
                            ($chan = $this->chans[$meth->getWireChannel()])) {
                     // Deliver Channel messages immediately
                     $chanR = $chan->handleChannelMessage($meth);
+                    if ($chanR === true) {
+                        $allMeths[] = $meth;
+                    }
+                    /*
                     if ($chanR instanceof wire\Method) {
                         $this->invoke($chanR, true); // SMR
                     }  else if (is_array($chanR)) {
@@ -832,6 +836,7 @@ class Connection
                         // This is required to support sending channel messages
                         $allMeths[] = $meth;
                     }
+                    */
                 } else {
                     $allMeths[] = $meth;
                 }
@@ -876,6 +881,10 @@ class Connection
             $meth = array_shift($this->unDelivered);
             if (isset($this->chans[$meth->getWireChannel()])) {
                 $resp = $this->chans[$meth->getWireChannel()]->handleChannelMessage($meth);
+                if ($resp === true) {
+                    $allMeths[] = $meth;
+                }
+                /*
                 if ($resp instanceof wire\Method) {
                     printf(" [INVOKE RESPONSE(1)]: %s:%s\n", $resp->getClassProto()->getSpecName(), $resp->getMethodProto()->getSpecName());
                     $this->invoke($resp, true);
@@ -885,6 +894,7 @@ class Connection
                         $this->invoke($r, true);
                     }
                 }
+                */
             } else {
                 trigger_error("Message delivered on unknown channel", E_USER_WARNING);
                 $this->unDeliverable[] = $meth;
@@ -1096,8 +1106,11 @@ class Channel
             // TODO: Make sure that when shut off, the current message send is cancelled
             $this->flow = ! $this->flow;
             if ($r = $meth->getMethodProto()->getResponses()) {
-                return $r[0];
+                $meth = new wire\Method($r[0]);
+                $meth->setWireChannel($this->chanId);
+                $this->invoke($meth);
             }
+            return false;
             break;
         case 'channel.close':
             if ($culprit = protocol\ClassFactory::GetMethod($meth->getField('class-id'), $meth->getField('method-id'))) {
@@ -1128,39 +1141,82 @@ class Channel
         case 'channel.open-ok':
             return true;
         case 'basic.deliver':
-            if ($cons = $this->getConsumerForTag($meth->getField('consumer-tag'))) {
-                return $cons->handleDelivery($meth, $this);
+            $tag = $meth->getField('consumer-tag');
+            if ($cons = $this->getConsumerForTag($tag)) {
+                $consResp = $cons->handleDelivery($meth, $this);
+                $this->handleConsumerCallbackResponse($meth, $consResp, $tag);
+                return false;
             }
             // TODO: this might happen if a consumer suddenly removes itself
             // and the prefetch-count is high.
             throw new \Exception("Unknown consumer tag (1) {$meth->getField('consumer-tag')}", 9684);
         case 'basic.cancel-ok':
-            if ($cons = $this->getConsumerForTag($meth->getField('consumer-tag'))) {
-                return $cons->handleCancelOk($meth, $this);
+            $tag = $meth->getField('consumer-tag');
+            if ($cons = $this->getConsumerForTag($tag)) {
+                $cons->handleCancelOk($meth, $this);
+                $consResp = $this->handleConsumerCallbackResponse($meth, $consResp, $tag);
+                return false;
             }
             throw new \Exception("Unknown consumer tag (2)", 9685);
         case 'basic.recover-ok':
-            if ($cons = $this->getConsumerForTag($meth->getField('consumer-tag'))) {
-                return $cons->handleRecoveryOk($meth, $this);
+            $tag = $meth->getField('consumer-tag');
+            if ($cons = $this->getConsumerForTag($tag)) {
+                $cons->handleRecoveryOk($meth, $this);
+                $consResp = $this->handleConsumerCallbackResponse($meth, $consResp, $tag);
+                return false;
             }
             throw new \Exception("Unknown consumer tag (3)", 9686);
         case 'basic.return':
             $cb = $this->callbacks['publishReturn'];
-            return;
+            return false;
         case 'basic.ack':
             $cb = $this->callbacks['publishConfirm'];
             $this->removeConfirmSeqs($meth, $cb);
-            return;
+            return false;
         case 'basic.nack':
             $cb = $this->callbacks['publishNack'];
             $this->removeConfirmSeqs($meth, $cb);
-            return;
+            return false;
         default:
             $hd = '';
             foreach ($meth->toBin() as $i => $bin) {
                 $hd .= sprintf("  --(part %d)--\n%s\n", $i+1, wire\hexdump($bin));
             }
             throw new \Exception("Received unexpected channel method:\n$hd", 8795);
+        }
+    }
+
+    /**
+     * Helper: router for Consumer callback responses, implements responding to
+     * the CONSUMER_XXX API messages
+     * @param   wire\Method    $meth      The message which is being responded to
+     * @param   integer        $resp      The Consumer implementation's response to $meth
+     * @param   string         $consTag   The consume-tag value for this consumer
+     * @return  void
+     */
+    private function handleConsumerCallbackResponse (wire\Method $meth, $response, $consTag) {
+        if (! is_array($response)) {
+            $response = array($response);
+        }
+        foreach ($response as $resp) {
+            switch ($resp) {
+            case CONSUMER_ACK:
+                $ack = $this->basic('ack', array('delivery-tag' => $meth->getField('delivery-tag'),
+                                                 'multiple' => false));
+                $this->invoke($ack);
+                break;
+            case CONSUMER_DROP:
+            case CONSUMER_REJECT:
+                $rej = $this->basic('reject', array('delivery-tag' => $meth->getField('delivery-tag'),
+                                                    'requeue' => ($resp == CONSUMER_REJECT)));
+                $this->invoke($rej);
+                break;
+            case CONSUMER_CANCEL:
+                $cnl = $this->basic('cancel', array('delivery-tag' => $meth->getField('consumer-tag'),
+                                                    'no-wait' => true));
+                $this->invoke($cnl);
+                break;
+            }
         }
     }
 
@@ -1244,11 +1300,8 @@ class Channel
         }
         foreach (array_keys($this->consumers) as $cnum) {
             if (false === $this->consumers[$cnum][1]) {
-                $consChan = $this->consumers[$cnum][0]->getConsumeMethod()->getWireChannel();
-                if ($this->chanId !== $consChan) {
-                    throw new \Exception("Consumer has wrong channel", 8734);
-                }
-                $cOk = $this->invoke($this->consumers[$cnum][0]->getConsumeMethod());
+                $consume = $this->consumers[$cnum][0]->getConsumeMethod($this);
+                $cOk = $this->invoke($consume);
                 $this->consumers[$cnum][0]->handleConsumeOk($cOk, $this);
                 $this->consumers[$cnum][1] = $cOk->getField('consumer-tag');
             }
@@ -1261,6 +1314,14 @@ class Channel
     }
 }
 
+/**
+ * Standard "consumer signals" - these can be returned from consumer handleXXX methods
+ * and trigger the API to send the corresponding messages.
+ */
+const CONSUMER_ACK = 1; // basic.ack (multiple=false)
+const CONSUMER_REJECT = 2; // basic.reject (requeue=true)
+const CONSUMER_DROP = 3; // basic.reject (requeue=false)
+const CONSUMER_CANCEL = 4; // basic.cancel (no-wait=true)
 
 
 // Interface for a consumer callback handler object, based on the RMQ java on here:
@@ -1277,18 +1338,16 @@ interface Consumer
 
     function handleShutdownSignal (Channel $chan);
 
-    function getConsumeMethod ();
+    function getConsumeMethod (Channel $chan);
 }
 
 class SimpleConsumer implements Consumer
 {
-    protected $consMeth;
+    protected $consumeParams;
     protected $consuming = false;
 
-    function __construct (wire\Method $consume = null) {
-        $this->consMeth = $consume ?
-            $consume
-            : protocol\ClassFactory::GetMethod('basic', 'consume');
+    function __construct (array $consumeParams) {
+        $this->consumeParams = $consumeParams;
     }
 
     function handleCancelOk (wire\Method $meth, Channel $chan) {}
@@ -1301,46 +1360,7 @@ class SimpleConsumer implements Consumer
 
     function handleShutdownSignal (Channel $chan) { $this->consuming = false; }
 
-    function getConsumeMethod () { return $this->consMeth; }
-
-    /**
-     * Helper: return a basic.reject method which rejects the input
-     * @param  wire\Method     $meth      A method created from basic.deliver
-     * @param  boolean         $requeue   Flag on the returned method, see docs for basic.reject field "requeue"
-     * @return wire\Method                A method which rejects the input
-     */
-    function reject (wire\Method $meth, $requeue=true) {
-        $resp = new wire\Method(protocol\ClassFactory::GetMethod('basic', 'reject'), $meth->getWireChannel());
-        $resp->setField('delivery-tag', $meth->getField('delivery-tag'));
-        $resp->setField('requeue', $requeue);
-        return $resp;
-    }
-
-    /**
-     * Helper: return a basic.ack method which acks the input
-     * @param  wire\Method     $meth      A method created from basic.deliver
-     * @param  boolean         $multiple  A flag for the returned method, see docs for basic.ack field "multiple"
-     * @return wire\Method                A method which acks the input
-     */
-    function ack (wire\Method $meth, $multiple=false) {
-        $resp = new wire\Method(protocol\ClassFactory::GetMethod('basic', 'ack'), $meth->getWireChannel());
-        $resp->setField('delivery-tag', $meth->getField('delivery-tag'));
-        $resp->setField('multiple', $multiple);
-        printf("{ACK %s}", $resp->getField('delivery-tag'));
-        return $resp;
-    }
-
-    /**
-     * Helper: return a basic.cancel method which stops consuming for the input's consumer-tag
-     * @param  wire\Method     $meth      A method created from basic.deliver
-     * @param  boolean         $noWait    A flag for the returned method, see docs for basic.cancel field "no-wait"
-     * @return wire\Method                A method which cancels consuming for the consumer that received the input message
-     */
-    protected function cancel (wire\Method $meth, $noWait=true) {
-        $resp = new wire\Method(protocol\ClassFactory::GetMethod('basic', 'cancel'), $meth->getWireChannel());
-        $resp->setField('consumer-tag', $meth->getField('consumer-tag'));
-        $resp->setField('no-wait', $noWait);
-        printf("{CNL %s}", $meth->getField('delivery-tag'));
-        return $resp;
+    function getConsumeMethod (Channel $chan) {
+        return $chan->basic('consume', $this->consumeParams);
     }
 }
