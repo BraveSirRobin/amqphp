@@ -295,6 +295,14 @@ class StreamSocket
 
 class Connection
 {
+
+    const SELECT_TIMEOUT_ABS = 1;
+    const SELECT_TIMEOUT_REL = 2;
+    const SELECT_MAXLOOPS = 3;
+    const SELECT_CALLBACK = 4;
+    const SELECT_COND = 5;
+    const SELECT_INFINITE = 6;
+
     /** Default client-properties field used during connection setup */
     private static $ClientProperties = array('product' => 'RobinTheBrave-amqphp',
                                              'version' => '0.6',
@@ -317,9 +325,6 @@ class Connection
     private $frameMax = 65536; // Negotated during setup.
     private $chanMax = 50; // Negotated during setup.
     private $signalDispatch = true;
-    //    private $blockTmSecs = null; // Passed to socket 'select' methods
-    //    private $blockTmMillis = 0; // Passed to socket 'select' methods
-
 
 
     private $chans = array(); // Format: array(<chan-id> => Channel)
@@ -336,6 +341,11 @@ class Connection
     private $readSrc = null; // wire\Reader, used between reads when partial frames are read from the wire
 
     private $connected = false; // Flag flipped after protcol connection setup is complete
+
+    /** Control variables for select loop parmeters */
+    private $selectMode = self::SELECT_COND;
+    private $selectParam;
+
 
 
     function __construct (array $params = array()) {
@@ -599,19 +609,6 @@ class Connection
 
     function isBlocking () { return $this->isBlocking; }
 
-    /*
-    function setBlockingTimeoutSecs ($nSecs) {
-        if (is_null($nSecs)) {
-             $this->blockTmSecs = null;
-        } else {
-            $this->blockTmSecs = (int) $nSecs;
-        }
-    }
-
-    function setBlockingTimeoutMillis ($nMillis) {
-        $this->blockTmMillis = (int) $nMillis;
-    }
-    */
 
     // @DEPRECATED
     function startConsuming () {
@@ -625,6 +622,7 @@ class Connection
      * Use setSelectMode() to set an exit strategy for the loop.  Do not call
      * concurrently, this will raise an exception.  Use isBlocking() to test
      * whether select() should be called.
+     * @throws Exception
      */
     function select () {
         if ($this->blocking) {
@@ -637,16 +635,6 @@ class Connection
 
     }
 
-
-    const SELECT_TIMEOUT_ABS = 1;
-    const SELECT_TIMEOUT_REL = 2;
-    const SELECT_MAXLOOPS = 3;
-    const SELECT_CALLBACK = 4;
-    const SELECT_COND = 5;
-    const SELECT_INFINITE = 6;
-
-    private $selectMode = self::SELECT_COND;
-    private $selectParam;
 
     /**
      * Set parameters that control how the connection select loop behaves, implements
