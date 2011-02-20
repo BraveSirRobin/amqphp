@@ -303,8 +303,9 @@ class Connection
                                              'information' => 'This software is released under the terms of the GNU LGPL: http://www.gnu.org/licenses/lgpl-3.0.txt');
 
     /** List of class fields that are settable connection params */
-    private static $CProps = array('socketImpl', 'socketParams', 'username', 'userpass', 'vhost', 'frameMax', 'chanMax', 'signalDispatch',
-                                   'blockTmSecs', 'blockTmMillis');
+    private static $CProps = array('socketImpl', 'socketParams', 'username', 'userpass',
+                                   'vhost', 'frameMax', 'chanMax', 'signalDispatch');
+    //'blockTmSecs', 'blockTmMillis');
 
     /** Connection params */
     private $sock; // Socket wrapper object
@@ -316,8 +317,8 @@ class Connection
     private $frameMax = 65536; // Negotated during setup.
     private $chanMax = 50; // Negotated during setup.
     private $signalDispatch = true;
-    private $blockTmSecs = null; // Passed to socket 'select' methods
-    private $blockTmMillis = 0; // Passed to socket 'select' methods
+    //    private $blockTmSecs = null; // Passed to socket 'select' methods
+    //    private $blockTmMillis = 0; // Passed to socket 'select' methods
 
 
 
@@ -598,7 +599,7 @@ class Connection
 
     function isBlocking () { return $this->isBlocking; }
 
-
+    /*
     function setBlockingTimeoutSecs ($nSecs) {
         if (is_null($nSecs)) {
              $this->blockTmSecs = null;
@@ -610,7 +611,7 @@ class Connection
     function setBlockingTimeoutMillis ($nMillis) {
         $this->blockTmMillis = (int) $nMillis;
     }
-
+    */
 
     // @DEPRECATED
     function startConsuming () {
@@ -629,7 +630,7 @@ class Connection
         if ($this->blocking) {
             throw new \Exception("Stream blocking is already in progress.", 8756);
         }
-        $this->consumeSelectLoop();
+        $this->_select();
         foreach ($this->chans as $chan) {
             $chan->onSelectEnd();
         }
@@ -637,11 +638,12 @@ class Connection
     }
 
 
-    const SELECT_TIMEOUT = 1;
-    const SELECT_MAXLOOPS = 2;
-    const SELECT_CALLBACK = 3;
-    const SELECT_COND = 4;
-    const SELECT_INFINITE = 5;
+    const SELECT_TIMEOUT_ABS = 1;
+    const SELECT_TIMEOUT_REL = 2;
+    const SELECT_MAXLOOPS = 3;
+    const SELECT_CALLBACK = 4;
+    const SELECT_COND = 5;
+    const SELECT_INFINITE = 6;
 
     private $selectMode = self::SELECT_COND;
     private $selectParam;
@@ -650,10 +652,12 @@ class Connection
      * Set parameters that control how the connection select loop behaves, implements
      * the following exit strategies:
      *  1) Absolute timeout - specify a {usec epoch} timeout, loop breaks after this.
-     *     See the PHP man page for microtime(false)
-     *  2) Max loops
-     *  3) Conditional exit (callback)
-     *  4) Conditional exit (automatic) (current impl)
+     *     See the PHP man page for microtime(false).  Example: "0.025 1298152951"
+     *  2) Relative timeout - same as Absolute timeout except the args are specified
+     *     relative to microtime() at the start of the select loop.  Example: "0.75 2"
+     *  3) Max loops
+     *  4) Conditional exit (callback)
+     *  5) Conditional exit (automatic) (current impl)
      *  6) Infinite
 
      * @param   integer    $mode      One of the SELECT_XXX consts.
@@ -671,16 +675,19 @@ class Connection
             return false;
         }
         switch ($mode = array_shift($_args)) {
-        case self::SELECT_TIMEOUT:
-            @list($usecs, $epoch) = $_args;
+        case self::SELECT_TIMEOUT_ABS:
+        case self::SELECT_TIMEOUT_REL:
+            @list($epoch, $usecs) = $_args;
             if (! $epoch || $usecs >= 1) {
                 trigger_error("Select mode - invalid timeout params", E_USER_WARNING);
                 return false;
             } else {
-                if (preg_match("/[^0-9\.]/", (string) $usecs)) {
+                if (preg_match("/[^0-9\.]/", (string) (float) $usecs)) {
+                    trigger_error("Select mode - timeout precision not available", E_USER_WARNING);
+                    return false;
                 }
                 $this->selectParam = array((string) $usecs, $epoch);
-                $this->selectMode = self::SELECT_TIMEOUT;
+                $this->selectMode = $mode;
                 return true;
             }
         case self::SELECT_MAXLOOPS:
@@ -717,11 +724,9 @@ class Connection
 
 
     /**
-     * Blocks indefinitely waiting for messages to consume.  This routine is designed to
-     * handle large prefetch count values by reading all wire content each time it becomes
-     * available then delivering in order.
+     * The sole system select loop implementation.  All configuration is via. setSelectMode()
      */
-    private function consumeSelectLoop () {
+    private function _select () {
         if ($this->blocking) {
             throw new \Exception("Multiple simultaneous read blocking not supported", 6362);
         }
@@ -732,10 +737,19 @@ class Connection
             $chan->onSelectStart();
         }
 
+        // Indefinite system select by default
+        $blockTmSecs = null;
+        $blockTmMillis = 0;
+
         // Initialise exit strategy
         switch ($this->selectMode) {
-        case self::SELECT_TIMEOUT:
-            $timeoutStart = microtime();
+        case self::SELECT_TIMEOUT_ABS:
+            list($exUsecs, $exEpoch) = $this->selectParam;
+            break;
+        case self::SELECT_TIMEOUT_REL:
+            list($uSecs, $epoch) = explode(' ', microtime());
+            $exUsecs = bcadd($this->selectParam[0], $uSecs, 5);
+            $exEpoch = bcadd($this->selectParam[1], $epoch, 0);
             break;
         case self::SELECT_MAXLOOPS:
             $loopNum = 0;
@@ -747,8 +761,24 @@ class Connection
 
             // Check the select parameters to see whether to return this time.
             switch ($this->selectMode) {
-            case self::SELECT_TIMEOUT:
-                // TODO:
+            case self::SELECT_TIMEOUT_ABS:
+            case self::SELECT_TIMEOUT_REL:
+                list($uSecs, $epoch) = explode(' ', microtime());
+                $epDiff = bccomp($epoch, $exEpoch, 0);
+                if ($epDiff > 0 || ($epDiff == 0 && bccomp($uSecs, $exUsecs, 5) >= 0)) {
+                    goto select_end;
+                } else {
+                    // Calculate select blockout values that expire at the same as the target exit time
+                    $udiff = bcsub($exUsecs, $uSecs, 5);
+                    if (substr($udiff, 0, 1) == '-') {
+                        $blockTmSecs = (int) bcsub($exEpoch, $epoch, 0) - 1;
+                        $udiff = substr($udiff, 1);
+                    } else {
+                        $blockTmSecs = (int) bcsub($exEpoch, $epoch, 0);
+                    }
+
+                    $blockTmMillis = bcmul('1000000', $udiff);
+                }
                 break;
             case self::SELECT_MAXLOOPS:
                 if (++$loopNum > $this->selectParam) {
@@ -783,9 +813,10 @@ class Connection
                     goto select_end;
                 }
             }
-            $select = is_null($this->blockTmSecs) ?
+            //            printf("== Select (%d, %d)\n", $blockTmSecs, $blockTmMillis);
+            $select = is_null($blockTmSecs) ?
                 $this->sock->select(null)
-                : $this->sock->select($this->blockTmSecs, $this->blockTmMillis);
+                : $this->sock->select($blockTmSecs, $blockTmMillis);
             if ($select === false) {
                 $errNo = $this->sock->lastError();
                 if ($this->signalDispatch && $this->sock->selectInterrupted()) {
