@@ -79,6 +79,14 @@ $eval = array(
 
 $messages[] = 'eval:' . serialize($eval);
 
+$eval = array(
+              'class' => 'basic',
+              'method' => 'publish',
+              'args' => $publishParams,
+              'payload' => 'TOES!'
+              );
+
+$messages[] = 'eval:' . serialize($eval);
 
 $messages[] = 'end';
 $messages = array_merge($messages, array('Hi!', 'guten Tag', 'ciao', 'buenos días'));

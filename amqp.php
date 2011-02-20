@@ -954,10 +954,7 @@ class Connection
         while ($this->unDelivered) {
             $meth = array_shift($this->unDelivered);
             if (isset($this->chans[$meth->getWireChannel()])) {
-                $resp = $this->chans[$meth->getWireChannel()]->handleChannelMessage($meth);
-                if ($resp === true) {
-                    $allMeths[] = $meth;
-                }
+                $this->chans[$meth->getWireChannel()]->handleDelivery($meth);
             } else {
                 trigger_error("Message delivered on unknown channel", E_USER_WARNING);
                 $this->unDeliverable[] = $meth;
@@ -1156,7 +1153,8 @@ class Channel
     }
 
     /**
-     * Callback from the Connection object for channel frames and messages.
+     * Callback from the Connection object for channel frames and messages.  Only channel
+     * class methods should be delivered here.
      * @param   $meth           A channel method for this channel
      * @return  boolean         True:  Add message to internal queue for regular delivery
      *                          False: Remove message from internal queue
@@ -1202,6 +1200,19 @@ class Channel
         case 'channel.close-ok':
         case 'channel.open-ok':
             return true;
+        default:
+            throw new \Exception("Received unexpected channel message: $sid", 8795);
+        }
+    }
+
+
+    /**
+     * Delivery handler for all non-channel class input messages.
+     */
+    function handleDelivery (wire\Method $meth) {
+        $sid = "{$meth->getClassProto()->getSpecName()}.{$meth->getMethodProto()->getSpecName()}";
+
+        switch ($sid) {
         case 'basic.deliver':
         case 'basic.cancel-ok':
         case 'basic.recover-ok':
@@ -1218,13 +1229,10 @@ class Channel
             $this->removeConfirmSeqs($meth, $cb);
             return false;
         default:
-            $hd = '';
-            foreach ($meth->toBin() as $i => $bin) {
-                $hd .= sprintf("  --(part %d)--\n%s\n", $i+1, wire\hexdump($bin));
-            }
-            throw new \Exception("Received unexpected channel method:\n$hd", 8795);
+            throw new \Exception("Received unexpected channel delivery:\n$sid", 87998);
         }
     }
+
 
     /** Delivers 'Consume Session' messages to channels consumers, and handles responses. */
     private function deliverConsumerMessage ($meth, $sid) {
@@ -1382,7 +1390,7 @@ class Channel
     }
 
 
-    private function hasListeningConsumers () {
+    function hasListeningConsumers () {
         foreach ($this->consumers as $c) {
             if ($c[2] === 'READY') {
                 return true;
