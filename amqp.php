@@ -1043,7 +1043,14 @@ class Channel
     /** Used to track whether the channel.open returned OK. */
     private $isOpen = false;
 
-    /** Consumers for this channel, format array(array(<Consumer>, <consumer-tag OR false>)+) */
+    /**
+     * Consumers for this channel, format array(array(<Consumer>, <consumer-tag OR false>, <#FLAG#>)+) 
+     * #FLAG# is the consumer status, this is:
+     *  'READY_WAIT' - not yet started, i.e. before basic.consume/basic.consume-ok
+     *  'READY' - started and ready to recieve messages
+     *  'CLOSED_WAIT' - channel is waiting to close
+     *  'CLOSED' - previously live but now closed, receiving a basic.cancel-ok triggers this.
+     */
     private $consumers = array();
 
     /** Channel level callbacks for basic.ack (RMQ confirm feature) and basic.return */
@@ -1159,7 +1166,6 @@ class Channel
 
         switch ($sid) {
         case 'channel.flow':
-            // TODO: Make sure that when shut off, the current message send is cancelled
             $this->flow = ! $this->flow;
             if ($r = $meth->getMethodProto()->getResponses()) {
                 $meth = new wire\Method($r[0]);
@@ -1197,31 +1203,9 @@ class Channel
         case 'channel.open-ok':
             return true;
         case 'basic.deliver':
-            $tag = $meth->getField('consumer-tag');
-            if ($cons = $this->getConsumerForTag($tag)) {
-                $consResp = $cons->handleDelivery($meth, $this);
-                $this->handleConsumerCallbackResponse($meth, $consResp, $tag);
-                return false;
-            }
-            // TODO: this might happen if a consumer suddenly removes itself
-            // and the prefetch-count is high.
-            throw new \Exception("Unknown consumer tag (1) {$meth->getField('consumer-tag')}", 9684);
         case 'basic.cancel-ok':
-            $tag = $meth->getField('consumer-tag');
-            if ($cons = $this->getConsumerForTag($tag)) {
-                $cons->handleCancelOk($meth, $this);
-                $consResp = $this->handleConsumerCallbackResponse($meth, $consResp, $tag);
-                return false;
-            }
-            throw new \Exception("Unknown consumer tag (2)", 9685);
         case 'basic.recover-ok':
-            $tag = $meth->getField('consumer-tag');
-            if ($cons = $this->getConsumerForTag($tag)) {
-                $cons->handleRecoveryOk($meth, $this);
-                $consResp = $this->handleConsumerCallbackResponse($meth, $consResp, $tag);
-                return false;
-            }
-            throw new \Exception("Unknown consumer tag (3)", 9686);
+            return $this->deliverConsumerMessage($meth, $sid);
         case 'basic.return':
             $cb = $this->callbacks['publishReturn'];
             return false;
@@ -1242,15 +1226,42 @@ class Channel
         }
     }
 
-    /**
-     * Helper: router for Consumer callback responses, implements responding to
-     * the CONSUMER_XXX API messages
-     * @param   wire\Method    $meth      The message which is being responded to
-     * @param   integer        $resp      The Consumer implementation's response to $meth
-     * @param   string         $consTag   The consume-tag value for this consumer
-     * @return  void
-     */
-    private function handleConsumerCallbackResponse (wire\Method $meth, $response, $consTag) {
+    /** Delivers 'Consume Session' messages to channels consumers, and handles responses. */
+    private function deliverConsumerMessage ($meth, $sid) {
+        // Look up the target consume handler and invoke the callback
+        $tag = $meth->getField('consumer-tag');
+        list($cons, $status) = $this->getConsumerAndStatus($tag);
+        if ($status === 'INVALID') {
+            throw new \Exception("Unknown consumer", 8567);
+        }
+        switch ($sid) {
+        case 'basic.deliver':
+            if ($status !== 'READY') {
+                // TODO: Confirm with others what to do here.
+                trigger_error(sprintf("Drop delivery %s for consumer %s in state %s",
+                                      $meth->getField('delivery-tag'), $tag, $status), E_USER_WARNING);
+                return false;
+            }
+            $callbackName = 'handleDelivery';
+            break;
+        case 'basic.cancel-ok':
+            printf("\n******Deliver Cancel-Ok******\n");
+            $this->setConsumerStatus($cons, 'CLOSED');// BROKEN
+            $callbackName = 'handleCancelOk';
+            break;
+        case 'basic.recover-ok':
+            $callbackName = 'handleRecoveryOk';
+            break;
+        }
+
+        $response = $cons->{$callbackName}($meth, $this);
+
+        // Handle callback response signals, i.e the CONSUMER_XXX API messages, but only
+        // for API responses to the basic.deliver message
+        if ($sid !== 'basic.deliver' || ! $response) {
+            return false;
+        }
+
         if (! is_array($response)) {
             $response = array($response);
         }
@@ -1268,13 +1279,25 @@ class Channel
                 $this->invoke($rej);
                 break;
             case CONSUMER_CANCEL:
+                // Change the consumer's status, send the basic.cancel message, wait for the response.
+                $this->setConsumerStatus($tag, 'CLOSED_WAIT');
                 $cnl = $this->basic('cancel', array('delivery-tag' => $meth->getField('consumer-tag'),
-                                                    'no-wait' => true));
-                $this->invoke($cnl);
+                                                    'no-wait' => false));
+                $cOk = $this->invoke($cnl);
+                if ($cOk && ($cOk->getClassProto()->getSpecName() == 'basic'
+                             && $cOk->getMethodProto()->getSpecName() == 'cancel-ok')) {
+                    $this->setConsumerStatus($tag, 'CLOSED');
+                } else {
+                    throw new \Exception("Failed to cancel consumer - bad broker response", 9768);
+                }
+                $cons->handleCancelOk($cOk, $this);
                 break;
             }
         }
+
+        return false;
     }
+
 
     /** Helper: remove message sequence record(s) for the given basic.{n}ack (RMQ Confirm key) */
     private function removeConfirmSeqs (wire\Method $meth, \Closure $handler = null) {
@@ -1320,12 +1343,9 @@ class Channel
                 throw new \Exception("Consumer can only be added to channel once", 9684);
             }
         }
-        $this->consumers[] = array($cons, false);
+        $this->consumers[] = array($cons, false, 'READY_WAIT');
     }
 
-    function hasConsumers () {
-        return ! empty($this->consumers);
-    }
 
     /**
      * Called from select loop to see whether this object wants to continue looping.
@@ -1333,27 +1353,45 @@ class Channel
      *                       False: Confirm to connection it's OK to exit from loop
      */
     function canListen (){
-        return $this->hasConsumers() || $this->hasOutstandingConfirms();
+        return $this->hasListeningConsumers() || $this->hasOutstandingConfirms();
     }
 
     function removeConsumer (Consumer $cons) {
-        foreach ($this->consumers as $i => $c) {
-            if ($c[0] === $cons) {
-                unset($this->consumers[$i]);
+        trigger_error("Consumers can no longer be directly removed", E_USER_DEPRECATED);
+        return;
+    }
+
+    private function setConsumerStatus ($tag, $status) {
+        foreach ($this->consumers as $k => $c) {
+            if ($c[1] === $tag) {
+                $this->consumers[$k][2] = $status;
                 return true;
             }
         }
         return false;
     }
 
-    private function getConsumerForTag ($tag) {
+
+    private function getConsumerAndStatus ($tag) {
         foreach ($this->consumers as $c) {
             if ($c[1] == $tag) {
-                return $c[0];
+                return array($c[0], $c[2]);
             }
         }
-        return null;
+        return array(null, 'INVALID');
     }
+
+
+    private function hasListeningConsumers () {
+        foreach ($this->consumers as $c) {
+            if ($c[2] === 'READY') {
+                return true;
+            }
+        }
+        return false;
+    }
+
+
 
     /**
      * Channel callback from Connection->select() - prepare signal raised just
@@ -1369,6 +1407,7 @@ class Channel
                 $consume = $this->consumers[$cnum][0]->getConsumeMethod($this);
                 $cOk = $this->invoke($consume);
                 $this->consumers[$cnum][0]->handleConsumeOk($cOk, $this);
+                $this->consumers[$cnum][2] = 'READY';
                 $this->consumers[$cnum][1] = $cOk->getField('consumer-tag');
             }
         }
@@ -1381,13 +1420,13 @@ class Channel
 }
 
 /**
- * Standard "consumer signals" - these can be returned from consumer handleXXX methods
+ * Standard "consumer signals" - these can be returned from consumer handleDelivery methods
  * and trigger the API to send the corresponding messages.
  */
 const CONSUMER_ACK = 1; // basic.ack (multiple=false)
 const CONSUMER_REJECT = 2; // basic.reject (requeue=true)
 const CONSUMER_DROP = 3; // basic.reject (requeue=false)
-const CONSUMER_CANCEL = 4; // basic.cancel (no-wait=true)
+const CONSUMER_CANCEL = 4; // basic.cancel (no-wait=false)
 
 
 // Interface for a consumer callback handler object, based on the RMQ java on here:
@@ -1401,8 +1440,6 @@ interface Consumer
     function handleDelivery (wire\Method $meth, Channel $chan);
 
     function handleRecoveryOk (wire\Method $meth, Channel $chan);
-
-    function handleShutdownSignal (Channel $chan);
 
     function getConsumeMethod (Channel $chan);
 }
@@ -1423,8 +1460,6 @@ class SimpleConsumer implements Consumer
     function handleDelivery (wire\Method $meth, Channel $chan) {}
 
     function handleRecoveryOk (wire\Method $meth, Channel $chan) {}
-
-    function handleShutdownSignal (Channel $chan) { $this->consuming = false; }
 
     function getConsumeMethod (Channel $chan) {
         return $chan->basic('consume', $this->consumeParams);
