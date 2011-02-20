@@ -27,8 +27,8 @@
 /**
  * TODO:
  *  (1) Add support for heartbeats?
- *  (3) Implement exceptions for Amqp 'events', i.e. channel / connection exceptions, etc.
- *  (5) Implement default profiles - probably best to use a code generation approach
+ *  (2) Implement exceptions for Amqp 'events', i.e. channel / connection exceptions, etc.
+ *  (3) Implement default profiles - probably best to use a code generation approach
  */
 
 namespace amqp_091;
@@ -954,7 +954,7 @@ class Connection
         while ($this->unDelivered) {
             $meth = array_shift($this->unDelivered);
             if (isset($this->chans[$meth->getWireChannel()])) {
-                $this->chans[$meth->getWireChannel()]->handleDelivery($meth);
+                $this->chans[$meth->getWireChannel()]->handleChannelDelivery($meth);
             } else {
                 trigger_error("Message delivered on unknown channel", E_USER_WARNING);
                 $this->unDeliverable[] = $meth;
@@ -1209,13 +1209,11 @@ class Channel
     /**
      * Delivery handler for all non-channel class input messages.
      */
-    function handleDelivery (wire\Method $meth) {
+    function handleChannelDelivery (wire\Method $meth) {
         $sid = "{$meth->getClassProto()->getSpecName()}.{$meth->getMethodProto()->getSpecName()}";
 
         switch ($sid) {
         case 'basic.deliver':
-        case 'basic.cancel-ok':
-        case 'basic.recover-ok':
             return $this->deliverConsumerMessage($meth, $sid);
         case 'basic.return':
             $cb = $this->callbacks['publishReturn'];
@@ -1239,30 +1237,14 @@ class Channel
         // Look up the target consume handler and invoke the callback
         $tag = $meth->getField('consumer-tag');
         list($cons, $status) = $this->getConsumerAndStatus($tag);
-        if ($status === 'INVALID') {
-            throw new \Exception("Unknown consumer", 8567);
-        }
-        switch ($sid) {
-        case 'basic.deliver':
-            if ($status !== 'READY') {
-                // TODO: Confirm with others what to do here.
-                trigger_error(sprintf("Drop delivery %s for consumer %s in state %s",
-                                      $meth->getField('delivery-tag'), $tag, $status), E_USER_WARNING);
-                return false;
-            }
-            $callbackName = 'handleDelivery';
-            break;
-        case 'basic.cancel-ok':
-            printf("\n******Deliver Cancel-Ok******\n");
-            $this->setConsumerStatus($cons, 'CLOSED');// BROKEN
-            $callbackName = 'handleCancelOk';
-            break;
-        case 'basic.recover-ok':
-            $callbackName = 'handleRecoveryOk';
-            break;
+        if ($status !== 'READY') {
+            // TODO: Confirm with others what to do here.
+            trigger_error(sprintf("Drop delivery %s for consumer %s in state %s",
+                                  $meth->getField('delivery-tag'), $tag, $status), E_USER_WARNING);
+            return false;
         }
 
-        $response = $cons->{$callbackName}($meth, $this);
+        $response = $cons->handleDelivery($meth, $this);
 
         // Handle callback response signals, i.e the CONSUMER_XXX API messages, but only
         // for API responses to the basic.deliver message
@@ -1428,7 +1410,7 @@ class Channel
 }
 
 /**
- * Standard "consumer signals" - these can be returned from consumer handleDelivery methods
+ * Standard "consumer signals" - these can be returned from Consumer->handleDelivery method
  * and trigger the API to send the corresponding messages.
  */
 const CONSUMER_ACK = 1; // basic.ack (multiple=false)
@@ -1467,7 +1449,7 @@ class SimpleConsumer implements Consumer
 
     function handleDelivery (wire\Method $meth, Channel $chan) {}
 
-    function handleRecoveryOk (wire\Method $meth, Channel $chan) {}
+    function handleRecoveryOk (wire\Method $meth, Channel $chan) {} // TODO: This is unreachable - use or lose!!
 
     function getConsumeMethod (Channel $chan) {
         return $chan->basic('consume', $this->consumeParams);
