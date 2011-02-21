@@ -1045,7 +1045,6 @@ class Channel
      * #FLAG# is the consumer status, this is:
      *  'READY_WAIT' - not yet started, i.e. before basic.consume/basic.consume-ok
      *  'READY' - started and ready to recieve messages
-     *  'CLOSED_WAIT' - channel is waiting to close
      *  'CLOSED' - previously live but now closed, receiving a basic.cancel-ok triggers this.
      */
     private $consumers = array();
@@ -1235,15 +1234,8 @@ class Channel
     /** Delivers 'Consume Session' messages to channels consumers, and handles responses. */
     private function deliverConsumerMessage ($meth, $sid) {
         // Look up the target consume handler and invoke the callback
-        $tag = $meth->getField('consumer-tag');
-        list($cons, $status) = $this->getConsumerAndStatus($tag);
-        if ($status !== 'READY') {
-            // TODO: Confirm with others what to do here.
-            trigger_error(sprintf("Drop delivery %s for consumer %s in state %s",
-                                  $meth->getField('delivery-tag'), $tag, $status), E_USER_WARNING);
-            return false;
-        }
-
+        $ctag = $meth->getField('consumer-tag');
+        list($cons, $status) = $this->getConsumerAndStatus($ctag);
         $response = $cons->handleDelivery($meth, $this);
 
         // Handle callback response signals, i.e the CONSUMER_XXX API messages, but only
@@ -1269,14 +1261,14 @@ class Channel
                 $this->invoke($rej);
                 break;
             case CONSUMER_CANCEL:
-                // Change the consumer's status, send the basic.cancel message, wait for the response.
-                $this->setConsumerStatus($tag, 'CLOSED_WAIT');
-                $cnl = $this->basic('cancel', array('delivery-tag' => $meth->getField('consumer-tag'),
-                                                    'no-wait' => false));
+                // Basic.cancel this consumer, then change the it's status flag
+                $cnl = $this->basic('cancel', array('consumer-tag' => $ctag, 'no-wait' => false));
                 $cOk = $this->invoke($cnl);
                 if ($cOk && ($cOk->getClassProto()->getSpecName() == 'basic'
                              && $cOk->getMethodProto()->getSpecName() == 'cancel-ok')) {
-                    $this->setConsumerStatus($tag, 'CLOSED');
+                    $this->setConsumerStatus($ctag, 'CLOSED') OR
+                        trigger_error("Failed to set consumer status flag", E_USER_WARNING);
+
                 } else {
                     throw new \Exception("Failed to cancel consumer - bad broker response", 9768);
                 }

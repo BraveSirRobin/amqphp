@@ -99,4 +99,4 @@ foreach ($messages as $m) {
 
 $chan->shutdown();
 $conn->shutdown();
-echo "Test complete!\n";
+printf("Test complete, published %d messages\n", count($messages));
