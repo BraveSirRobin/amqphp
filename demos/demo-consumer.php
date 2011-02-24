@@ -34,16 +34,10 @@ class DemoConsumer extends amqp\SimpleConsumer
     function handleDelivery (wire\Method $meth, amqp\Channel $chan) {
         printf("[message received]\n%s\n", $meth->getContent());
         if ($meth->getContent() == 'end') {
-            $chan->removeConsumer($this);
-            //return array($this->ack($meth), $this->cancel($meth));
-            return array(amqp\CONSUMER_ACK, amqp\CONSUMER_CANCEL);
+            return array(amqp\CONSUMER_CANCEL, amqp\CONSUMER_ACK);
         } else if ($meth->getContent() == 'reject') {
-            // Reject the message and instruct the broker NOT to requeue it
-            echo "Reject tou!\n";
-            //return $this->reject($meth, false);
             return amqp\CONSUMER_REJECT;
         } else {
-            //return $this->ack($meth);
             return amqp\CONSUMER_ACK;
         }
     }
@@ -85,20 +79,49 @@ echo "Start Consume\n";
 // Attach our consumer receiver object to the channel
 $chan->addConsumer($receiver);
 
+
+// To consume messages you need to go in to a select loop, one issue
+// you've got (esp. in web programming) is how to exit the loop safely.
+// You can use the Connection->setSelectMode() method to help, like this:
+
+if (1) {
+    // The default exit mode is "Conditional exit" - in this mode the
+    // Connection objects calls to each connected channel every time
+    // through the loop to see if there's anything still listening.  You
+    // can use this to automatically exit the loop by disconnecting
+    // Consumers by returning amqp\CONSUMER_CANCEL.  The channel will
+    // stay connected if it either has connected Consumers, or there
+    // are pending Publish confirms.
+} else if (0) {
+    // Set an absolute timeout in the params are epoch, millis
+    $conn->setSelectMode(amqp\Connection::SELECT_TIMEOUT_ABS, time() + 5, 0.1246);
+} else if (0) {
+    // Set an relative timeout in the params are seconds, millis.
+    // The "start point" is set right at the top of the select loop
+    $conn->setSelectMode(amqp\Connection::SELECT_TIMEOUT_REL, 5, 0.1246);
+} else if (0) {
+    $conn->setSelectMode(amqp\Connection::SELECT_CALLBACK,
+                         function () {
+                             $ret = (rand(0,10) != 5);
+                             echo $ret ? "Going to loop more\n" : "Going to exit\n";
+                             return $ret;
+                         });
+} else {
+    $conn->setSelectMode(amqp\Connection::SELECT_INFINITE);
+}
+
+
 // Instruct the connection object to begin listening for messages
 $conn->select();
 
 
 
 
-// Hackedy hack!!
 if ($unDel = $conn->getUndeliveredMessages()) {
+    printf("You have undelivered messages!\n");
     foreach ($unDel as $d) {
-        printf("Hackedy hack: Reject the undelivered %s.%s\n", $d->getClassProto()->getSpecName(), $d->getMethodProto()->getSpecName());
-        var_dump($conn->invoke($receiver->reject($d)));
+        printf(" Undelivered %s.%s\n", $d->getClassProto()->getSpecName(), $d->getMethodProto()->getSpecName());
     }
-} else {
-    echo "\n\n\n\n\WHAR?\n\n\n\n";
 }
 
 
