@@ -67,8 +67,6 @@ $messages[] = 'eval:' . serialize($eval);
 
 $messages = array_merge($messages, $messages, $messages, $messages, $messages, $messages, $messages, $messages, $messages, $messages);
 
-// $data['class']}($data['method'], $data['args'], $data['payload']
-
 
 $eval = array(
               'class' => 'queue',
@@ -89,7 +87,7 @@ $eval = array(
 $messages[] = 'eval:' . serialize($eval);
 
 $messages[] = 'end';
-$messages = array_merge($messages, array('Hi!', 'guten Tag', 'ciao', 'buenos días'));
+//$messages = array_merge($messages, array('Hi!', 'guten Tag', 'ciao', 'buenos días'));
 
 foreach ($messages as $m) {
     $basicP->setContent($m);
