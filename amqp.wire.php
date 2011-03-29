@@ -661,15 +661,15 @@ class Table implements \ArrayAccess, \Iterator
      * Native ArrayAccess implementation
      */
     function offsetExists($k) {
-        return isset($this->keys[$k]);
+        return array_key_exists($k, $this->data);
     }
 
     function offsetGet($k) {
-        if (! isset($this->keys[$k])) {
+        if (! $this->offsetExists($k)) {
             trigger_error(sprintf("Offset not found [0]: %s", $k), E_USER_WARNING);
             return null;
         }
-        return $this->data[$n];
+        return $this->data[$k];
     }
 
     function offsetSet($k, $v) {
@@ -690,7 +690,11 @@ class Table implements \ArrayAccess, \Iterator
     }
 
     function getArrayCopy() {
-        return $this->data;
+        $ac = array();
+        foreach ($this->data as $k => $v) {
+            $ac[$k] = $v->getValue();
+        }
+        return $ac;
     }
 
     /**

@@ -310,6 +310,9 @@ class Connection
                                              'copyright' => 'Copyright (c) 2010,2011 Robin Harvey (harvey.robin@gmail.com)',
                                              'information' => 'This software is released under the terms of the GNU LGPL: http://www.gnu.org/licenses/lgpl-3.0.txt');
 
+    /** For RMQ 2.4.0+, server capabilites are stored here, as a plain array */
+    public $capabilities;
+
     /** List of class fields that are settable connection params */
     private static $CProps = array('socketImpl', 'socketParams', 'username', 'userpass',
                                    'vhost', 'frameMax', 'chanMax', 'signalDispatch');
@@ -429,6 +432,12 @@ class Connection
         }
         $meth = new wire\Method();
         $meth->readConstruct(new wire\Reader($raw));
+        if (($startF = $meth->getField('server-properties'))
+            && isset($startF['capabilities'])
+            && ($startF['capabilities']->getType() == 'F')) {
+            // Captures RMQ 2.4.0+ capabilities
+            $this->capabilities = $startF['capabilities']->getValue()->getArrayCopy();
+        }
 
         // Expect start
         if ($meth->getMethodProto()->getSpecIndex() == 10 && $meth->getClassProto()->getSpecIndex() == 10) {
