@@ -72,7 +72,7 @@ abstract class Protocol
                                         'table' => 'Table');
 
 
-    private static $AmqpTableMap = array('t' => 'Boolean',
+    private static $AmqpTableMap = array('t' => 'ShortShortUInt',
                                          'b' => 'ShortShortInt',
                                          'B' => 'ShortShortUInt',
                                          'U' => 'ShortInt',
