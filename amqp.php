@@ -304,18 +304,19 @@ class Connection
     const SELECT_INFINITE = 6;
 
     /** Default client-properties field used during connection setup */
-    private static $ClientProperties = array('product' => 'RobinTheBrave-amqphp',
-                                             'version' => '0.6',
-                                             'platform' => 'PHP 5.3 +',
-                                             'copyright' => 'Copyright (c) 2010,2011 Robin Harvey (harvey.robin@gmail.com)',
-                                             'information' => 'This software is released under the terms of the GNU LGPL: http://www.gnu.org/licenses/lgpl-3.0.txt');
+    private static $ClientProperties = array(
+        'product' => 'RobinTheBrave-amqphp',
+        'version' => '0.6',
+        'platform' => 'PHP 5.3 +',
+        'copyright' => 'Copyright (c) 2010,2011 Robin Harvey (harvey.robin@gmail.com)',
+        'information' => 'This software is released under the terms of the GNU LGPL: http://www.gnu.org/licenses/lgpl-3.0.txt');
 
     /** For RMQ 2.4.0+, server capabilites are stored here, as a plain array */
     public $capabilities;
 
     /** List of class fields that are settable connection params */
-    private static $CProps = array('socketImpl', 'socketParams', 'username', 'userpass',
-                                   'vhost', 'frameMax', 'chanMax', 'signalDispatch');
+    private static $CProps = array(
+        'socketImpl', 'socketParams', 'username', 'userpass', 'vhost', 'frameMax', 'chanMax', 'signalDispatch', 'heartbeat');
     //'blockTmSecs', 'blockTmMillis');
 
     /** Connection params */
@@ -327,6 +328,7 @@ class Connection
     private $vhost;
     private $frameMax = 65536; // Negotated during setup.
     private $chanMax = 50; // Negotated during setup.
+    private $heartbeat = 0; // Negotated during setup.
     private $signalDispatch = true;
 
 
@@ -476,7 +478,7 @@ class Connection
         }
         $meth->setField('channel-max', $this->chanMax);
         $meth->setField('frame-max', $this->frameMax);
-        $meth->setField('heartbeat', 0);
+        $meth->setField('heartbeat', $this->heartbeat);
         // Send tune-ok
         if (! ($this->write($meth->toBin()))) {
             throw new \Exception("Connection initialisation failed (10)", 9882);
@@ -583,8 +585,14 @@ class Connection
      *  The channel number is 0 for all frames which are global to the connection (4.2.3)
      */
     private function handleConnectionMessage (wire\Method $meth) {
-        if ($meth->getClassProto()->getSpecName() == 'connection' &&
-            $meth->getMethodProto()->getSpecName() == 'close') {
+        if ($meth->isHeartbeat()) {
+            $resp = "\x08\x00\x00\x00\x00\x00\x00\xce";
+            $this->write($resp);
+            return;
+        }
+        $clsMth = "{$meth->getClassProto()->getSpecName()}.{$meth->getMethodProto()->getSpecName()}";
+        switch ($clsMth) {
+        case 'connection.close':
             if ($culprit = protocol\ClassFactory::GetMethod($meth->getField('class-id'), $meth->getField('method-id'))) {
                 $culprit = "{$culprit->getSpecClass()}.{$culprit->getSpecName()}";
             } else {
@@ -608,7 +616,7 @@ class Connection
             }
             $this->sock->close();
             throw new \Exception($em, $n);
-        } else {
+        default:
             $this->sock->close();
             throw new \Exception(sprintf("Unexpected channel message (%s.%s), connection closed",
                                          $meth->getClassProto()->getSpecName(), $meth->getMethodProto()->getSpecName()), 96356);
@@ -810,7 +818,7 @@ class Connection
                     goto select_end;
                 }
             }
-            //            printf("== Select (%d, %d)\n", $blockTmSecs, $blockTmMillis);
+
             $select = is_null($blockTmSecs) ?
                 $this->sock->select(null)
                 : $this->sock->select($blockTmSecs, $blockTmMillis);

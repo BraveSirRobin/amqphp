@@ -753,6 +753,7 @@ class Method
     private $frameMax; // Max frame size in bytes
 
     private $wireChannel = null; // Read from Amqp frame
+    private $isHb = false; // Heartbeat from flag
     private $wireMethodId; // Read from Amqp method frame
     private $wireClassId; // Read from Amqp method frame
     private $contentSize; // Read from Amqp content header frame
@@ -838,6 +839,9 @@ class Method
                 if ($this->readConstructComplete()) {
                     $break = true;
                 }
+                break;
+            case 8:
+                $break = $ret = $this->isHb = true;
                 break;
             default:
                 throw new \Exception(sprintf("Unsupported frame type %d", $wireType), 8674);
@@ -957,7 +961,9 @@ class Method
 
     /* This for content messages, has the full message been read from the wire yet?  */
     function readConstructComplete () {
-        if (! $this->methProto) {
+        if ($this->isHb) {
+            return true;
+        } else if (! $this->methProto) {
             return false;
         } else if (! $this->methProto->getSpecHasContent()) {
             return (boolean) $this->rcState & self::ST_METH_READ;
@@ -1025,6 +1031,7 @@ class Method
     function getWireMethodId () { return $this->wireMethodId; }
     function setMaxFrameSize ($max) { $this->frameSize = $max; }
     function setWireChannel ($chan) { $this->wireChannel = $chan; }
+    function isHeartbeat () { return $this->isHb; }
 
     function toBin () {
         if ($this->mode == 'read') {
