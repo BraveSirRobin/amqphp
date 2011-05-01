@@ -23,7 +23,6 @@ use amqp_091\protocol as proto; // Alias avoids name clash with class of same na
 use amqp_091\protocol\abstrakt;
 
 const PROTOCOL_HEADER = "AMQP\x00\x00\x09\x01";
-const HEXDUMP_BIN = '/usr/bin/hexdump -C';
 
 /**
  * Note the additional complexity WRT. Boolean types, from the 0.9.1 spec:
@@ -1173,29 +1172,47 @@ class Method
 
 
 
-
-function hexdump($subject) {
-    if ($subject === '') {
+/**
+ * A PHP replacement for hexdump -C
+ */
+function hexdump ($buff) {
+    static $f, $f2;
+    if ($buff === '') {
         return "00000000\n";
     }
-    $pDesc = array(
-                   array('pipe', 'r'),
-                   array('pipe', 'w'),
-                   array('pipe', 'r')
-                   );
-    $pOpts = array('binary_pipes' => true);
-    if (($proc = proc_open(HEXDUMP_BIN, $pDesc, $pipes, null, null, $pOpts)) === false) {
-        throw new \Exception("Failed to open hexdump proc!", 675);
+    if (is_null($f)) {
+        $f = function ($char) {
+            return sprintf('%02s', dechex(ord($char)));
+        };
+        $f2 = function ($char) {
+            $ord = ord($char);
+            return ($ord > 31 && $ord < 127)
+                ? chr($ord)
+                : '.';
+        };
     }
-    fwrite($pipes[0], $subject);
-    fclose($pipes[0]);
-    $ret = stream_get_contents($pipes[1]);
-    fclose($pipes[1]);
-    $errs = stream_get_contents($pipes[2]);
-    fclose($pipes[2]);
-    if ($errs) {
-        printf("[ERROR] Stderr content from hexdump pipe: %s\n", $errs);
+    $l = strlen($buff);
+    $ret = '';
+
+    for ($i = 0; $i < $l; $i += 16) {
+        $line = substr($buff, $i, 8);
+        $ll = $offLen = strlen($line);
+        $rem = (8 - $ll) * 3;
+        $hexes = vsprintf(str_repeat('%3s', $ll), array_map($f, str_split($line, 1)));
+        $chars = '|' . vsprintf(str_repeat('%s', $ll), array_map($f2, str_split($line, 1)));
+        $lBuff = sprintf("%08s %s", dechex($i), $hexes);
+
+        if ($line = substr($buff, $i + 8, 8)) {
+            $ll = strlen($line);
+            $offLen += $ll;
+            $rem = (8 - $ll) * 3 + 1;
+            $hexes = vsprintf(str_repeat('%3s', $ll), array_map($f, str_split($line, 1)));
+            $chars .= ' '.  vsprintf(str_repeat('%s', $ll), array_map($f2, str_split($line, 1)));
+            $lBuff .= sprintf(" %s%{$rem}s %s|\n", $hexes, ' ', $chars);
+        } else {
+            $lBuff .= ' ' . str_repeat(" ", $rem + 26) . $chars . "|\n";
+        }
+        $ret .= $lBuff;
     }
-    proc_close($proc);
-    return $ret;
+    return sprintf("%s%08s\n", $ret, dechex($l));
 }
