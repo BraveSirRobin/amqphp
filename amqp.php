@@ -26,7 +26,6 @@
 
 /**
  * TODO:
- *  (1) Add support for heartbeats?
  *  (2) Implement exceptions for Amqp 'events', i.e. channel / connection exceptions, etc.
  *  (3) Implement default profiles - probably best to use a code generation approach
  */
@@ -305,7 +304,7 @@ class Connection
 
     /** Default client-properties field used during connection setup */
     private static $ClientProperties = array(
-        'product' => 'RobinTheBrave-amqphp',
+        'product' => ' BraveSirRobin/amqphp',
         'version' => '0.6',
         'platform' => 'PHP 5.3 +',
         'copyright' => 'Copyright (c) 2010,2011 Robin Harvey (harvey.robin@gmail.com)',

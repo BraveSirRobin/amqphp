@@ -48,7 +48,8 @@ class DemoConsumer extends amqp\SimpleConsumer
 $config = array (
                  'username' => 'testing',
                  'userpass' => 'letmein',
-                 'vhost' => 'robin'
+                 'vhost' => 'robin',
+                 'socketParams' => array('host' => '192.168.122.162', 'port' => 5672)
                  );
 
 

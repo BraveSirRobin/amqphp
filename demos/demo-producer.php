@@ -29,10 +29,11 @@ require __DIR__ . '/demo-common.php';
 
 // Basic RabbitMQ connection settings
 $config = array (
-                 'username' => 'testing',
-                 'userpass' => 'letmein',
-                 'vhost' => 'robin'
-                 );
+    'username' => 'testing',
+    'userpass' => 'letmein',
+    'vhost' => 'robin',
+    'socketParams' => array('host' => '192.168.122.162', 'port' => 5672)
+    );
 
 // Connect to the RabbitMQ server, set up an Amqp channel
 $conn = new amqp\Connection($config);
