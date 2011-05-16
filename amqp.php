@@ -54,6 +54,11 @@ class Socket
     const WRITE_SELECT = 2;
     const READ_LENGTH = 4096;
 
+
+    /** A store of all connected instances */
+    private static $All = array();
+
+
     private $sock;
     private $connected = false;
     private $interrupt = false;
@@ -71,6 +76,7 @@ class Socket
             throw new \Exception("Failed to connect inet socket ({$this->host}, {$this->port})", 7564);
         }
         $this->connected = true;
+        self::$All[] = $this;
     }
 
     /** TODO: this function can't be used for read/write, only one at a time! */
@@ -93,6 +99,34 @@ class Socket
         return $ret;
     }
 
+    // Does a read select on all statically referenced instances
+    function Zelekt () {
+        $write = null;
+        $read = array();
+        foreach (self::$All as $i => $o) {
+            $read[$i] = $o->sock;
+        }
+        $ex = $read;
+
+        $ret = socket_select($read, $write, $ex, null, 0);
+        if ($ret === false) {
+            // A bit of an assumption here, but I can't see any more reliable method to
+            // detect an interrupt using the streams API (unlike SOCKET_EINTR with the
+            // sockets API)
+            return false;
+        }
+        $_read = $_ex = array();
+        foreach ($read as $k => $sock) {
+            $_read[] = self::$All[$k];
+        }
+        foreach ($ex as $k => $sock) {
+            $_ex[] = self::$All[$k];
+        }
+        return array($ret, $_read, $_ex);
+    }
+
+
+
     /** Return true if the last call to select was interrupted */
     function selectInterrupted () {
         return $this->interrupt;
@@ -100,7 +134,7 @@ class Socket
 
     /** Call select to wait for content then read and return it all */
     function read () {
-        $select = $this->select(5);
+        $select = $this->select(5); // SL1
         if ($select === false) {
             return false;
         } else if ($select > 0) {
@@ -155,6 +189,14 @@ class Socket
     function close () {
         $this->connected = false;
         socket_close($this->sock);
+        $this->detach();
+    }
+
+    /** Removes self from Static store */
+    private function detach () {
+        if (false !== ($k = array_search($this, self::$All))) {
+            unset($All[$k]);
+        }
     }
 }
 
@@ -188,8 +230,12 @@ class StreamSocket
     const WRITE_SELECT = 2;
     const READ_LENGTH = 4096;
 
+    /** A store of all connected instances */
+    private static $All = array();
+
     private $host;
     private $port;
+    private $connected;
     private $interrupt = false;
 
     function __construct ($params) {
@@ -203,7 +249,8 @@ class StreamSocket
         if (! $this->sock) {
             throw new \Exception("Failed to connect stream socket {$this->url}, ($errno, $errstr)", 7568);
         }
-
+        $this->connected = false;
+        self::$All[] = $this;
     }
 
     function select ($tvSec, $tvUsec = 0, $rw = self::READ_SELECT) {
@@ -226,6 +273,32 @@ class StreamSocket
             $this->interrupt = true;
         }
         return $ret;
+    }
+
+    // Does a read select on all statically referenced instances
+    function Zelekt () {
+        $write = null;
+        $read = array();
+        foreach (self::$All as $i => $o) {
+            $read[$i] = $o->sock;
+        }
+        $ex = $read;
+
+        $ret = stream_select($read, $write, $ex, null, 0);
+        if ($ret === false) {
+            // A bit of an assumption here, but I can't see any more reliable method to
+            // detect an interrupt using the streams API (unlike SOCKET_EINTR with the
+            // sockets API)
+            return false;
+        }
+        $_read = $_ex = array();
+        foreach ($read as $k => $sock) {
+            $_read[] = self::$All[$k];
+        }
+        foreach ($ex as $k => $sock) {
+            $_ex[] = self::$All[$k];
+        }
+        return array($ret, $_read, $_ex);
     }
 
 
@@ -286,15 +359,33 @@ class StreamSocket
     }
 
     function close () {
+        $this->connected = false;
         fclose($this->sock);
+        $this->detach();
     }
 
+    /** Removes self from Static store */
+    private function detach () {
+        if (false !== ($k = array_search($this, self::$All))) {
+            unset($All[$k]);
+        }
+    }
 }
 
 
+
+
+
+
+
+/**
+ * Wraps  a  single TCP  connection  to the  amqp  broker,  acts as  a
+ * demultiplexer for many channels.   Event looping behaviours are set
+ * here,   and   there    is   a   simple   single-connection   select
+ * implementation.
+ */
 class Connection
 {
-
     const SELECT_TIMEOUT_ABS = 1;
     const SELECT_TIMEOUT_REL = 2;
     const SELECT_MAXLOOPS = 3;
@@ -415,7 +506,7 @@ class Connection
     /** If not already connected, connect to the target broker and do Amqp connection setup */
     function connect (array $params = array()) {
         if ($this->connected) {
-            trigger_error("", E_USER_WARNING);
+            trigger_error("Connection is connected already", E_USER_WARNING);
             return;
         }
         $this->setConnectionParams($params);
@@ -548,7 +639,16 @@ class Connection
     }
 
 
-    function getVHost() { return $this->vhost; }
+    function getVHost () { return $this->vhost; }
+
+
+    function getSocketImplClass () { return $this->socketImpl; }
+
+    /**
+     * Returns  the  status of  the  connection  class protocol  state
+     * tracking flag.  Note: doesn't not check the underlying socket.
+     */
+    function isConnected () { return $this->connected; }
 
 
     /** Read all available content from the wire, if an error / interrupt is
@@ -623,14 +723,7 @@ class Connection
     }
 
 
-    function isBlocking () { return $this->isBlocking; }
-
-
-    // @DEPRECATED
-    function startConsuming () {
-        trigger_error("startConsuming is deprecated - use select() instead.", E_USER_DEPRECATED);
-        $this->select();
-    }
+    function isBlocking () { return $this->blocking; }
 
 
     /**
@@ -819,8 +912,8 @@ class Connection
             }
 
             $select = is_null($blockTmSecs) ?
-                $this->sock->select(null)
-                : $this->sock->select($blockTmSecs, $blockTmMillis);
+                $this->sock->select(null) // SL1
+                : $this->sock->select($blockTmSecs, $blockTmMillis); // SL1
             if ($select === false) {
                 $errNo = $this->sock->lastError();
                 if ($this->signalDispatch && $this->sock->selectInterrupted()) {
@@ -1031,6 +1124,49 @@ class Connection
         }
         $m->setContent($content);
         return $m;
+    }
+}
+
+
+
+final class EventLoop
+{
+    private static $Conns = array();
+    private $In = false;
+
+    final static function AddConnection (Connection $conn) {
+        if (($k = array_search($conn, self::$Conns, true)) !== false) {
+            trigger_error("Connection added to event loop twice", E_USER_WARNING);
+            return false;
+        }
+        self::$Conns[] = $conn;
+    }
+
+    final static function RemoveConnection (Connection $conn) {
+        if (($k = array_search($conn, self::$Conns, true)) !== false) {
+            unset(self::$Conns[$k]);
+        } else {
+            trigger_error("No such connection", E_USER_WARNING);
+            return false;
+        }
+    }
+
+    final static function Select () {
+        $sockImpl = false;
+        foreach (self::$Conns as $c) {
+            if ($c->isBlocking()) {
+                throw new \Exception("Event loop cannot start - connection is already blocking", 3267);
+            }
+            if ($sockImpl === false) {
+                $sockImpl = $c->getSocketImplClass();
+            } else if ($sockImpl != $c->getSocketImplClass()) {
+                throw new \Exception("Event loop doesn't support mixed socket implementations", 2678);
+            }
+            if (! $c->isConnected()) {
+                throw new \Exception("Connection is not connected", 2174);
+            }
+        }
+        
     }
 }
 
