@@ -1129,15 +1129,22 @@ class Connection
 
 
 
-
+/**
+ * @internal
+ */
 interface SelectLoopHelper
 {
     /**
+     * Called once when the  select mode is first configured, possibly
+     * with other parameters
+     */
+    function configure ($sMode);
+
+    /**
      * Called once  per select loop run, calculates  initial values of
      * select loop timeouts.
-     * @return    array        Tuple of tvSec, tvUsec
      */
-    function init (Connection $conn, $params=null);
+    function init (Connection $conn);
 
     /**
      * Called  each time round  the select  loop, returns  select loop
@@ -1156,27 +1163,183 @@ interface SelectLoopHelper
 
 class MaxloopSelectHelper implements SelectLoopHelper
 {
-    function init (Connection $conn, $params=null) {
+    /** Config param - max loops value */
+    private $maxLoops;
+
+    /** Runtime param */
+    private $nLoops;
+
+    function configure ($sMode, $ml) {
+        if (! is_int($ml) || $ml == 0) {
+            trigger_error("Select mode - invalid maxloops params", E_USER_WARNING);
+            return false;
+        } else {
+            $this->maxLoops = $ml;
+            return true;
+        }
+    }
+
+    function init (Connection $conn) {
+        $this->nLoops = 0;
     }
 
     function preSelect () {
+        if (++$this->nLoops > $this->maxLoops) {
+            return false;
+        } else {
+            return array(null, 0);
+        }
     }
 
-    function complete () {
-    }
+    function complete () {}
 }
 
 class TimeoutSelectHelper implements SelectLoopHelper
 {
-    function init (Connection $conn, $params=null) {
+    /** Config param, one of SELECT_TIMEOUT_ABS or SELECT_TIMEOUT_REL */
+    private $toStyle;
+
+    /** Config param */
+    private $eopch;
+
+    /** Config param */
+    private $usecs;
+
+    /** Runtime params */
+    private $exUsecs;
+    private $exEpoch;
+
+    function configure ($sMode, $epoch, $usecs) {
+        $this->toStyle = $sMode;
+        if (! $epoch || $usecs >= 1) {
+            trigger_error("Select mode - invalid timeout params", E_USER_WARNING);
+            return false;
+        } else {
+            if (preg_match("/[^0-9\.]/", (string) (float) $usecs)) {
+                trigger_error("Select mode - timeout precision not available", E_USER_WARNING);
+                return false;
+            }
+            $this->eopch = $epoch;
+            $this->usecs = (string) $usecs;
+        }
+        return true;
+    }
+
+    function init (Connection $conn) {
+        if ($this->toStyle == self::SELECT_TIMEOUT_REL) {
+            list($uSecs, $epoch) = explode(' ', microtime());
+            $this->exUsecs = bcadd($this->exUsecs, $uSecs, 5);
+            $this->exEpoch = bcadd($this->exEpoch, $epoch, 0);
+        }
     }
 
     function preSelect () {
+        list($uSecs, $epoch) = explode(' ', microtime());
+        $epDiff = bccomp($epoch, $this->exEpoch, 0);
+        if ($epDiff > 0 || ($epDiff == 0 && bccomp($uSecs, $this->exUsecs, 5) >= 0)) {
+            return false;
+        } else {
+            // Calculate select blockout values that expire at the same as the target exit time
+            $udiff = bcsub($this->exUsecs, $uSecs, 5);
+            if (substr($udiff, 0, 1) == '-') {
+                $blockTmSecs = (int) bcsub($this->exEpoch, $epoch, 0) - 1;
+                $udiff = substr($udiff, 1);
+            } else {
+                $blockTmSecs = (int) bcsub($this->exEpoch, $epoch, 0);
+            }
+            $blockTmMillis = bcmul('1000000', $udiff);
+        }
+        return array($blockTmSecs, $blockTmMillis);
+    }
+
+    function complete () {}
+}
+
+
+
+class CallbackSelectHelper implements SelectLoopHelper
+{
+    private $cb;
+    private $args;
+
+    function configure ($sMode, $cb, $args) {
+        if (! is_callable($cb)) {
+            trigger_error("Select mode - invalid callback params", E_USER_WARNING);
+            return false;
+        } else {
+            $this->cb = $cb;
+            $this->args = $args;
+            return true;
+        }
+    }
+
+    function init (Connection $conn) {}
+
+    function preSelect () {
+        if (true !== call_user_func_array($this->cb, $this->args)) {
+            return false;
+        } else {
+            return array(null, 0);
+        }
+    }
+
+    function complete () {}
+}
+
+
+
+class ConditionalSelectHelper implements SelectLoopHelper
+{
+    /** A copy of the Connection from the init callback */
+    private $conn;
+
+    function configure () {}
+
+    function init (Connection $conn) {
+        $this->conn = $conn;
+    }
+
+    function preSelect () {
+        $hasConsumers = false;
+        foreach ($this->conn->getChannels() as $chan) { // new Connection method
+            if ($chan->canListen()) {
+                $hasConsumers = true;
+                break;
+            }
+        }
+        if (! $hasConsumers) {
+            return false;
+        } else {
+            return array(null, 0);
+        }
     }
 
     function complete () {
+        $this->conn = null;
     }
 }
+
+
+class InfiniteSelectHelper implements SelectLoopHelper
+{
+    function configure () {}
+
+    function init (Connection $conn) {}
+
+    function preSelect () {
+        return array(null, 0);
+    }
+
+    function complete () {}
+}
+
+
+
+
+
+
+
+
 
 
 
