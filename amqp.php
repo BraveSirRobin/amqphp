@@ -1,6 +1,6 @@
 <?php
 /**
- * 
+ *
  * Copyright (C) 2010, 2011  Robin Harvey (harvey.robin@gmail.com)
  *
  * This library is free software; you can redistribute it and/or
@@ -100,7 +100,7 @@ class Socket
     }
 
     // Does a read select on all statically referenced instances
-    function Zelekt () {
+    function Zelekt ($tvSec, $tvUsec) {
         $write = null;
         $read = array();
         foreach (self::$All as $i => $o) {
@@ -108,7 +108,7 @@ class Socket
         }
         $ex = $read;
 
-        $ret = socket_select($read, $write, $ex, null, 0);
+        $ret = socket_select($read, $write, $ex, $tvSec, $tvUsec);
         if ($ret === false) {
             // A bit of an assumption here, but I can't see any more reliable method to
             // detect an interrupt using the streams API (unlike SOCKET_EINTR with the
@@ -276,7 +276,7 @@ class StreamSocket
     }
 
     // Does a read select on all statically referenced instances
-    function Zelekt () {
+    function Zelekt ($tvSec, $tvUsec) {
         $write = null;
         $read = array();
         foreach (self::$All as $i => $o) {
@@ -284,7 +284,7 @@ class StreamSocket
         }
         $ex = $read;
 
-        $ret = stream_select($read, $write, $ex, null, 0);
+        $ret = stream_select($read, $write, $ex, $tvSec, $tvUsec);
         if ($ret === false) {
             // A bit of an assumption here, but I can't see any more reliable method to
             // detect an interrupt using the streams API (unlike SOCKET_EINTR with the
@@ -1129,31 +1129,83 @@ class Connection
 
 
 
-final class EventLoop
-{
-    private static $Conns = array();
-    private $In = false;
 
-    final static function AddConnection (Connection $conn) {
-        if (($k = array_search($conn, self::$Conns, true)) !== false) {
+interface SelectLoopHelper
+{
+    /**
+     * Called once  per select loop run, calculates  initial values of
+     * select loop timeouts.
+     * @return    array        Tuple of tvSec, tvUsec
+     */
+    function init (Connection $conn, $params=null);
+
+    /**
+     * Called  each time round  the select  loop, returns  select loop
+     * timeout  values, or  false to  signal that  looping  should end
+     *
+     * @return   mixed    Either: (Tuple of tvSec, tvUsec) Or: (false)
+     */
+    function preSelect ();
+
+    /**
+     * Notification that the loop has exited
+     */
+    function complete ();
+}
+
+
+class MaxloopSelectHelper implements SelectLoopHelper
+{
+    function init (Connection $conn, $params=null) {
+    }
+
+    function preSelect () {
+    }
+
+    function complete () {
+    }
+}
+
+class TimeoutSelectHelper implements SelectLoopHelper
+{
+    function init (Connection $conn, $params=null) {
+    }
+
+    function preSelect () {
+    }
+
+    function complete () {
+    }
+}
+
+
+
+
+class EventLoop
+{
+    private $cons = array();
+    private static $In = false;
+
+    function addConnection (Connection $conn) {
+        if (($k = array_search($conn, $this->cons, true)) !== false) {
             trigger_error("Connection added to event loop twice", E_USER_WARNING);
             return false;
         }
-        self::$Conns[] = $conn;
+        $this->cons[] = $conn;
     }
 
-    final static function RemoveConnection (Connection $conn) {
-        if (($k = array_search($conn, self::$Conns, true)) !== false) {
-            unset(self::$Conns[$k]);
+    function removeConnection (Connection $conn) {
+        if (($k = array_search($conn, $this->cons, true)) !== false) {
+            unset($this->cons[$k]);
         } else {
             trigger_error("No such connection", E_USER_WARNING);
             return false;
         }
     }
 
-    final static function Select () {
+    function select () {
         $sockImpl = false;
-        foreach (self::$Conns as $c) {
+        foreach ($this->cons as $c) {
             if ($c->isBlocking()) {
                 throw new \Exception("Event loop cannot start - connection is already blocking", 3267);
             }
@@ -1166,7 +1218,90 @@ final class EventLoop
                 throw new \Exception("Connection is not connected", 2174);
             }
         }
-        
+
+        // Notify that the loop begins
+        foreach ($this->cons as $c) {
+            $c->getSelectHelper()->init(); // new Connection method
+        }
+
+        // The loop
+        while (true) {
+            $tv = array();
+            foreach ($this->cons as $c) {
+                $c->deliverAll();
+                $tv[] = $c->getSelectHelper()->preSelect();
+            }
+            $psr = $this->processPreSelects($tv);
+            if (is_array($psr)) {
+                list($tvSecs, $tvUsecs) = $psr;
+            } else if ($psr === false) {
+                // No connections are listening, exit now.
+                return;
+            } else {
+                throw new \Exception("Unexpected PSR response", 2758);
+            }
+
+            $this->signal();
+            /**
+             * TODO: Pass an "inclusion  set" (i.e. $cons) to Zelect -
+             * only  sockets  from  the  inclusion set  are  selected.
+             * Required  so that Connections  which have  ended aren't
+             * listened to.
+             */
+            if (is_null($tvSecs)) {
+                list($ret, $read, $ex) = call_user_func(array($sockImpl, 'Zelekt'), null);
+            } else {
+                list($ret, $read, $ex) = call_user_func(array($sockImpl, 'Zelekt'), $tvSecs, $tvUsecs);
+            }
+            if ($ret === false) {
+                $this->signal();
+                if ($ex) {
+                    $errNo = $errStr = array();
+                    foreach ($ex as $sock) {
+                        $errNo[] = $sock->lastError();
+                        $errStr[] = $sock->strError();
+                    }
+                    $eMsg = sprintf("[2] Read block select produced an error: [%s] (%s)",
+                                    implode(",", $errNo), implode("),(", $errStr));
+                    throw new \Exception ($eMsg, 9963);
+                } else {
+                    foreach ($read as $sock) {
+                        $c = $this->getConnectionForSock($sock);
+                        $c->doSelectRead(); // new Connection method
+                        $c->deliverAll();
+                    }
+                    foreach ($ex as $sock) {
+                        // ????
+                    }
+                }
+            }
+        }
+    }
+
+
+    private function getConnectionForSock ($sock) {
+        // TODO: Return the connection associted with $sock
+    }
+
+    /**
+     * Process  preSelect  responses,   remove  connections  that  are
+     * complete  and  filter  out  the "soonest"  timeout.   Call  the
+     * 'complete' callback for connections that get removed
+     *
+     * @return  mixed   Array = (tvSecs, tvUsecs), False = loop complete
+     *                  (no more listening connections)
+     */
+    private function processPreSelects (array $tv) {
+    }
+
+    private function signal () {
+        if (true) {
+            /**
+             * TODO:  Signal,  then  check  that at  least  once  more
+             * Connection is connected.
+             */
+            pcntl_signal_dispatch();
+        }
     }
 }
 
@@ -1193,7 +1328,7 @@ class Channel
     private $isOpen = false;
 
     /**
-     * Consumers for this channel, format array(array(<Consumer>, <consumer-tag OR false>, <#FLAG#>)+) 
+     * Consumers for this channel, format array(array(<Consumer>, <consumer-tag OR false>, <#FLAG#>)+)
      * #FLAG# is the consumer status, this is:
      *  'READY_WAIT' - not yet started, i.e. before basic.consume/basic.consume-ok
      *  'READY' - started and ready to recieve messages
@@ -1238,7 +1373,7 @@ class Channel
         }
         $confSelect = $this->confirm('select');
         $confSelectOk = $this->invoke($confSelect);
-        if (! ($confSelectOk instanceof wire\Method) || 
+        if (! ($confSelectOk instanceof wire\Method) ||
             ! ($confSelectOk->getClassProto()->getSpecName() == 'confirm' &&
                $confSelectOk->getMethodProto()->getSpecName() == 'select-ok')) {
             throw new \Exception("Failed to selectg confirm mode", 8674);
@@ -1438,7 +1573,7 @@ class Channel
         if ($meth->getField('multiple')) {
 
             $dtag = $meth->getField('delivery-tag');
-            $this->confirmSeqs = array_filter($this->confirmSeqs, 
+            $this->confirmSeqs = array_filter($this->confirmSeqs,
                                               function ($id) use ($dtag, $handler, $meth) {
                                                   if ($id <= $dtag) {
                                                       if ($handler) {
