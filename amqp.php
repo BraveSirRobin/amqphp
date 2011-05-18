@@ -58,8 +58,12 @@ class Socket
     /** A store of all connected instances */
     private static $All = array();
 
+    /** Assign each socket an ID */
+    private static $Counter = 0;
+
 
     private $sock;
+    private $id;
     private $connected = false;
     private $interrupt = false;
 
@@ -67,6 +71,7 @@ class Socket
     function __construct ($params) {
         $this->host = $params['host'];
         $this->port = $params['port'];
+        $this->id = ++self::$Counter;
     }
 
     function connect () {
@@ -99,28 +104,37 @@ class Socket
         return $ret;
     }
 
-    // Does a read select on all statically referenced instances
-    function Zelekt ($tvSec, $tvUsec) {
+    /**
+     * Call select on the given stream objects
+     * @param   array    $incSet       Socket[] - sockets to put in the select call
+     * @param   array    $tvSec        socket timeout - seconds
+     * @param   array    $tvUSec       socket timeout - milliseconds
+     * @return  array                  array(<select return>, <Socket[] to-read>, <Socket[] errs>)
+     */
+    function Zelekt (array $incSet, $tvSec, $tvUsec) {
         $write = null;
-        $read = array();
+        $read = $all = array();
         foreach (self::$All as $i => $o) {
-            $read[$i] = $o->sock;
+            if (in_array($o->getId(), $incSet)) {
+                $read[$i] = $all[$i] = $o->sock;
+            }
         }
         $ex = $read;
 
         $ret = socket_select($read, $write, $ex, $tvSec, $tvUsec);
         if ($ret === false) {
-            // A bit of an assumption here, but I can't see any more reliable method to
-            // detect an interrupt using the streams API (unlike SOCKET_EINTR with the
-            // sockets API)
             return false;
         }
         $_read = $_ex = array();
-        foreach ($read as $k => $sock) {
-            $_read[] = self::$All[$k];
+        foreach ($read as $sock) {
+            if (false !== ($key = array_search($sock, $all, true))) {
+                $_read[] = self::$all[$key];
+            }
         }
         foreach ($ex as $k => $sock) {
-            $_ex[] = self::$All[$k];
+            if (false !== ($key = array_search($sock, $all, true))) {
+                $_ex[] = self::$all[$key];
+            }
         }
         return array($ret, $_read, $_ex);
     }
@@ -198,6 +212,10 @@ class Socket
             unset($All[$k]);
         }
     }
+
+    function getId () {
+        return $this->id;
+    }
 }
 
 /*
@@ -233,7 +251,10 @@ class StreamSocket
     /** A store of all connected instances */
     private static $All = array();
 
+    private static $Counter = 0;
+
     private $host;
+    private $id;
     private $port;
     private $connected;
     private $interrupt = false;
@@ -241,6 +262,7 @@ class StreamSocket
     function __construct ($params) {
         $this->url = $params['url'];
         $this->context = isset($params['context']) ? $params['context'] : array();
+        $this->id = ++self::$Counter;
     }
 
     function connect () {
@@ -369,6 +391,10 @@ class StreamSocket
         if (false !== ($k = array_search($this, self::$All))) {
             unset($All[$k]);
         }
+    }
+
+    function getId () {
+        return $this->id;
     }
 }
 
@@ -622,6 +648,10 @@ class Connection
         } else {
             trigger_error("Channel not found", E_USER_WARNING);
         }
+    }
+
+    function getSocketId () {
+        return $this->sock->getId();
     }
 
     private function initNewChannel () {
@@ -1169,7 +1199,7 @@ class MaxloopSelectHelper implements SelectLoopHelper
     /** Runtime param */
     private $nLoops;
 
-    function configure ($sMode, $ml) {
+    function configure ($sMode, $ml=null) {
         if (! is_int($ml) || $ml == 0) {
             trigger_error("Select mode - invalid maxloops params", E_USER_WARNING);
             return false;
@@ -1209,7 +1239,7 @@ class TimeoutSelectHelper implements SelectLoopHelper
     private $exUsecs;
     private $exEpoch;
 
-    function configure ($sMode, $epoch, $usecs) {
+    function configure ($sMode, $epoch=null, $usecs=null) {
         $this->toStyle = $sMode;
         if (! $epoch || $usecs >= 1) {
             trigger_error("Select mode - invalid timeout params", E_USER_WARNING);
@@ -1262,7 +1292,7 @@ class CallbackSelectHelper implements SelectLoopHelper
     private $cb;
     private $args;
 
-    function configure ($sMode, $cb, $args) {
+    function configure ($sMode, $cb=null, $args=null) {
         if (! is_callable($cb)) {
             trigger_error("Select mode - invalid callback params", E_USER_WARNING);
             return false;
@@ -1293,7 +1323,7 @@ class ConditionalSelectHelper implements SelectLoopHelper
     /** A copy of the Connection from the init callback */
     private $conn;
 
-    function configure () {}
+    function configure ($sMode) {}
 
     function init (Connection $conn) {
         $this->conn = $conn;
@@ -1322,7 +1352,7 @@ class ConditionalSelectHelper implements SelectLoopHelper
 
 class InfiniteSelectHelper implements SelectLoopHelper
 {
-    function configure () {}
+    function configure ($sMode) {}
 
     function init (Connection $conn) {}
 
@@ -1350,19 +1380,12 @@ class EventLoop
     private static $In = false;
 
     function addConnection (Connection $conn) {
-        if (($k = array_search($conn, $this->cons, true)) !== false) {
-            trigger_error("Connection added to event loop twice", E_USER_WARNING);
-            return false;
-        }
-        $this->cons[] = $conn;
+        $this->cons[$conn->getId()] = $conn;
     }
 
     function removeConnection (Connection $conn) {
-        if (($k = array_search($conn, $this->cons, true)) !== false) {
+        if (array_key_exists($conn->getId(), $this->cons)) {
             unset($this->cons[$k]);
-        } else {
-            trigger_error("No such connection", E_USER_WARNING);
-            return false;
         }
     }
 
@@ -1392,9 +1415,9 @@ class EventLoop
             $tv = array();
             foreach ($this->cons as $c) {
                 $c->deliverAll();
-                $tv[] = $c->getSelectHelper()->preSelect();
+                $tv[] = $c->getSelectHelper()->preSelect(); // new Connection method
             }
-            $psr = $this->processPreSelects($tv);
+            $psr = $this->processPreSelects($tv); // Connections could be removed here.
             if (is_array($psr)) {
                 list($tvSecs, $tvUsecs) = $psr;
             } else if ($psr === false) {
@@ -1412,9 +1435,11 @@ class EventLoop
              * listened to.
              */
             if (is_null($tvSecs)) {
-                list($ret, $read, $ex) = call_user_func(array($sockImpl, 'Zelekt'), null);
+                list($ret, $read, $ex) = call_user_func(array($sockImpl, 'Zelekt'),
+                                                        array_keys($this->conns), null);
             } else {
-                list($ret, $read, $ex) = call_user_func(array($sockImpl, 'Zelekt'), $tvSecs, $tvUsecs);
+                list($ret, $read, $ex) = call_user_func(array($sockImpl, 'Zelekt'),
+                                                        array_keys($this->conns), $tvSecs, $tvUsecs);
             }
             if ($ret === false) {
                 $this->signal();
@@ -1429,7 +1454,7 @@ class EventLoop
                     throw new \Exception ($eMsg, 9963);
                 } else {
                     foreach ($read as $sock) {
-                        $c = $this->getConnectionForSock($sock);
+                        $c = $this->cons[$sock->getId()];
                         $c->doSelectRead(); // new Connection method
                         $c->deliverAll();
                     }
@@ -1441,11 +1466,6 @@ class EventLoop
         }
     }
 
-
-    private function getConnectionForSock ($sock) {
-        // TODO: Return the connection associted with $sock
-    }
-
     /**
      * Process  preSelect  responses,   remove  connections  that  are
      * complete  and  filter  out  the "soonest"  timeout.   Call  the
@@ -1455,6 +1475,10 @@ class EventLoop
      *                  (no more listening connections)
      */
     private function processPreSelects (array $tv) {
+/*
+int bccomp ( string $left_operand , string $right_operand [, int $scale ] )
+Compares the left_operand to the right_operand and returns the result as an integer. 
+ */
     }
 
     private function signal () {
