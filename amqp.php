@@ -300,27 +300,44 @@ class StreamSocket
     }
 
     // Does a read select on all statically referenced instances
-    function Zelekt ($tvSec, $tvUsec) {
+    /**
+     * Call select on the given stream objects
+     * @param   array    $incSet       List of Socket Id values of sockets to include in the select
+     * @param   array    $tvSec        socket timeout - seconds
+     * @param   array    $tvUSec       socket timeout - milliseconds
+     * @return  array                  array(<select return>, <Socket[] to-read>, <Socket[] errs>)
+     */
+    static function Zelekt (array $incSet, $tvSec, $tvUsec) {
         $write = null;
-        $read = array();
+        $read = $all = array();
         foreach (self::$All as $i => $o) {
-            $read[$i] = $o->sock;
+            if (in_array($o->id, $incSet)) {
+                $read[$i] = $all[$i] = $o->sock;
+            }
         }
         $ex = $read;
-
-        $ret = stream_select($read, $write, $ex, $tvSec, $tvUsec);
+        $ret = false;
+        if ($read) {
+            $ret = stream_select($read, $write, $ex, $tvSec, $tvUsec);
+        }
         if ($ret === false) {
             // A bit of an assumption here, but I can't see any more reliable method to
             // detect an interrupt using the streams API (unlike SOCKET_EINTR with the
             // sockets API)
             return false;
         }
+
+
         $_read = $_ex = array();
-        foreach ($read as $k => $sock) {
-            $_read[] = self::$All[$k];
+        foreach ($read as $sock) {
+            if (false !== ($key = array_search($sock, $all, true))) {
+                $_read[] = self::$All[$key];
+            }
         }
         foreach ($ex as $k => $sock) {
-            $_ex[] = self::$All[$k];
+            if (false !== ($key = array_search($sock, $all, true))) {
+                $_ex[] = self::$All[$key];
+            }
         }
         return array($ret, $_read, $_ex);
     }
@@ -391,7 +408,7 @@ class StreamSocket
     /** Removes self from Static store */
     private function detach () {
         if (false !== ($k = array_search($this, self::$All))) {
-            unset($All[$k]);
+            unset(self::$All[$k]);
         }
     }
 
@@ -433,7 +450,7 @@ class Connection
     /** Default client-properties field used during connection setup */
     private static $ClientProperties = array(
         'product' => ' BraveSirRobin/amqphp',
-        'version' => '0.6',
+        'version' => '0.9-alpha',
         'platform' => 'PHP 5.3 +',
         'copyright' => 'Copyright (c) 2010,2011 Robin Harvey (harvey.robin@gmail.com)',
         'information' => 'This software is released under the terms of the GNU LGPL: http://www.gnu.org/licenses/lgpl-3.0.txt');

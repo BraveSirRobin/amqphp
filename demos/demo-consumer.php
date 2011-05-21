@@ -51,6 +51,13 @@ $config = array(
     'vhost' => 'robin',
     'socketParams' => array('host' => 'rabbit1', 'port' => 5672));
 
+$config = array(
+    'username' => 'testing',
+    'userpass' => 'letmein',
+    'vhost' => 'robin',
+    'socketImpl' => '\amqphp\StreamSocket',
+    'socketParams' => array('url' => 'tcp://rabbit1:5672'));
+
 
 // Connect to the RabbitMQ server, set up an Amqp channel
 $conn = new amqp\Connection($config);
