@@ -26,8 +26,7 @@
 
 /**
  * TODO:
- *  (2) Implement exceptions for Amqp 'events', i.e. channel / connection exceptions, etc.
- *  (3) Implement default profiles - probably best to use a code generation approach
+ *  (1)  Sort out handling select errors.
  */
 
 namespace amqp_091;
@@ -120,8 +119,10 @@ class Socket
             }
         }
         $ex = $read;
-
-        $ret = socket_select($read, $write, $ex, $tvSec, $tvUsec);
+        $ret = false;
+        if ($read) {
+            $ret = socket_select($read, $write, $ex, $tvSec, $tvUsec);
+        }
         if ($ret === false && socket_last_error() == SOCKET_EINTR) {
             self::$interrupt = true;
             return false;
@@ -474,7 +475,7 @@ class Connection
 
     function __construct (array $params = array()) {
         $this->setConnectionParams($params);
-        $this->newSetSelectMode(self::SELECT_COND);
+        $this->setSelectMode(self::SELECT_COND);
     }
 
     /**
@@ -774,16 +775,10 @@ class Connection
      * @throws Exception
      */
     function select () {
-        if ($this->blocking) {
-            throw new \Exception("Stream blocking is already in progress.", 8756);
-        }
-        $this->_select();
-        foreach ($this->chans as $chan) {
-            $chan->onSelectEnd();
-        }
-
+        $evl = new EventLoop;
+        $evl->addConnection($this);
+        $evl->select();
     }
-
 
     /**
      * Set parameters that control how the connection select loop behaves, implements
@@ -802,68 +797,6 @@ class Connection
      * @return  boolean               True if the mode was set OK
      */
     function setSelectMode () {
-        if ($this->blocking) {
-            trigger_error("Select mode - cannot switch mode whilst blocking", E_USER_WARNING);
-            return false;
-        }
-        $_args = func_get_args();
-        if (! $_args) {
-            trigger_error("Select mode - no select parameters supplied", E_USER_WARNING);
-            return false;
-        }
-        switch ($mode = array_shift($_args)) {
-        case self::SELECT_TIMEOUT_ABS:
-        case self::SELECT_TIMEOUT_REL:
-            @list($epoch, $usecs) = $_args;
-            if (! $epoch || $usecs >= 1) {
-                trigger_error("Select mode - invalid timeout params", E_USER_WARNING);
-                return false;
-            } else {
-                if (preg_match("/[^0-9\.]/", (string) (float) $usecs)) {
-                    trigger_error("Select mode - timeout precision not available", E_USER_WARNING);
-                    return false;
-                }
-                $this->selectParam = array((string) $usecs, $epoch);
-                $this->selectMode = $mode;
-                return true;
-            }
-        case self::SELECT_MAXLOOPS:
-            if (! is_int($ml = array_shift($_args)) || $ml == 0) {
-                trigger_error("Select mode - invalid maxloops params", E_USER_WARNING);
-                return false;
-            } else {
-                $this->selectParam = $ml;
-                $this->selectMode = self::SELECT_MAXLOOPS;
-                return true;
-            }
-        case self::SELECT_CALLBACK:
-            if (! (($cb = array_shift($_args)) instanceof \Closure) ) {
-                trigger_error("Select mode - invalid callback params", E_USER_WARNING);
-                return false;
-            } else {
-                $this->selectParam = array($cb, $_args);
-                $this->selectMode = self::SELECT_CALLBACK;
-                return true;
-            }
-        case self::SELECT_COND:
-            $this->selectMode = self::SELECT_COND;
-            $this->selectParam = null;
-            return true;
-        case self::SELECT_INFINITE:
-            $this->selectMode = self::SELECT_INFINITE;
-            $this->selectParam = null;
-            return true;
-        default:
-            trigger_error("Select mode - mode not found", E_USER_WARNING);
-            return false;
-        }
-    }
-
-
-
-
-
-    function newSetSelectMode () {
         if ($this->blocking) {
             trigger_error("Select mode - cannot switch mode whilst blocking", E_USER_WARNING);
             return false;
@@ -899,10 +832,18 @@ class Connection
     }
 
 
+    /**
+     * Internal - proxy EventLoop "notify pre-select" signal to select
+     * helper
+     */
     function notifyPreSelect () {
         return $this->slHelper->preSelect();
     }
 
+    /**
+     * Internal  -  proxy EventLoop  "select  init"  signal to  select
+     * helper
+     */
     function notifySelectInit () {
         $this->slHelper->init($this);
         // Notify all channels
@@ -911,129 +852,18 @@ class Connection
         }
     }
 
+    /**
+     * Internal - proxy EventLoop "complete" signal to select helper
+     */
     function notifyComplete () {
         $this->slHelper->complete();
     }
 
 
     /**
-     * The sole system select loop implementation.  All configuration is via. setSelectMode()
+     * Internal - used by EventLoop to instruct the connection to read
+     * and deliver incoming messages.
      */
-    private function _select () {
-        if ($this->blocking) {
-            throw new \Exception("Multiple simultaneous read blocking not supported", 6362);
-        }
-        $this->blocking = true;
-
-        // Notify all channels
-        foreach ($this->chans as $chan) {
-            $chan->onSelectStart();
-        }
-
-        // Indefinite system select by default
-        $blockTmSecs = null;
-        $blockTmMillis = 0;
-
-        // Initialise exit strategy
-        switch ($this->selectMode) {
-        case self::SELECT_TIMEOUT_ABS:
-            list($exUsecs, $exEpoch) = $this->selectParam;
-            break;
-        case self::SELECT_TIMEOUT_REL:
-            list($uSecs, $epoch) = explode(' ', microtime());
-            $exUsecs = bcadd($this->selectParam[0], $uSecs, 5);
-            $exEpoch = bcadd($this->selectParam[1], $epoch, 0);
-            break;
-        case self::SELECT_MAXLOOPS:
-            $loopNum = 0;
-        }
-
-
-        while (true) {
-            $this->deliverAll();
-
-            // Check the select parameters to see whether to return this time.
-            switch ($this->selectMode) {
-            case self::SELECT_TIMEOUT_ABS:
-            case self::SELECT_TIMEOUT_REL:
-                list($uSecs, $epoch) = explode(' ', microtime());
-                $epDiff = bccomp($epoch, $exEpoch, 0);
-                if ($epDiff > 0 || ($epDiff == 0 && bccomp($uSecs, $exUsecs, 5) >= 0)) {
-                    goto select_end;
-                } else {
-                    // Calculate select blockout values that expire at the same as the target exit time
-                    $udiff = bcsub($exUsecs, $uSecs, 5);
-                    if (substr($udiff, 0, 1) == '-') {
-                        $blockTmSecs = (int) bcsub($exEpoch, $epoch, 0) - 1;
-                        $udiff = substr($udiff, 1);
-                    } else {
-                        $blockTmSecs = (int) bcsub($exEpoch, $epoch, 0);
-                    }
-
-                    $blockTmMillis = bcmul('1000000', $udiff);
-                }
-                break;
-            case self::SELECT_MAXLOOPS:
-                if (++$loopNum > $this->selectParam) {
-                    goto select_end;
-                }
-                break;
-            case self::SELECT_CALLBACK:
-                $fn = $this->selectParam;
-                if (true !== call_user_func_array($this->selectParam[0], $this->selectParam[1])) {
-                    goto select_end;
-                }
-                break;
-            case self::SELECT_COND:
-                // Ensure there are local components listening
-                $hasConsumers = false;
-                foreach ($this->chans as $chan) {
-                    if ($chan->canListen()) {
-                        $hasConsumers = true;
-                        break;
-                    }
-                }
-                if (! $hasConsumers) {
-                    goto select_end;
-                }
-                break;
-            }
-
-            if ($this->signalDispatch) {
-                pcntl_signal_dispatch();
-                if (! $this->connected) {
-                    trigger_error("Connection is no longer connected, force exit of consume loop.", E_USER_WARNING);
-                    goto select_end;
-                }
-            }
-
-            $select = is_null($blockTmSecs) ?
-                $this->sock->select(null) // SL1
-                : $this->sock->select($blockTmSecs, $blockTmMillis); // SL1
-            if ($select === false) {
-                $errNo = $this->sock->lastError();
-                if ($this->signalDispatch && $this->sock->selectInterrupted()) {
-                    pcntl_signal_dispatch();
-                }
-                $errStr = $this->sock->strError();
-                $this->blocking = false;
-                throw new \Exception ("[2] Read block select produced an error: [$errNo] $errStr", 9963);
-            } else if ($select > 0) {
-                $buff = $this->sock->readAll();
-                if ($buff && ($meths = $this->readMessages($buff))) {
-                    $this->unDelivered = array_merge($this->unDelivered, $meths);
-                } else if (! $buff) {
-                    $this->blocking = false;
-                    throw new \Exception("Empty read in blocking select loop : " . strlen($buff), 9864);
-                }
-            }
-            $this->deliverAll();
-        }
-    select_end: // Evil goto!
-        $this->blocking = false;
-    }
-
-
     function doSelectRead () {
         $buff = $this->sock->readAll();
         if ($buff && ($meths = $this->readMessages($buff))) {
