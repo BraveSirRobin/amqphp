@@ -491,10 +491,6 @@ class Connection
 
     private $connected = false; // Flag flipped after protcol connection setup is complete
 
-    /** Control variables for select loop parmeters */
-    private $selectMode = SELECT_COND;
-    private $selectParam;
-
     private $slHelper;
 
 
@@ -516,7 +512,9 @@ class Connection
     }
 
 
-    /** Shutdown child channels and then the connection  */
+    /**
+     * Shutdown child channels and then the connection 
+     */
     function shutdown () {
         if (! $this->connected) {
             trigger_error("Cannot shut a closed connection", E_USER_WARNING);
@@ -560,7 +558,10 @@ class Connection
     }
 
 
-    /** If not already connected, connect to the target broker and do Amqp connection setup */
+    /**
+     * If not already  connected, connect to the target  broker and do
+     * Amqp connection setup
+     */
     function connect (array $params = array()) {
         if ($this->connected) {
             trigger_error("Connection is connected already", E_USER_WARNING);
@@ -640,7 +641,10 @@ class Connection
         $this->connected = true;
     }
 
-    /** Helper: return the client properties parameter used in connection setup. */
+    /**
+     * Helper:  return   the  client  properties   parameter  used  in
+     * connection setup.
+     */
     private function getClientProperties () {
         /* Build table to use long strings - RMQ seems to require this. */
         $t = new wire\Table;
@@ -650,7 +654,10 @@ class Connection
         return $t;
     }
 
-    /** Helper: return the Sasl response parameter used in connection setup. */
+    /**
+     * Helper: return  the Sasl response parameter  used in connection
+     * setup.
+     */
     private function getSaslResponse () {
         $t = new wire\Table();
         $t['LOGIN'] = new wire\TableField($this->username, 'S');
@@ -661,8 +668,9 @@ class Connection
     }
 
     /**
-     * Channel accessor / factory method, call with no params to create a new channel, or with
-     * a channel number to access an existing channel by number
+     * Channel  accessor /  factory  method, call  with  no params  to
+     * create a  new channel,  or with a  channel number to  access an
+     * existing channel by number
      */
     function getChannel ($num = false) {
         return ($num === false) ? $this->initNewChannel() : $this->chans[$num];
@@ -716,8 +724,11 @@ class Connection
     function isConnected () { return $this->connected; }
 
 
-    /** Read all available content from the wire, if an error / interrupt is
-        detected, dispatch signal handlers and raise an exception */
+    /**
+     * Read  all  available content  from  the  wire,  if an  error  /
+     * interrupt is  detected, dispatch  signal handlers and  raise an
+     * exception
+     **/
     private function read () {
         $ret = $this->sock->read();
         if ($ret === false) {
@@ -794,10 +805,10 @@ class Connection
 
 
     /**
-     * Enter a select loop in order to receive messages from the broker.
-     * Use setSelectMode() to set an exit strategy for the loop.  Do not call
-     * concurrently, this will raise an exception.  Use isBlocking() to test
-     * whether select() should be called.
+     * Enter  a select  loop in  order  to receive  messages from  the
+     * broker.  Use setSelectMode() to  set an  exit strategy  for the
+     * loop.  Do not call  concurrently, this will raise an exception.
+     * Use  isBlocking() to  test whether  select() should  be called.
      * @throws Exception
      */
     function select () {
@@ -807,12 +818,14 @@ class Connection
     }
 
     /**
-     * Set parameters that control how the connection select loop behaves, implements
-     * the following exit strategies:
-     *  1) Absolute timeout - specify a {usec epoch} timeout, loop breaks after this.
-     *     See the PHP man page for microtime(false).  Example: "0.025 1298152951"
-     *  2) Relative timeout - same as Absolute timeout except the args are specified
-     *     relative to microtime() at the start of the select loop.  Example: "0.75 2"
+     * Set  parameters that  control  how the  connection select  loop
+     * behaves, implements the following exit strategies:
+     *  1)  Absolute timeout -  specify a  {usec epoch}  timeout, loop
+     *  breaks after this.  See the PHP man page for microtime(false).
+     *  Example: "0.025 1298152951"
+     *  2) Relative timeout - same as Absolute timeout except the args
+     *  are  specified relative  to microtime()  at the  start  of the
+     *  select loop.  Example: "0.75 2"
      *  3) Max loops
      *  4) Conditional exit (callback)
      *  5) Conditional exit (automatic) (current impl)
@@ -949,8 +962,9 @@ class Connection
 
 
     /**
-     * Convert the given raw wire content in to Method objects.  Connection and channel
-     * messages are delivered immediately and not returned.
+     * Convert  the  given raw  wire  content  in  to Method  objects.
+     * Connection and  channel messages are  delivered immediately and
+     * not returned.
      */
     private function readMessages ($buff) {
         if (is_null($this->readSrc)) {
@@ -1017,10 +1031,10 @@ class Connection
 
 
     /**
-     * Deliver all undelivered messages, collect and send all responses after incoming
-     * messages are all dealt with.
-     * NOTE: while / array_shift loop is used in case onDelivery call causes more messages to
-     * be placed in local queue
+     * Deliver  all   undelivered  messages,  collect   and  send  all
+     * responses  after incoming  messages are  all dealt  with. NOTE:
+     * while / array_shift loop is used in case onDelivery call causes
+     * more messages to be placed in local queue
      */
     function deliverAll () {
         while ($this->unDelivered) {
@@ -1044,7 +1058,9 @@ class Connection
         return $r;
     }
 
-    /** Remove all undeliverable messages for the given channel */
+    /**
+     * Remove all undeliverable messages for the given channel
+     */
     function removeUndeliverableMessages ($chan) {
         foreach (array_keys($this->unDeliverable) as $k) {
             if ($this->unDeliverable[$k]->getWireChannel() == $chan) {
@@ -1055,10 +1071,13 @@ class Connection
 
 
     /**
-     * Factory method creates wire\Method objects based on class name and parameters.
+     * Factory method creates wire\Method  objects based on class name
+     * and parameters.
      *
      * @arg  string   $class       Amqp class
-     * @arg  array    $_args       Format: array (<Amqp method name>, <Assoc method/class mixed field array>, <method content>)
+     * @arg  array    $_args       Format: array (<Amqp method name>,
+     *                                            <Assoc method/class mixed field array>,
+     *                                            <method content>)
      */
     function constructMethod ($class, $_args) {
         $method = (isset($_args[0])) ? $_args[0] : null;
@@ -1308,17 +1327,10 @@ class InfiniteSelectHelper implements SelectLoopHelper
     function complete () {}
 }
 
-
-
-
-
-
-
-
-
-
-
-
+/**
+ * Use the  low level Zelect method  to allow consumers  to connect to
+ * more than one exchange.
+ */
 class EventLoop
 {
     private $cons = array();
@@ -1480,16 +1492,26 @@ class Channel
     /** The channel ID we're linked to */
     private $chanId;
 
-    /** As set by the channel.flow Amqp method, controls whether content can be sent or not */
+    /**
+     * As  set  by  the  channel.flow Amqp  method,  controls  whether
+     * content can be sent or not
+     */
     private $flow = true;
 
-    /** Flag set when the underlying Amqp channel has been closed due to an exception */
+    /**
+     * Flag set when  the underlying Amqp channel has  been closed due
+     * to an exception
+     */
     private $destroyed = false;
 
-    /** Set by negotiation during channel setup */
+    /**
+     * Set by negotiation during channel setup
+     */
     private $frameMax;
 
-    /** Used to track whether the channel.open returned OK. */
+    /**
+     * Used to track whether the channel.open returned OK.
+     */
     private $isOpen = false;
 
     /**
@@ -1562,10 +1584,13 @@ class Channel
     }
 
     /**
-     * Factory method creates wire\Method objects based on class name and parameters.
+     * Factory method creates wire\Method  objects based on class name
+     * and parameters.
      *
      * @arg  string   $class       Amqp class
-     * @arg  array    $_args       Format: array (<Amqp method name>, <Assoc method/class mixed field array>, <method content>)
+     * @arg  array    $_args       Format: array (<Amqp method name>,
+     *                                            <Assoc method/class mixed field array>,
+     *                                            <method content>)
      */
     function __call ($class, $_args) {
         if ($this->destroyed) {
@@ -1578,7 +1603,8 @@ class Channel
     }
 
     /**
-     * A wrapper for Connection->invoke() specifically for messages on this channel.
+     * A wrapper for Connection->invoke() specifically for messages on
+     * this channel.
      */
     function invoke (wire\Method $m) {
         if ($this->destroyed) {
@@ -1604,8 +1630,8 @@ class Channel
     }
 
     /**
-     * Callback from the Connection object for channel frames and messages.  Only channel
-     * class methods should be delivered here.
+     * Callback  from the  Connection  object for  channel frames  and
+     * messages.  Only channel class methods should be delivered here.
      * @param   $meth           A channel method for this channel
      * @return  boolean         True:  Add message to internal queue for regular delivery
      *                          False: Remove message from internal queue
@@ -1683,7 +1709,10 @@ class Channel
     }
 
 
-    /** Delivers 'Consume Session' messages to channels consumers, and handles responses. */
+    /**
+     * Delivers 'Consume Session'  messages to channels consumers, and
+     * handles responses.
+     */
     private function deliverConsumerMessage ($meth, $sid) {
         // Look up the target consume handler and invoke the callback
         $ctag = $meth->getField('consumer-tag');
@@ -1733,7 +1762,10 @@ class Channel
     }
 
 
-    /** Helper: remove message sequence record(s) for the given basic.{n}ack (RMQ Confirm key) */
+    /**
+     * Helper:  remove  message   sequence  record(s)  for  the  given
+     * basic.{n}ack (RMQ Confirm key)
+     */
     private function removeConfirmSeqs (wire\Method $meth, \Closure $handler = null) {
         if ($meth->getField('multiple')) {
 
@@ -1761,7 +1793,10 @@ class Channel
     }
 
 
-    /** Perform a protocol channel shutdown and remove self from containing Connection  */
+    /**
+     * Perform  a  protocol  channel  shutdown and  remove  self  from
+     * containing Connection
+     */
     function shutdown () {
         if (! $this->invoke($this->channel('close', array('reply-code' => '', 'reply-text' => '')))) {
             trigger_error("Unclean channel shutdown", E_USER_WARNING);
@@ -1782,7 +1817,8 @@ class Channel
 
 
     /**
-     * Called from select loop to see whether this object wants to continue looping.
+     * Called from  select loop  to see whether  this object  wants to
+     * continue looping.
      * @return  boolean      True:  Request Connection stays in select loop
      *                       False: Confirm to connection it's OK to exit from loop
      */
@@ -1828,8 +1864,8 @@ class Channel
 
 
     /**
-     * Channel callback from Connection->select() - prepare signal raised just
-     * before entering the select loop.
+     * Channel  callback from  Connection->select()  - prepare  signal
+     * raised just before entering the select loop.
      * @return  boolean         Return true if there are consumers present
      */
     function onSelectStart () {
@@ -1854,8 +1890,9 @@ class Channel
 }
 
 /**
- * Standard "consumer signals" - these can be returned from Consumer->handleDelivery method
- * and trigger the API to send the corresponding messages.
+ * Standard  "consumer   signals"  -   these  can  be   returned  from
+ * Consumer->handleDelivery  method and  trigger the  API to  send the
+ * corresponding messages.
  */
 const CONSUMER_ACK = 1; // basic.ack (multiple=false)
 const CONSUMER_REJECT = 2; // basic.reject (requeue=true)
