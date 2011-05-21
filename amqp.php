@@ -402,6 +402,14 @@ class StreamSocket
 
 
 
+const SELECT_TIMEOUT_ABS = 1;
+const SELECT_TIMEOUT_REL = 2;
+const SELECT_MAXLOOPS = 3;
+const SELECT_CALLBACK = 4;
+const SELECT_COND = 5;
+const SELECT_INFINITE = 6;
+
+
 
 
 
@@ -414,12 +422,13 @@ class StreamSocket
  */
 class Connection
 {
-    const SELECT_TIMEOUT_ABS = 1;
-    const SELECT_TIMEOUT_REL = 2;
-    const SELECT_MAXLOOPS = 3;
-    const SELECT_CALLBACK = 4;
-    const SELECT_COND = 5;
-    const SELECT_INFINITE = 6;
+    // DEPRECATED - these consts are now stand-alone consts as they are used by more than one class in this package.
+    const SELECT_TIMEOUT_ABS = SELECT_TIMEOUT_ABS;
+    const SELECT_TIMEOUT_REL = SELECT_TIMEOUT_REL;
+    const SELECT_MAXLOOPS = SELECT_MAXLOOPS;
+    const SELECT_CALLBACK = SELECT_CALLBACK;
+    const SELECT_COND = SELECT_COND;
+    const SELECT_INFINITE = SELECT_INFINITE;
 
     /** Default client-properties field used during connection setup */
     private static $ClientProperties = array(
@@ -466,7 +475,7 @@ class Connection
     private $connected = false; // Flag flipped after protcol connection setup is complete
 
     /** Control variables for select loop parmeters */
-    private $selectMode = self::SELECT_COND;
+    private $selectMode = SELECT_COND;
     private $selectParam;
 
     private $slHelper;
@@ -475,7 +484,7 @@ class Connection
 
     function __construct (array $params = array()) {
         $this->setConnectionParams($params);
-        $this->setSelectMode(self::SELECT_COND);
+        $this->setSelectMode(SELECT_COND);
     }
 
     /**
@@ -807,24 +816,24 @@ class Connection
             return false;
         }
         switch ($mode = array_shift($_args)) {
-        case self::SELECT_TIMEOUT_ABS:
-        case self::SELECT_TIMEOUT_REL:
+        case SELECT_TIMEOUT_ABS:
+        case SELECT_TIMEOUT_REL:
             @list($epoch, $usecs) = $_args;
             $this->slHelper = new TimeoutSelectHelper;
             return $this->slHelper->configure($mode, $epoch, $usecs);
-        case self::SELECT_MAXLOOPS:
+        case SELECT_MAXLOOPS:
             $this->slHelper = new MaxloopSelectHelper;
-            return $this->slHelper->configure(self::SELECT_MAXLOOPS, array_shift($_args));
-        case self::SELECT_CALLBACK:
+            return $this->slHelper->configure(SELECT_MAXLOOPS, array_shift($_args));
+        case SELECT_CALLBACK:
             $cb = array_shift($_args);
             $this->slHelper = new CallbackSelectHelper;
-            return $this->slHelper->configure(self::SELECT_CALLBACK, $cb, $_args);
-        case self::SELECT_COND:
+            return $this->slHelper->configure(SELECT_CALLBACK, $cb, $_args);
+        case SELECT_COND:
             $this->slHelper = new ConditionalSelectHelper;
-            return $this->slHelper->configure(self::SELECT_COND, $this);
-        case self::SELECT_INFINITE:
+            return $this->slHelper->configure(SELECT_COND, $this);
+        case SELECT_INFINITE:
             $this->slHelper = new InfiniteSelectHelper;
-            return $this->slHelper->configure(self::SELECT_INFINITE);
+            return $this->slHelper->configure(SELECT_INFINITE);
         default:
             trigger_error("Select mode - mode not found", E_USER_WARNING);
             return false;
