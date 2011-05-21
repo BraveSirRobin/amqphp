@@ -32,7 +32,7 @@ $config = array (
     'username' => 'testing',
     'userpass' => 'letmein',
     'vhost' => 'robin',
-    'socketParams' => array('host' => '192.168.122.162', 'port' => 5672)
+    'socketParams' => array('host' => 'rabbit1', 'port' => 5672)
     );
 
 // Connect to the RabbitMQ server, set up an Amqp channel

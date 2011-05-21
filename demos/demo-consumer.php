@@ -49,7 +49,7 @@ $config = array (
                  'username' => 'testing',
                  'userpass' => 'letmein',
                  'vhost' => 'robin',
-                 'socketParams' => array('host' => '192.168.122.162', 'port' => 5672)
+                 'socketParams' => array('host' => 'rabbit1', 'port' => 5672)
                  );
 
 
@@ -85,7 +85,7 @@ $chan->addConsumer($receiver);
 // you've got (esp. in web programming) is how to exit the loop safely.
 // You can use the Connection->setSelectMode() method to help, like this:
 
-if (1) {
+if (0) {
     // The default exit mode is "Conditional exit" - in this mode the
     // Connection objects calls to each connected channel every time
     // through the loop to see if there's anything still listening.  You
@@ -95,25 +95,27 @@ if (1) {
     // are pending Publish confirms.
 } else if (0) {
     // Set an absolute timeout in the params are epoch, millis
-    $conn->setSelectMode(amqp\Connection::SELECT_TIMEOUT_ABS, time() + 5, 0.1246);
+    $conn->newSetSelectMode(amqp\Connection::SELECT_TIMEOUT_ABS, time() + 5, 0.1246);
 } else if (0) {
     // Set an relative timeout in the params are seconds, millis.
     // The "start point" is set right at the top of the select loop
-    $conn->setSelectMode(amqp\Connection::SELECT_TIMEOUT_REL, 5, 0.1246);
+    $conn->newSetSelectMode(amqp\Connection::SELECT_TIMEOUT_REL, 5, 0.1246);
 } else if (0) {
-    $conn->setSelectMode(amqp\Connection::SELECT_CALLBACK,
+    $conn->newSetSelectMode(amqp\Connection::SELECT_CALLBACK,
                          function () {
                              $ret = (rand(0,10) != 5);
                              echo $ret ? "Going to loop more\n" : "Going to exit\n";
                              return $ret;
                          });
 } else {
-    $conn->setSelectMode(amqp\Connection::SELECT_INFINITE);
+    $conn->newSetSelectMode(amqp\Connection::SELECT_INFINITE);
 }
 
 
 // Instruct the connection object to begin listening for messages
-$conn->select();
+$el = new amqp\EventLoop;
+$el->addConnection($conn);
+$el->select();
 
 
 

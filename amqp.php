@@ -65,7 +65,7 @@ class Socket
     private $sock;
     private $id;
     private $connected = false;
-    private $interrupt = false;
+    private static $interrupt = false;
 
     //function __construct ($host, $port) {
     function __construct ($params) {
@@ -96,10 +96,10 @@ class Socket
         if (! $read && ! $write) {
             throw new \Exception("Select must read and/or write", 9864);
         }
-        $this->interrupt = false;
+        self::$interrupt = false;
         $ret = socket_select($read, $write, $ex, $tvSec, $tvUsec);
         if ($ret === false && $this->lastError() == SOCKET_EINTR) {
-            $this->interrupt = true;
+            self::$interrupt = true;
         }
         return $ret;
     }
@@ -111,7 +111,7 @@ class Socket
      * @param   array    $tvUSec       socket timeout - milliseconds
      * @return  array                  array(<select return>, <Socket[] to-read>, <Socket[] errs>)
      */
-    function Zelekt (array $incSet, $tvSec, $tvUsec) {
+    static function Zelekt (array $incSet, $tvSec, $tvUsec) {
         $write = null;
         $read = $all = array();
         foreach (self::$All as $i => $o) {
@@ -123,18 +123,18 @@ class Socket
 
         $ret = socket_select($read, $write, $ex, $tvSec, $tvUsec);
         if ($ret === false && socket_last_error() == SOCKET_EINTR) {
-            $this->interrupt = true;
+            self::$interrupt = true;
             return false;
         }
         $_read = $_ex = array();
         foreach ($read as $sock) {
             if (false !== ($key = array_search($sock, $all, true))) {
-                $_read[] = self::$all[$key];
+                $_read[] = self::$All[$key];
             }
         }
         foreach ($ex as $k => $sock) {
             if (false !== ($key = array_search($sock, $all, true))) {
-                $_ex[] = self::$all[$key];
+                $_ex[] = self::$All[$key];
             }
         }
         return array($ret, $_read, $_ex);
@@ -144,7 +144,7 @@ class Socket
 
     /** Return true if the last call to select was interrupted */
     function selectInterrupted () {
-        return $this->interrupt;
+        return self::$interrupt;
     }
 
     /** Call select to wait for content then read and return it all */
@@ -210,7 +210,7 @@ class Socket
     /** Removes self from Static store */
     private function detach () {
         if (false !== ($k = array_search($this, self::$All))) {
-            unset($All[$k]);
+            unset(self::$All[$k]);
         }
     }
 
@@ -468,10 +468,13 @@ class Connection
     private $selectMode = self::SELECT_COND;
     private $selectParam;
 
+    private $slHelper;
+
 
 
     function __construct (array $params = array()) {
         $this->setConnectionParams($params);
+        $this->newSetSelectMode(self::SELECT_COND);
     }
 
     /**
@@ -860,7 +863,7 @@ class Connection
 
 
 
-    function newSelectMode () {
+    function newSetSelectMode () {
         if ($this->blocking) {
             trigger_error("Select mode - cannot switch mode whilst blocking", E_USER_WARNING);
             return false;
@@ -885,10 +888,10 @@ class Connection
             return $this->slHelper->configure(self::SELECT_CALLBACK, $cb, $_args);
         case self::SELECT_COND:
             $this->slHelper = new ConditionalSelectHelper;
-            return $this->helper->configure(self::SELECT_COND, $this);
+            return $this->slHelper->configure(self::SELECT_COND, $this);
         case self::SELECT_INFINITE:
             $this->slHelper = new InfiniteSelectHelper;
-            return $this->helper->configure(self::SELECT_INFINITE);
+            return $this->slHelper->configure(self::SELECT_INFINITE);
         default:
             trigger_error("Select mode - mode not found", E_USER_WARNING);
             return false;
@@ -897,11 +900,11 @@ class Connection
 
 
     function notifyPreSelect () {
-        $this->slHelper->preSelect();
+        return $this->slHelper->preSelect();
     }
 
     function notifySelectInit () {
-        $this->slHelper->init();
+        $this->slHelper->init($this);
         // Notify all channels
         foreach ($this->chans as $chan) {
             $chan->onSelectStart();
@@ -1323,14 +1326,14 @@ class TimeoutSelectHelper implements SelectLoopHelper
                 trigger_error("Select mode - timeout precision not available", E_USER_WARNING);
                 return false;
             }
-            $this->eopch = $epoch;
+            $this->epoch = $epoch;
             $this->usecs = (string) $usecs;
         }
         return true;
     }
 
     function init (Connection $conn) {
-        if ($this->toStyle == self::SELECT_TIMEOUT_REL) {
+        if ($this->toStyle == Connection::SELECT_TIMEOUT_REL) {
             list($uSecs, $epoch) = explode(' ', microtime());
             $this->exUsecs = bcadd($this->exUsecs, $uSecs, 5);
             $this->exEpoch = bcadd($this->exEpoch, $epoch, 0);
@@ -1457,12 +1460,12 @@ class EventLoop
     private static $In = false;
 
     function addConnection (Connection $conn) {
-        $this->cons[$conn->getId()] = $conn;
+        $this->cons[$conn->getSocketId()] = $conn;
     }
 
     function removeConnection (Connection $conn) {
-        if (array_key_exists($conn->getId(), $this->cons)) {
-            unset($this->cons[$k]);
+        if (array_key_exists($conn->getSocketId(), $this->cons)) {
+            unset($this->cons[$conn->getSocketId()]);
         }
     }
 
@@ -1484,7 +1487,7 @@ class EventLoop
 
         // Notify that the loop begins
         foreach ($this->cons as $c) {
-            $c->setBlocking();
+            $c->setBlocking(true);
             $c->notifySelectInit();
         }
 
@@ -1498,8 +1501,8 @@ class EventLoop
             $psr = $this->processPreSelects($tv); // Connections could be removed here.
             if (is_array($psr)) {
                 list($tvSecs, $tvUsecs) = $psr;
-            } else if ($psr === false) {
-                // No connections are listening, exit now.
+            } else if (is_null($psr) && empty($this->cons)) {
+                // All connections have finished litening.
                 return;
             } else {
                 throw new \Exception("Unexpected PSR response", 2758);
@@ -1509,10 +1512,10 @@ class EventLoop
 
             if (is_null($tvSecs)) {
                 list($ret, $read, $ex) = call_user_func(array($sockImpl, 'Zelekt'),
-                                                        array_keys($this->conns), null, 0);
+                                                        array_keys($this->cons), null, 0);
             } else {
                 list($ret, $read, $ex) = call_user_func(array($sockImpl, 'Zelekt'),
-                                                        array_keys($this->conns), $tvSecs, $tvUsecs);
+                                                        array_keys($this->cons), $tvSecs, $tvUsecs);
             }
             if ($ret === false) {
                 $this->signal();
@@ -1557,7 +1560,7 @@ class EventLoop
             if ($tv === false) {
                 $this->cons[$sid]->notifyComplete();
                 $this->cons[$sid]->setBlocking(false);
-                unset($this->cons[$sid]);
+                $this->removeConnection($this->cons[$sid]);
             } else if (is_null($wins)) {
                 $wins = $tv;
                 $winSum = is_null($tv[0]) ? 0 : bcadd($tv[0], $tv[1], 5);
