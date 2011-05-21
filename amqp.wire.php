@@ -17,10 +17,10 @@
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
-namespace amqp_091\wire;
+namespace amqphp\wire;
 
-use amqp_091\protocol as proto; // Alias avoids name clash with class of same name
-use amqp_091\protocol\abstrakt;
+use amqphp\protocol as proto; // Alias avoids name clash with class of same name
+use amqphp\protocol\abstrakt;
 
 const PROTOCOL_HEADER = "AMQP\x00\x00\x09\x01";
 

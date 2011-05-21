@@ -22,7 +22,7 @@
  * objects in to groups, like XmlSpecClass caching it's.
  * XmlSpecMethods  Current impl probably isn't very efficient
  */
-namespace amqp_091\protocol\abstrakt;
+namespace amqphp\protocol\abstrakt;
 
 // GLOBAL [one]
 abstract class ClassFactory

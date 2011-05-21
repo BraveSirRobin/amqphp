@@ -36,7 +36,7 @@
 
 
   <!-- Transport params - these are passed to the socket class 
-  <socketImpl>\amqp_091\StreamSocket</socketImpl>
+  <socketImpl>\amqp\StreamSocket</socketImpl>
   <socketParams>
     <url>sslv3://localhost:5671</url>
     <context>
@@ -53,7 +53,7 @@
   </socketParams>-->
 
   <!-- Sample config for plain sockets connection, comment out the stream socket and uncomment this to use. -->
-  <socketImpl>\amqp_091\Socket</socketImpl>
+  <socketImpl>\amqphp\Socket</socketImpl>
   <socketParams>
     <host>rabbit1</host>
     <port>5672</port>

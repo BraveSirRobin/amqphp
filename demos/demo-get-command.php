@@ -25,9 +25,9 @@
  * exist is fine, provided *this* declaration doesn't clash with the object that already
  * exists on the broker.
  */
-use amqp_091 as amqp;
-use amqp_091\protocol;
-use amqp_091\wire;
+use amqphp as amqp;
+use amqphp\protocol;
+use amqphp\wire;
 
 require __DIR__ . '/../amqp.php';
 require __DIR__ . '/demo-common.php';

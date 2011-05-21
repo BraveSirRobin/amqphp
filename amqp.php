@@ -29,10 +29,10 @@
  *  (1)  Sort out handling select errors.
  */
 
-namespace amqp_091;
+namespace amqphp;
 
-use amqp_091\protocol;
-use amqp_091\wire;
+use amqphp\protocol;
+use amqphp\wire;
 
 require('amqp.wire.php');
 require('amqp.protocol.abstrakt.php');
@@ -448,7 +448,7 @@ class Connection
 
     /** Connection params */
     private $sock; // Socket wrapper object
-    private $socketImpl = '\amqp_091\Socket'; // Socket impl class name
+    private $socketImpl = '\amqphp\Socket'; // Socket impl class name
     private $socketParams = array('host' => 'localhost', 'port' => 5672); // Construct params for $socketImpl
     private $username;
     private $userpass;

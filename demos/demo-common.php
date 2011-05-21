@@ -46,8 +46,8 @@ function initialiseDemo () {
          * don't use a TableField,  Amqphp guesses the integer type by
          * choosing the smallest possible storage type.
          */
-        $args = new \amqp_091\wire\Table;
-        $args['x-message-ttl'] = new \amqp_091\wire\TableField(5000, 'l');
+        $args = new \amqphp\wire\Table;
+        $args['x-message-ttl'] = new \amqphp\wire\TableField(5000, 'l');
 
         $qDecl = $chan->queue('declare', array(
                                   'queue' => $Q,

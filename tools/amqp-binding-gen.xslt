@@ -25,9 +25,9 @@
 		version="1.0"
 		extension-element-prefixes="func str exsl">
 
-  <xsl:param name="NS_PREPEND" select="'amqp_091\protocol'"/>
-  <xsl:param name="IMPL_NS" select="'amqp_091\protocol\abstrakt'"/>
-  <xsl:param name="WIRE_NS" select="'amqp_091\wire'"/>
+  <xsl:param name="NS_PREPEND" select="'amqphp\protocol'"/>
+  <xsl:param name="IMPL_NS" select="'amqphp\protocol\abstrakt'"/>
+  <xsl:param name="WIRE_NS" select="'amqphp\wire'"/>
   <xsl:param name="OUTPUT_DIR" select="'gencode/'"/>
 
   <xsl:variable name="VERSION_TOKEN" select="concat(string(/amqp/@major), '_', string(/amqp/@minor), '_', string(/amqp/@revision))"/>
