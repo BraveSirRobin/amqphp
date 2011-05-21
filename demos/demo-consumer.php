@@ -45,12 +45,11 @@ class DemoConsumer extends amqp\SimpleConsumer
 
 
 // Basic RabbitMQ connection settings
-$config = array (
-                 'username' => 'testing',
-                 'userpass' => 'letmein',
-                 'vhost' => 'robin',
-                 'socketParams' => array('host' => 'rabbit1', 'port' => 5672)
-                 );
+$config = array(
+    'username' => 'testing',
+    'userpass' => 'letmein',
+    'vhost' => 'robin',
+    'socketParams' => array('host' => 'rabbit1', 'port' => 5672));
 
 
 // Connect to the RabbitMQ server, set up an Amqp channel
@@ -95,11 +94,15 @@ if (0) {
     // are pending Publish confirms.
 } else if (0) {
     // Set an absolute timeout in the params are epoch, millis
-    $conn->newSetSelectMode(amqp\Connection::SELECT_TIMEOUT_ABS, time() + 5, 0.1246);
-} else if (0) {
+    list($uSecs, $secs) = explode(' ', microtime());
+    $uSecs = bcmul($uSecs, '1000000');
+    $conn->newSetSelectMode(amqp\Connection::SELECT_TIMEOUT_ABS,
+                            bcadd($secs, '1'),
+                            bcadd($uSecs, '500000'));
+} else if (1) {
     // Set an relative timeout in the params are seconds, millis.
     // The "start point" is set right at the top of the select loop
-    $conn->newSetSelectMode(amqp\Connection::SELECT_TIMEOUT_REL, 5, 0.1246);
+    $conn->newSetSelectMode(amqp\Connection::SELECT_TIMEOUT_REL, 1, 500000);
 } else if (0) {
     $conn->newSetSelectMode(amqp\Connection::SELECT_CALLBACK,
                          function () {
@@ -112,7 +115,7 @@ if (0) {
 }
 
 
-// Instruct the connection object to begin listening for messages
+// Create an event loop to catch incoming messages
 $el = new amqp\EventLoop;
 $el->addConnection($conn);
 $el->select();
