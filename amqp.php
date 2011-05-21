@@ -106,7 +106,7 @@ class Socket
 
     /**
      * Call select on the given stream objects
-     * @param   array    $incSet       Socket[] - sockets to put in the select call
+     * @param   array    $incSet       List of Socket Id values of sockets to include in the select
      * @param   array    $tvSec        socket timeout - seconds
      * @param   array    $tvUSec       socket timeout - milliseconds
      * @return  array                  array(<select return>, <Socket[] to-read>, <Socket[] errs>)
@@ -115,14 +115,15 @@ class Socket
         $write = null;
         $read = $all = array();
         foreach (self::$All as $i => $o) {
-            if (in_array($o->getId(), $incSet)) {
+            if (in_array($o->id, $incSet)) {
                 $read[$i] = $all[$i] = $o->sock;
             }
         }
         $ex = $read;
 
         $ret = socket_select($read, $write, $ex, $tvSec, $tvUsec);
-        if ($ret === false) {
+        if ($ret === false && socket_last_error() == SOCKET_EINTR) {
+            $this->interrupt = true;
             return false;
         }
         $_read = $_ex = array();
@@ -637,6 +638,10 @@ class Connection
         return ($num === false) ? $this->initNewChannel() : $this->chans[$num];
     }
 
+    function getChannels () {
+        return $this->chans;
+    }
+
     /** Flip internal flag the decides if pcntl_signal_dispatch() gets called in consume loop */
     function setSignalDispatch ($val) {
         $this->signalDispatch = (boolean) $val;
@@ -755,6 +760,8 @@ class Connection
 
     function isBlocking () { return $this->blocking; }
 
+    function setBlocking ($b) { $this->blocking = (boolean) $b; }
+
 
     /**
      * Enter a select loop in order to receive messages from the broker.
@@ -847,6 +854,62 @@ class Connection
             trigger_error("Select mode - mode not found", E_USER_WARNING);
             return false;
         }
+    }
+
+
+
+
+
+    function newSelectMode () {
+        if ($this->blocking) {
+            trigger_error("Select mode - cannot switch mode whilst blocking", E_USER_WARNING);
+            return false;
+        }
+        $_args = func_get_args();
+        if (! $_args) {
+            trigger_error("Select mode - no select parameters supplied", E_USER_WARNING);
+            return false;
+        }
+        switch ($mode = array_shift($_args)) {
+        case self::SELECT_TIMEOUT_ABS:
+        case self::SELECT_TIMEOUT_REL:
+            @list($epoch, $usecs) = $_args;
+            $this->slHelper = new TimeoutSelectHelper;
+            return $this->slHelper->configure($mode, $epoch, $usecs);
+        case self::SELECT_MAXLOOPS:
+            $this->slHelper = new MaxloopSelectHelper;
+            return $this->slHelper->configure(self::SELECT_MAXLOOPS, array_shift($_args));
+        case self::SELECT_CALLBACK:
+            $cb = array_shift($_args);
+            $this->slHelper = new CallbackSelectHelper;
+            return $this->slHelper->configure(self::SELECT_CALLBACK, $cb, $_args);
+        case self::SELECT_COND:
+            $this->slHelper = new ConditionalSelectHelper;
+            return $this->helper->configure(self::SELECT_COND, $this);
+        case self::SELECT_INFINITE:
+            $this->slHelper = new InfiniteSelectHelper;
+            return $this->helper->configure(self::SELECT_INFINITE);
+        default:
+            trigger_error("Select mode - mode not found", E_USER_WARNING);
+            return false;
+        }
+    }
+
+
+    function notifyPreSelect () {
+        $this->slHelper->preSelect();
+    }
+
+    function notifySelectInit () {
+        $this->slHelper->init();
+        // Notify all channels
+        foreach ($this->chans as $chan) {
+            $chan->onSelectStart();
+        }
+    }
+
+    function notifyComplete () {
+        $this->slHelper->complete();
     }
 
 
@@ -965,6 +1028,17 @@ class Connection
         }
     select_end: // Evil goto!
         $this->blocking = false;
+    }
+
+
+    function doSelectRead () {
+        $buff = $this->sock->readAll();
+        if ($buff && ($meths = $this->readMessages($buff))) {
+            $this->unDelivered = array_merge($this->unDelivered, $meths);
+        } else if ($buff == '') {
+            $this->blocking = false;
+            throw new \Exception("Empty read in blocking select loop : " . strlen($buff), 9864);
+        }
     }
 
 
@@ -1089,7 +1163,7 @@ class Connection
      * NOTE: while / array_shift loop is used in case onDelivery call causes more messages to
      * be placed in local queue
      */
-    private function deliverAll () {
+    function deliverAll () {
         while ($this->unDelivered) {
             $meth = array_shift($this->unDelivered);
             if (isset($this->chans[$meth->getWireChannel()])) {
@@ -1260,6 +1334,9 @@ class TimeoutSelectHelper implements SelectLoopHelper
             list($uSecs, $epoch) = explode(' ', microtime());
             $this->exUsecs = bcadd($this->exUsecs, $uSecs, 5);
             $this->exEpoch = bcadd($this->exEpoch, $epoch, 0);
+        } else {
+            $this->exUsecs = $this->usecs;
+            $this->exEpoch = $this->epoch;
         }
     }
 
@@ -1331,7 +1408,7 @@ class ConditionalSelectHelper implements SelectLoopHelper
 
     function preSelect () {
         $hasConsumers = false;
-        foreach ($this->conn->getChannels() as $chan) { // new Connection method
+        foreach ($this->conn->getChannels() as $chan) {
             if ($chan->canListen()) {
                 $hasConsumers = true;
                 break;
@@ -1407,15 +1484,16 @@ class EventLoop
 
         // Notify that the loop begins
         foreach ($this->cons as $c) {
-            $c->getSelectHelper()->init(); // new Connection method
+            $c->setBlocking();
+            $c->notifySelectInit();
         }
 
         // The loop
         while (true) {
             $tv = array();
-            foreach ($this->cons as $c) {
+            foreach ($this->cons as $cid => $c) {
                 $c->deliverAll();
-                $tv[] = $c->getSelectHelper()->preSelect(); // new Connection method
+                $tv[] = array($cid, $c->notifyPreSelect());
             }
             $psr = $this->processPreSelects($tv); // Connections could be removed here.
             if (is_array($psr)) {
@@ -1428,39 +1506,36 @@ class EventLoop
             }
 
             $this->signal();
-            /**
-             * TODO: Pass an "inclusion  set" (i.e. $cons) to Zelect -
-             * only  sockets  from  the  inclusion set  are  selected.
-             * Required  so that Connections  which have  ended aren't
-             * listened to.
-             */
+
             if (is_null($tvSecs)) {
                 list($ret, $read, $ex) = call_user_func(array($sockImpl, 'Zelekt'),
-                                                        array_keys($this->conns), null);
+                                                        array_keys($this->conns), null, 0);
             } else {
                 list($ret, $read, $ex) = call_user_func(array($sockImpl, 'Zelekt'),
                                                         array_keys($this->conns), $tvSecs, $tvUsecs);
             }
             if ($ret === false) {
                 $this->signal();
+                $errNo = $errStr = array('??');
                 if ($ex) {
                     $errNo = $errStr = array();
                     foreach ($ex as $sock) {
                         $errNo[] = $sock->lastError();
                         $errStr[] = $sock->strError();
                     }
-                    $eMsg = sprintf("[2] Read block select produced an error: [%s] (%s)",
-                                    implode(",", $errNo), implode("),(", $errStr));
-                    throw new \Exception ($eMsg, 9963);
-                } else {
-                    foreach ($read as $sock) {
-                        $c = $this->cons[$sock->getId()];
-                        $c->doSelectRead(); // new Connection method
-                        $c->deliverAll();
-                    }
-                    foreach ($ex as $sock) {
-                        // ????
-                    }
+                }
+                $eMsg = sprintf("[2] Read block select produced an error: [%s] (%s)",
+                                implode(",", $errNo), implode("),(", $errStr));
+                throw new \Exception ($eMsg, 9963);
+
+            } else if ($ret > 0) {
+                foreach ($read as $sock) {
+                    $c = $this->cons[$sock->getId()];
+                    $c->doSelectRead();
+                    $c->deliverAll();
+                }
+                foreach ($ex as $sock) {
+                    printf("--(Socket Exception (?))--\n");
                 }
             }
         }
@@ -1474,11 +1549,46 @@ class EventLoop
      * @return  mixed   Array = (tvSecs, tvUsecs), False = loop complete
      *                  (no more listening connections)
      */
-    private function processPreSelects (array $tv) {
-/*
-int bccomp ( string $left_operand , string $right_operand [, int $scale ] )
-Compares the left_operand to the right_operand and returns the result as an integer. 
- */
+    private function processPreSelects (array $tvs) {
+        $wins = null;
+        foreach ($tvs as $tv) {
+            $sid = $tv[0]; // Socket id
+            $tv = $tv[1]; // Return value from preSelect()
+            if ($tv === false) {
+                $this->cons[$sid]->notifyComplete();
+                $this->cons[$sid]->setBlocking(false);
+                unset($this->cons[$sid]);
+            } else if (is_null($wins)) {
+                $wins = $tv;
+                $winSum = is_null($tv[0]) ? 0 : bcadd($tv[0], $tv[1], 5);
+            } else if (! is_null($tv[0])) {
+                // A Specific timeout
+                if (is_null($wins[0])) {
+                    $wins = $tv;
+                } else {
+                    // TODO: compact this logic - too many continues!
+                    $diff = bccomp($wins[0], $tv[0]);
+                    if ($diff == -1) {
+                        // $wins second timeout is smaller
+                        continue;
+                    } else if ($diff == 0) {
+                        // seconds are the same, compare millis
+                        $diff = bccomp($wins[1], $tv[1]);
+                        if ($diff == -1) {
+                            continue;
+                        } else if ($diff == 0) {
+                            continue;
+                        } else {
+                            $wins = $tv;
+                        }
+                    } else {
+                        // $wins second timeout is bigger
+                        $wins = $tv;
+                    }
+                }
+            }
+        }
+        return $wins;
     }
 
     private function signal () {
