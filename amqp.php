@@ -66,7 +66,6 @@ class Socket
     private $connected = false;
     private static $interrupt = false;
 
-    //function __construct ($host, $port) {
     function __construct ($params) {
         $this->host = $params['host'];
         $this->port = $params['port'];
@@ -143,12 +142,16 @@ class Socket
 
 
 
-    /** Return true if the last call to select was interrupted */
+    /**
+     * Return true if the last call to select was interrupted
+     */
     function selectInterrupted () {
         return self::$interrupt;
     }
 
-    /** Call select to wait for content then read and return it all */
+    /**
+     * Call select to wait for content then read and return it all
+     */
     function read () {
         $select = $this->select(5); // SL1
         if ($select === false) {
