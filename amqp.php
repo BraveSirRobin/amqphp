@@ -44,6 +44,27 @@ const DEBUG = false;
 
 
 
+
+const SELECT_TIMEOUT_ABS = 1;
+const SELECT_TIMEOUT_REL = 2;
+const SELECT_MAXLOOPS = 3;
+const SELECT_CALLBACK = 4;
+const SELECT_COND = 5;
+const SELECT_INFINITE = 6;
+
+
+/**
+ * Standard  "consumer   signals"  -   these  can  be   returned  from
+ * Consumer->handleDelivery  method and  trigger the  API to  send the
+ * corresponding messages.
+ */
+const CONSUMER_ACK = 1; // basic.ack (multiple=false)
+const CONSUMER_REJECT = 2; // basic.reject (requeue=true)
+const CONSUMER_DROP = 3; // basic.reject (requeue=false)
+const CONSUMER_CANCEL = 4; // basic.cancel (no-wait=false)
+
+
+
 /**
  * Wrapper for a _single_ socket
  */
@@ -82,7 +103,10 @@ class Socket
         self::$All[] = $this;
     }
 
-    /** TODO: this function can't be used for read/write, only one at a time! */
+    /**
+     * Puts  the local  socket  in to  a  select loop  with the  given
+     * timeout and returns the result
+     */
     function select ($tvSec, $tvUsec = 0, $rw = self::READ_SELECT) {
         $read = $write = $ex = null;
         if ($rw & self::READ_SELECT) {
@@ -153,7 +177,7 @@ class Socket
      * Call select to wait for content then read and return it all
      */
     function read () {
-        $select = $this->select(5); // SL1
+        $select = $this->select(5);
         if ($select === false) {
             return false;
         } else if ($select > 0) {
@@ -223,30 +247,7 @@ class Socket
     }
 }
 
-/*
-For SSL w. client certs:
 
-Set up your certca, server and client client certs exactly as per this:
-               http://www.rabbitmq.com/ssl.html
-
-..then some additional steps for the php client cert..
-
-cat client/key.pem > phpcert.pem
-cat client/cert.pem >> phpcert.pem
-cat testca/cacert.pem >> phpcert.pem
-as per the this:
-  http://uk2.php.net/manual/en/function.stream-socket-client.php#77497
-
-.. similarly for the php server cert..
-server/key.pem > php-server-cert.pem
-server/cert.pem >> php-server-cert.pem
-testca/cacert.pem >> php-server-cert.pem
-
-Now, use phpcert.pem for the php client cert, and php-server-cert.pem
-for the php server cert.  You can now do client authentication and
-peer verification!
-
- */
 class StreamSocket
 {
     const READ_SELECT = 1;
@@ -302,7 +303,6 @@ class StreamSocket
         return $ret;
     }
 
-    // Does a read select on all statically referenced instances
     /**
      * Call select on the given stream objects
      * @param   array    $incSet       List of Socket Id values of sockets to include in the select
@@ -422,12 +422,6 @@ class StreamSocket
 
 
 
-const SELECT_TIMEOUT_ABS = 1;
-const SELECT_TIMEOUT_REL = 2;
-const SELECT_MAXLOOPS = 3;
-const SELECT_CALLBACK = 4;
-const SELECT_COND = 5;
-const SELECT_INFINITE = 6;
 
 
 
@@ -1773,17 +1767,18 @@ class Channel
         if ($meth->getField('multiple')) {
 
             $dtag = $meth->getField('delivery-tag');
-            $this->confirmSeqs = array_filter($this->confirmSeqs,
-                                              function ($id) use ($dtag, $handler, $meth) {
-                                                  if ($id <= $dtag) {
-                                                      if ($handler) {
-                                                          $handler($meth);
-                                                      }
-                                                      return false;
-                                                  } else {
-                                                      return true;
-                                                  }
-                                              });
+            $this->confirmSeqs = 
+                array_filter($this->confirmSeqs,
+                             function ($id) use ($dtag, $handler, $meth) {
+                                 if ($id <= $dtag) {
+                                     if ($handler) {
+                                         $handler($meth);
+                                     }
+                                     return false;
+                                 } else {
+                                     return true;
+                                 }
+                             });
         } else {
             $dt = $meth->getField('delivery-tag');
             if (isset($this->confirmSeqs)) {
@@ -1892,15 +1887,6 @@ class Channel
     }
 }
 
-/**
- * Standard  "consumer   signals"  -   these  can  be   returned  from
- * Consumer->handleDelivery  method and  trigger the  API to  send the
- * corresponding messages.
- */
-const CONSUMER_ACK = 1; // basic.ack (multiple=false)
-const CONSUMER_REJECT = 2; // basic.reject (requeue=true)
-const CONSUMER_DROP = 3; // basic.reject (requeue=false)
-const CONSUMER_CANCEL = 4; // basic.cancel (no-wait=false)
 
 
 // Interface for a consumer callback handler object, based on the RMQ java on here:
