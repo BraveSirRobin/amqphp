@@ -58,6 +58,7 @@ class Method
     private $wireClassId; // Read from Amqp method frame
     private $contentSize; // Read from Amqp content header frame
 
+    private $protoLoader; // Closure passed in to readConstruct from Connection
 
     /**
      * @param mixed   $src    String = A complete Amqp frame = read mode
@@ -91,7 +92,7 @@ class Method
      * Helper: parse the incoming message from $src.
      * @return   mixed     false => error, true => complete, PARTIAL_FRAME = split frame detected.
      */
-    function readConstruct (Reader $src) {
+    function readConstruct (Reader $src, \Closure $protoLoader) {
         if ($this->mode == 'write') {
             trigger_error('Invalid read construct operation on a read mode method', E_USER_WARNING);
             return false;
@@ -99,6 +100,7 @@ class Method
         $FRME = 206; // TODO!!  UN-HARD CODE!!
         $break = false;
         $ret = true;
+        $this->protoLoader = $protoLoader;
 
 
         while (! $src->isSpent()) {
@@ -190,7 +192,9 @@ class Method
         $this->wireClassId = $src->read('short');
         $this->wireMethodId = $src->read('short');
 
-        if (! ($this->classProto = proto\ClassFactory::GetClassByIndex($this->wireClassId))) {
+        $protoLoader = $this->protoLoader;
+
+        if (! ($this->classProto = $protoLoader('ClassFactory', 'GetClassByIndex', array($this->wireClassId)))) {
             throw new \Exception(sprintf("Failed to construct class prototype for class ID %s",
                                          $this->wireClassId), 9875);
         } else if (! ($this->methProto = $this->classProto->getMethodByIndex($this->wireMethodId))) {
@@ -333,18 +337,19 @@ class Method
     function setWireChannel ($chan) { $this->wireChannel = $chan; }
     function isHeartbeat () { return $this->isHb; }
 
-    function toBin () {
+    function toBin (\Closure $protoLoader) {
         if ($this->mode == 'read') {
             trigger_error('Invalid serialize operation on a read mode method', E_USER_WARNING);
             return '';
         }
         // Create the method part
+        $frme = $protoLoader('ProtoConsts', 'GetConstant', array('FRAME_END'));
         $w = new Writer;
         $tmp = $this->getMethodBin();
         $w->write(1, 'octet');
         $w->write($this->wireChannel, 'short');
         $w->write(strlen($tmp), 'long');
-        $buff = $w->getBuffer() . $tmp . proto\FRAME_END;
+        $buff = $w->getBuffer() . $tmp . $frme;
         $ret = array($buff);
         if ($this->methProto->getSpecHasContent()) {
             // Create content header and body parts
@@ -353,7 +358,7 @@ class Method
             $w->write(2, 'octet');
             $w->write($this->wireChannel, 'short');
             $w->write(strlen($tmp), 'long');
-            $ret[] = $w->getBuffer() . $tmp . proto\FRAME_END;
+            $ret[] = $w->getBuffer() . $tmp . $frme;
 
             $tmp = (string) $this->content;
             $i = 0;
@@ -367,7 +372,7 @@ class Method
                 $w->write(3, 'octet');
                 $w->write($this->wireChannel, 'short');
                 $w->write(strlen($chunk), 'long');
-                $ret[] = $w->getBuffer() . $chunk . proto\FRAME_END;
+                $ret[] = $w->getBuffer() . $chunk . $frme;
                 $i++;
             }
         }

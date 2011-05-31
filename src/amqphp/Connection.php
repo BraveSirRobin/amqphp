@@ -83,6 +83,8 @@ class Connection
     /** Connection params */
     private $sock; // Socket wrapper object
     private $socketImpl = '\amqphp\Socket'; // Socket impl class name
+    private $protoImpl = 'v0_9_1'; // Protocol implementation namespace (generated code)
+    private $protoLoader; // Closeure, set up in getProtocolLoader()
     private $socketParams = array('host' => 'localhost', 'port' => 5672); // Construct params for $socketImpl
     private $username;
     private $userpass;
@@ -130,8 +132,21 @@ class Connection
 
 
     /**
-     * Shutdown child channels and then the connection 
+     * Return a function that loads protocol binding classes 
      */
+    function getProtocolLoader () {
+        if (is_null($this->protoLoader)) {
+            $protoImpl = $this->protoImpl;
+            $this->protoLoader = function ($class, $method, $args) use ($protoImpl) {
+                $fqClass = '\\amqphp\\protocol\\' . $protoImpl . '\\' . $class;
+                return call_user_func_array(array($fqClass, $method), $args);
+            };
+        }
+        return $this->protoLoader;
+    }
+
+
+    /** Shutdown child channels and then the connection  */
     function shutdown () {
         if (! $this->connected) {
             trigger_error("Cannot shut a closed connection", E_USER_WARNING);
@@ -140,12 +155,14 @@ class Connection
         foreach (array_keys($this->chans) as $cName) {
             $this->chans[$cName]->shutdown();
         }
-        $meth = new wire\Method(protocol\ClassFactory::GetMethod('connection', 'close'));
+
+        $pl = $this->getProtocolLoader();
+        $meth = new wire\Method($pl('ClassFactory', 'GetMethod', array('connection', 'close')));
         $meth->setField('reply-code', '');
         $meth->setField('reply-text', '');
         $meth->setField('class-id', '');
         $meth->setField('method-id', '');
-        if (! $this->write($meth->toBin())) {
+        if (! $this->write($meth->toBin($this->getProtocolLoader()))) {
             trigger_error("Unclean connection shutdown (1)", E_USER_WARNING);
             return;
         }
@@ -155,7 +172,7 @@ class Connection
         }
 
         $meth = new wire\Method();
-        $meth->readConstruct(new wire\Reader($raw));
+        $meth->readConstruct(new wire\Reader($raw), $this->getProtocolLoader());
         if (! ($meth->getClassProto() &&
                $meth->getClassProto()->getSpecName() == 'connection' &&
                $meth->getMethodProto() &&
@@ -198,7 +215,7 @@ class Connection
             throw new \Exception("Connection initialisation failed (3)", 9875);
         }
         $meth = new wire\Method();
-        $meth->readConstruct(new wire\Reader($raw));
+        $meth->readConstruct(new wire\Reader($raw), $this->getProtocolLoader());
         if (($startF = $meth->getField('server-properties'))
             && isset($startF['capabilities'])
             && ($startF['capabilities']->getType() == 'F')) {
@@ -218,7 +235,7 @@ class Connection
         $meth->setField('response', $this->getSaslResponse());
         $meth->setField('locale', 'en_US');
         // Send start-ok
-        if (! ($this->write($meth->toBin()))) {
+        if (! ($this->write($meth->toBin($this->getProtocolLoader())))) {
             throw new \Exception("Connection initialisation failed (6)", 9878);
         }
 
@@ -226,7 +243,7 @@ class Connection
             throw new \Exception("Connection initialisation failed (7)", 9879);
         }
         $meth = new wire\Method();
-        $meth->readConstruct(new wire\Reader($raw));
+        $meth->readConstruct(new wire\Reader($raw), $this->getProtocolLoader());
 
         $chanMax = $meth->getField('channel-max');
         $frameMax = $meth->getField('frame-max');
@@ -245,7 +262,7 @@ class Connection
         $meth->setField('frame-max', $this->frameMax);
         $meth->setField('heartbeat', $this->heartbeat);
         // Send tune-ok
-        if (! ($this->write($meth->toBin()))) {
+        if (! ($this->write($meth->toBin($this->getProtocolLoader())))) {
             throw new \Exception("Connection initialisation failed (10)", 9882);
         }
 
@@ -385,13 +402,14 @@ class Connection
         $clsMth = "{$meth->getClassProto()->getSpecName()}.{$meth->getMethodProto()->getSpecName()}";
         switch ($clsMth) {
         case 'connection.close':
-            if ($culprit = protocol\ClassFactory::GetMethod($meth->getField('class-id'), $meth->getField('method-id'))) {
+            $pl = $this->getProtocolLoader();
+            if ($culprit = $pl('ClassFactory', 'GetMethod', array($meth->getField('class-id'), $meth->getField('method-id')))) {
                 $culprit = "{$culprit->getSpecClass()}.{$culprit->getSpecName()}";
             } else {
                 $culprit = '(Unknown or unspecified)';
             }
             // Note: ignores the soft-error, hard-error distinction in the xml
-            $errCode = protocol\Konstant($meth->getField('reply-code'));
+            $errCode = $pl('ProtoConsts', 'Konstant', array($meth->getField('reply-code')));
             $eb = '';
             foreach ($meth->getFields() as $k => $v) {
                 $eb .= sprintf("(%s=%s) ", $k, $v);
@@ -399,7 +417,7 @@ class Connection
             $tmp = $meth->getMethodProto()->getResponses();
             $closeOk = new wire\Method($tmp[0]);
             $em = "[connection.close] reply-code={$errCode['name']} triggered by $culprit: $eb";
-            if ($this->write($closeOk->toBin())) {
+            if ($this->write($closeOk->toBin($this->getProtocolLoader()))) {
                 $em .= " Connection closed OK";
                 $n = 7565;
             } else {
@@ -540,7 +558,7 @@ class Connection
      *                                  an Amqp no-wait domain field set to true
      */
     function invoke (wire\Method $inMeth, $noWait=false) {
-        if (! ($this->write($inMeth->toBin()))) {
+        if (! ($this->write($inMeth->toBin($this->getProtocolLoader())))) {
             throw new \Exception("Send message failed (1)", 5623);
         }
         if (! $noWait && $inMeth->getMethodProto()->getSpecResponseMethods()) {
@@ -600,7 +618,7 @@ class Connection
                 foreach ($this->incompleteMethods as $im) {
                     if ($im->canReadFrom($src)) {
                         $meth = $im;
-                        $rcr = $meth->readConstruct($src);
+                        $rcr = $meth->readConstruct($src, $this->getProtocolLoader());
                         break;
                     }
                 }
@@ -608,7 +626,7 @@ class Connection
             if (! $meth) {
                 $meth = new wire\Method;
                 $this->incompleteMethods[] = $meth;
-                $rcr = $meth->readConstruct($src);
+                $rcr = $meth->readConstruct($src, $this->getProtocolLoader());
             }
 
             if ($meth->readConstructComplete()) {
@@ -701,7 +719,8 @@ class Connection
         $args = (isset($_args[1])) ? $_args[1] : array();
         $content = (isset($_args[2])) ? $_args[2] : null;
 
-        if (! ($cls = protocol\ClassFactory::GetClassByName($class))) {
+        $pl = $this->getProtocolLoader();
+        if (! ($cls = $pl('ClassFactory', 'GetClassByName', array($class)))) {
             throw new \Exception("Invalid Amqp class or php method", 8691);
         } else if (! ($meth = $cls->getMethodByName($method))) {
             throw new \Exception("Invalid Amqp method", 5435);

@@ -118,7 +118,8 @@ class Channel
 
 
     function initChannel () {
-        $meth = new wire\Method(protocol\ClassFactory::GetMethod('channel', 'open'), $this->chanId);
+        $pl = $this->myConn->getProtocolLoader();
+        $meth = new wire\Method($pl('ClassFactory', 'GetMethod', array('channel', 'open')), $this->chanId);
         $meth->setField('reserved-1', '');
         $resp = $this->myConn->invoke($meth);
     }
@@ -190,13 +191,15 @@ class Channel
             return false;
             break;
         case 'channel.close':
-            if ($culprit = protocol\ClassFactory::GetMethod($meth->getField('class-id'), $meth->getField('method-id'))) {
+            $pl = $this->myConn->getProtocolLoader();
+            //if ($culprit = protocol\ClassFactory::GetMethod($meth->getField('class-id'), $meth->getField('method-id'))) {
+            if ($culprit = $pl('ClassFactory', 'GetMethod', array($meth->getField('class-id'), $meth->getField('method-id')))) {
                 $culprit = "{$culprit->getSpecClass()}.{$culprit->getSpecName()}";
             } else {
                 $culprit = '(Unknown or unspecified)';
             }
             // Note: ignores the soft-error, hard-error distinction in the xml
-            $errCode = protocol\Konstant($meth->getField('reply-code'));
+            $errCode = $pl('ProtoConsts'. 'Konstant', array($meth->getField('reply-code')));
             $eb = '';
             foreach ($meth->getFields() as $k => $v) {
                 $eb .= sprintf("(%s=%s) ", $k, $v);
