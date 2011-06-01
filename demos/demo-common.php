@@ -22,6 +22,8 @@
  * Shared code to define the exchange, queue and binding for all demos.
  */
 
+require __DIR__ . '/demo-loader.php';
+
 $EX_NAME = 'most-basic';
 $EX_TYPE = 'direct';
 $Q = 'most-basic';

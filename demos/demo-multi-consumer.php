@@ -4,7 +4,7 @@ use amqphp as amqp;
 use amqphp\protocol;
 use amqphp\wire;
 
-require __DIR__ . '/../amqp.php';
+require __DIR__ . '/demo-loader.php';
 
 $EX_NAME = 'most-basic';
 $EX_TYPE = 'direct';

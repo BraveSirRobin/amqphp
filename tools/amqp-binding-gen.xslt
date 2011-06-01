@@ -22,21 +22,21 @@
 		xmlns:str="http://exslt.org/strings"
 		xmlns:exsl="http://exslt.org/common"
 		xmlns:bl="http://www.bluelines.org/"
+                xmlns:php="http://php.net/xsl"
 		version="1.0"
 		extension-element-prefixes="func str exsl">
 
-  <xsl:param name="NS_PREPEND" select="'amqphp\protocol'"/>
+  <xsl:param name="NS_PREPEND" select="concat('amqphp\protocol\v', string(/amqp/@major), '_', string(/amqp/@minor), '_', string(/amqp/@revision))"/>
   <xsl:param name="IMPL_NS" select="'amqphp\protocol\abstrakt'"/>
-  <xsl:param name="WIRE_NS" select="'amqphp\wire'"/>
   <xsl:param name="OUTPUT_DIR" select="'gencode/'"/>
+  <xsl:param name="DIR_SEP" select="'/'"/>
 
-  <xsl:variable name="VERSION_TOKEN" select="concat(string(/amqp/@major), '_', string(/amqp/@minor), '_', string(/amqp/@revision))"/>
+  <xsl:variable name="VERSION_TOKEN" select="concat('protocol', $DIR_SEP, 'v', string(/amqp/@major), '_', string(/amqp/@minor), '_', string(/amqp/@revision))"/>
   <xsl:variable name="VERSION_STRING" select="concat(string(/amqp/@major), '.', string(/amqp/@minor), '.', string(/amqp/@revision))"/>
 
   <!-- Normalise the input to remove leading and trailing slashes -->
   <xsl:variable name="_NS_PREPEND" select="bl:normalisePhpNsIdentifier($NS_PREPEND)"/>
   <xsl:variable name="_IMPL_NS" select="bl:normalisePhpNsIdentifier($IMPL_NS)"/>
-  <xsl:variable name="_WIRE_NS" select="bl:normalisePhpNsIdentifier($WIRE_NS)"/>
 
 
   <xsl:output method="text"/>
@@ -50,51 +50,66 @@
 
   <!-- Output the top level generated code file -->
   <xsl:template name="output-global-code">
-    <xsl:variable name="file-name" select="bl:getFilePath()"/>
-    <exsl:document href="{$file-name}" method="text" omit-xml-declaration="yes">&lt;?php
+    <xsl:value-of select="php:function('AmqpCodeGenTask::MkdirXslCallback', string(bl:getFilePath('ClassFactory')))"/>
+    <exsl:document href="{bl:getFilePath('ClassFactory')}" method="text" omit-xml-declaration="yes">&lt;?php
 namespace <xsl:value-of select="bl:getPhpNamespace()"/>;
 /** Ampq binding code, generated from doc version <xsl:value-of select="$VERSION_STRING"/> */
-use <xsl:value-of select="$_WIRE_NS"/> as wire;
-<!-- Output constants -->
-<xsl:for-each select="/amqp/constant"> <!-- TODO: Convert to hex consts -->
-const <xsl:value-of select="bl:convertToConst(@name)"/> = &quot;<xsl:value-of select="bl:intToPHPHexLiteral(@value)"/>&quot;;</xsl:for-each>
-
-<!-- Constant lookup function -->
-function Konstant($c) {
-    static $kz = array(<xsl:for-each select="/amqp/constant"><xsl:value-of select="@value"/> => array('value' => '<xsl:value-of select="@value"/>', 'name' => '<xsl:value-of select="bl:convertToConst(@name)"/>', 'class' => '<xsl:value-of select="@class"/>')<xsl:if test="position()!=last()">, </xsl:if></xsl:for-each>);
-    return isset($kz[$c]) ? $kz[$c] : null;
-}
-
 <!-- Output method lookup factory -->
 class ClassFactory extends \<xsl:value-of select="bl:getPhpParentNs()"/>\ClassFactory
 {
     <!-- Format: array(array(<class-idx>, <class-name>, <fully-qualified XmlSpecMethod impl. class name>))+ -->
     protected static $Cache = array(<xsl:for-each select="//class">array(<xsl:value-of select="@index"/>, '<xsl:value-of select="@name"/>', '\\<xsl:value-of select="bl:getPhpClassName('Class', true(), true())"/>')<xsl:if test="position() != last()">,</xsl:if></xsl:for-each>);
 
-}
+}</exsl:document>
 
+
+    <xsl:value-of select="php:function('AmqpCodeGenTask::MkdirXslCallback', string(bl:getFilePath('ProtoConsts')))"/>
+    <exsl:document href="{bl:getFilePath('ProtoConsts')}" method="text" omit-xml-declaration="yes">&lt;?php
+namespace <xsl:value-of select="bl:getPhpNamespace()"/>;
+/** Ampq binding code, generated from doc version <xsl:value-of select="$VERSION_STRING"/> */
+
+<!-- TODO:  The $kz / Konstant thing is really bizzare, removeit! really backward and bizzare, removeit! -->
+class ProtoConsts {
+<xsl:for-each select="/amqp/constant"> <!-- TODO: Convert to hex consts -->
+    const <xsl:value-of select="bl:convertToConst(@name)"/> = &quot;<xsl:value-of select="bl:intToPHPHexLiteral(@value)"/>&quot;;</xsl:for-each>
+    static $kz = array(<xsl:for-each select="/amqp/constant"><xsl:value-of select="@value"/> => array('value' => '<xsl:value-of select="@value"/>', 'name' => '<xsl:value-of select="bl:convertToConst(@name)"/>', 'class' => '<xsl:value-of select="@class"/>')<xsl:if test="position()!=last()">, </xsl:if></xsl:for-each>);
+    <!-- Constant lookup function -->
+    static function Konstant($c) {
+        return isset(self::$kz[$c]) ? self::$kz[$c] : null;
+    }
+    static function GetConstant ($c) {
+        return constant('self::' . $c);
+    }
+}
+</exsl:document>
+
+
+
+
+
+    <xsl:value-of select="php:function('AmqpCodeGenTask::MkdirXslCallback', string(bl:getFilePath('DomainFactory')))"/>
+    <exsl:document href="{bl:getFilePath('DomainFactory')}" method="text" omit-xml-declaration="yes">&lt;?php
+namespace <xsl:value-of select="bl:getPhpNamespace()"/>;
 <!-- Ouptput global static domain loader map -->
 class DomainFactory extends \<xsl:value-of select="bl:getPhpParentNs()"/>\DomainFactory
 {
     <!-- Map: array(<xml-domain-name> => <local XmlSpecDomain impl. class name>) -->
     protected static $Cache = array(<xsl:for-each select="/amqp/domain">'<xsl:value-of select="@name"/>' => '\\<xsl:value-of select="bl:getPhpClassName('Domain', true(), true())"/>'<xsl:if test="position() != last()">, </xsl:if></xsl:for-each>);
-}
+}</exsl:document>
 
 <!-- Output the fundamental domain objects -->
-// Fundamental domains
 <xsl:apply-templates select="/amqp/domain[@name = @type]" mode="output-fundamental-domain-class"/>
 <!-- Output the global domain objects -->
-// Global domains
+
 <xsl:apply-templates select="/amqp/domain[@name != @type]" mode="output-domain-class"/>
-// Include generated sub-namespaces
-<xsl:for-each select="/amqp/class">
-require '<xsl:value-of select="bl:getFileName(@name)"/>';</xsl:for-each>
-    </exsl:document>
   </xsl:template>
 
 
   <!-- Output the domain class implementation for a single domain -->
   <xsl:template match="domain" mode="output-domain-class">
+<xsl:value-of select="php:function('AmqpCodeGenTask::MkdirXslCallback', string(bl:getPhpClassFileName('Domain')))"/>
+<exsl:document href="{bl:getPhpClassFileName('Domain')}" method="text" omit-xml-declaration="yes">&lt;?php
+namespace <xsl:value-of select="bl:getPhpNamespace()"/>;
 class <xsl:value-of select="bl:getPhpClassName('Domain')"/> extends <xsl:value-of select="bl:getGenClassName(@type, 'Domain')"/>
 {
     protected $name = '<xsl:value-of select="@name"/>';
@@ -105,16 +120,21 @@ class <xsl:value-of select="bl:getPhpClassName('Domain')"/> extends <xsl:value-o
     }
     </xsl:if>
 }
+</exsl:document>
   </xsl:template>
 
 
   <!-- Output classes for fundamental domains, these use the internal protocol mappinging functions -->
   <xsl:template match="domain" mode="output-fundamental-domain-class">
+<xsl:value-of select="php:function('AmqpCodeGenTask::MkdirXslCallback', string(bl:getPhpClassFileName('Domain')))"/>
+<exsl:document href="{bl:getPhpClassFileName('Domain')}" method="text" omit-xml-declaration="yes">&lt;?php
+namespace <xsl:value-of select="bl:getPhpNamespace()"/>;
 class <xsl:value-of select="bl:getPhpClassName('Domain')"/> extends \<xsl:value-of select="bl:getPhpParentNs()"/>\XmlSpecDomain
 {
     protected $name = '<xsl:value-of select="@name"/>';
     protected $protocolType = '<xsl:value-of select="@type"/>';
 }
+</exsl:document>
   </xsl:template>
 
 
@@ -123,8 +143,8 @@ class <xsl:value-of select="bl:getPhpClassName('Domain')"/> extends \<xsl:value-
 
   <!-- Output lower level class file/namespaces -->
   <xsl:template match="class" mode="output-class-classes">
-    <xsl:variable name="file-name" select="bl:getFilePath(@name)"/>
-    <exsl:document href="{$file-name}" method="text" omit-xml-declaration="yes">&lt;?php
+    <xsl:value-of select="php:function('AmqpCodeGenTask::MkdirXslCallback', string(bl:getPhpClassFileName('Class')))"/>
+    <exsl:document href="{bl:getPhpClassFileName('Class')}" method="text" omit-xml-declaration="yes">&lt;?php
 namespace <xsl:value-of select="bl:getPhpNamespace(@name)"/>;
 /** Ampq binding code, generated from doc version <xsl:value-of select="$VERSION_STRING"/> */
 class <xsl:value-of select="bl:getPhpClassName('Class')"/> extends \<xsl:value-of select="bl:getPhpParentNs()"/>\XmlSpecClass
@@ -135,17 +155,22 @@ class <xsl:value-of select="bl:getPhpClassName('Class')"/> extends \<xsl:value-o
     protected $methods = array(<xsl:for-each select="./method"><xsl:value-of select="@index"/> => '<xsl:value-of select="@name"/>'<xsl:if test="position() != last()">,</xsl:if></xsl:for-each>);
     protected $methFact = '\\<xsl:value-of select="bl:getPhpNamespace(@name, true())"/>\\MethodFactory';
     protected $fieldFact = '\\<xsl:value-of select="bl:getPhpNamespace(@name, true())"/>\\FieldFactory';
-}
-
+}</exsl:document>
+    <xsl:value-of select="php:function('AmqpCodeGenTask::MkdirXslCallback', string(bl:getPhpClassFileName('MethodFactory', true())))"/>
+    <exsl:document href="{bl:getPhpClassFileName('MethodFactory', true())}" method="text" omit-xml-declaration="yes">&lt;?php
+namespace <xsl:value-of select="bl:getPhpNamespace(@name)"/>;
 abstract class MethodFactory extends \<xsl:value-of select="bl:getPhpParentNs()"/>\MethodFactory
 {
     protected static $Cache = array(<xsl:for-each select="./method">array(<xsl:value-of select="@index"/>, '<xsl:value-of select="@name"/>', '\\<xsl:value-of select="bl:getPhpClassName('Method', true(), true())"/>')<xsl:if test="position() != last()">,</xsl:if></xsl:for-each>);
-}
+}</exsl:document>
 
+    <xsl:value-of select="php:function('AmqpCodeGenTask::MkdirXslCallback', string(bl:getPhpClassFileName('FieldFactory', true())))"/>
+    <exsl:document href="{bl:getPhpClassFileName('FieldFactory', true())}" method="text" omit-xml-declaration="yes">&lt;?php
+namespace <xsl:value-of select="bl:getPhpNamespace(@name)"/>;
 abstract class FieldFactory  extends \<xsl:value-of select="bl:getPhpParentNs()"/>\FieldFactory
 {
     protected static $Cache = array(<xsl:for-each select=".//field[@domain or @type]">array('<xsl:value-of select="@name"/>', '<xsl:value-of select="parent::*[local-name() = 'method']/@name"/>', '\\<xsl:value-of select="bl:getPhpClassName('Field', true(), true())"/>')<xsl:if test="position() != last()">,</xsl:if></xsl:for-each>);
-}
+}</exsl:document>
 
 
 <xsl:apply-templates select="./method" mode="output-method-classes"/>
@@ -153,12 +178,15 @@ abstract class FieldFactory  extends \<xsl:value-of select="bl:getPhpParentNs()"
 
 <xsl:apply-templates select=".//field[@domain or @type]" mode="output-method-fields"/>
 
-    </exsl:document>
   </xsl:template>
 
 
 
   <xsl:template match="method" mode="output-method-classes">
+    <xsl:value-of select="php:function('AmqpCodeGenTask::MkdirXslCallback', string(bl:getPhpClassFileName('Method')))"/>
+    <exsl:document href="{bl:getPhpClassFileName('Method')}" method="text" omit-xml-declaration="yes">&lt;?php
+namespace <xsl:value-of select="bl:getPhpNamespace(../@name)"/>;
+/** Ampq binding code, generated from doc version <xsl:value-of select="$VERSION_STRING"/> */
 class <xsl:value-of select="bl:getPhpClassName('Method')"/> extends \<xsl:value-of select="bl:getPhpParentNs()"/>\XmlSpecMethod
 {
     protected $class = '<xsl:value-of select="../@name"/>';
@@ -172,22 +200,36 @@ class <xsl:value-of select="bl:getPhpClassName('Method')"/> extends \<xsl:value-
     protected $classFact = '\\<xsl:value-of select="str:replace($_NS_PREPEND, '\', '\\')"/>\\ClassFactory';
     protected $content = <xsl:choose><xsl:when test="@content">true</xsl:when><xsl:otherwise>false</xsl:otherwise></xsl:choose>;
     protected $hasNoWait = <xsl:choose><xsl:when test="./field[@domain='no-wait']">true</xsl:when><xsl:otherwise>false</xsl:otherwise></xsl:choose>;
-}
+}</exsl:document>
   </xsl:template>
 
 
+
   <xsl:template match="field" mode="output-method-fields">
+
     <xsl:variable name="daType"><!-- @domain or @type -->
-    <xsl:choose>
-      <xsl:when test="@domain">
-	<xsl:value-of select="@domain"/>
-      </xsl:when>
-      <xsl:otherwise>
-	<xsl:value-of select="@type"/>
-      </xsl:otherwise>
-    </xsl:choose>
-      
+      <xsl:choose>
+	<xsl:when test="@domain">
+	  <xsl:value-of select="@domain"/>
+	</xsl:when>
+	<xsl:otherwise>
+	  <xsl:value-of select="@type"/>
+	</xsl:otherwise>
+      </xsl:choose>
     </xsl:variable>
+
+    <xsl:value-of select="php:function('AmqpCodeGenTask::MkdirXslCallback', string(bl:getPhpClassFileName('Field')))"/>
+    <exsl:document href="{bl:getPhpClassFileName('Field')}" method="text" omit-xml-declaration="yes">&lt;?php
+      <xsl:choose>
+	<xsl:when test="parent::class">
+namespace <xsl:value-of select="bl:getPhpNamespace(../@name)"/>;
+	</xsl:when>
+	<xsl:otherwise>
+namespace <xsl:value-of select="bl:getPhpNamespace(../../@name)"/>;
+	</xsl:otherwise>
+      </xsl:choose>
+/** Ampq binding code, generated from doc version <xsl:value-of select="$VERSION_STRING"/> */
+
 class <xsl:value-of select="bl:getPhpClassName('Field')"/> extends \<xsl:value-of select="bl:getPhpNamespace()"/>\<xsl:value-of select="bl:getGenClassName($daType)"/>Domain implements \<xsl:value-of select="bl:getPhpParentNs()"/>\XmlSpecField
 {
     function getSpecFieldName() { return '<xsl:value-of select="@name"/>'; }
@@ -197,7 +239,7 @@ class <xsl:value-of select="bl:getPhpClassName('Field')"/> extends \<xsl:value-o
         return (parent::validate($subject) &amp;&amp; <xsl:for-each select="./assert"><xsl:value-of select="bl:getCodeForAssert(@check, @value, '$subject')"/><xsl:if test="position() != last()"> &amp;&amp; </xsl:if></xsl:for-each>);
     }
 </xsl:if>
-}
+}</exsl:document>
 
   </xsl:template>
 
@@ -342,19 +384,24 @@ class <xsl:value-of select="bl:getPhpClassName('Field')"/> extends \<xsl:value-o
 
   <func:function name="bl:getFileName">
     <xsl:param name="name" select="''"/>
+    <xsl:param name="name2" select="''"/>
     <xsl:choose>
       <xsl:when test="$name = ''">
-	<func:result select="concat('amqp.', $VERSION_TOKEN, '.php')"/>
+	<func:result select="concat('amqphp', $DIR_SEP, $VERSION_TOKEN, '.php')"/>
+      </xsl:when>
+      <xsl:when test="$name2 = ''">
+	<func:result select="concat('amqphp', $DIR_SEP, $VERSION_TOKEN, $DIR_SEP, $name, '.php')"/>
       </xsl:when>
       <xsl:otherwise>
-	<func:result select="concat('amqp.', $VERSION_TOKEN, '.', $name, '.php')"/>
+	<func:result select="concat('amqphp', $DIR_SEP, $VERSION_TOKEN, $DIR_SEP, $name, $DIR_SEP, $name2, '.php')"/>
       </xsl:otherwise>
     </xsl:choose>
   </func:function>
 
   <func:function name="bl:getFilePath">
     <xsl:param name="name" select="''"/>
-    <func:result select="concat($OUTPUT_DIR, bl:getFileName($name))"/>
+    <xsl:param name="name2" select="''"/>
+    <func:result select="concat($OUTPUT_DIR, bl:getFileName($name, $name2))"/>
   </func:function>
 
 
@@ -448,6 +495,37 @@ getFQPhpClassName($amqpClass, $amqpName, $append = '', $asLiteral=false)
 	<func:result select="str:replace($_IMPL_NS, '\', '\\')"/>
       </xsl:otherwise>
     </xsl:choose>
+  </func:function>
+
+
+  <!-- Ugly, very, very ugly. -->
+  <func:function name="bl:getPhpClassFileName">
+    <xsl:param name="append" select="''"/>
+    <xsl:param name="skipToParentHack" select="false()"/>
+
+    <xsl:variable name="class-name" select="bl:getPhpClassName($append, true(), false())"/>
+
+    <func:result>
+      <xsl:value-of select="$OUTPUT_DIR"/>
+      <xsl:for-each select="str:tokenize($class-name, '\')">
+	<xsl:choose>
+	  <xsl:when test="position() = last()">
+	    <xsl:choose>
+	      <xsl:when test="$skipToParentHack = true()">
+		<xsl:value-of select="concat($append, '.php')"/>
+	      </xsl:when>
+	      <xsl:otherwise>
+		<xsl:value-of select="concat(., '.php')"/>
+	      </xsl:otherwise>
+	    </xsl:choose>
+	  </xsl:when>
+	  <xsl:otherwise>
+	    <xsl:value-of select="concat(., $DIR_SEP)"/>
+	  </xsl:otherwise>
+	</xsl:choose>
+      </xsl:for-each>
+    </func:result>
+
   </func:function>
 
 
