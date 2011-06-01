@@ -25,6 +25,8 @@ use amqphp\wire;
 
 const DEBUG = false;
 
+const PROTOCOL_HEADER = "AMQP\x00\x00\x09\x01";
+
 const SELECT_TIMEOUT_ABS = 1;
 const SELECT_TIMEOUT_REL = 2;
 const SELECT_MAXLOOPS = 3;
@@ -204,13 +206,13 @@ class Connection
         $this->setConnectionParams($params);
         $this->initSocket();
         $this->sock->connect();
-        if (! $this->write(wire\PROTOCOL_HEADER)) {
+        if (! $this->write(PROTOCOL_HEADER)) {
             throw new \Exception("Connection initialisation failed (1)", 9873);
         }
         if (! ($raw = $this->read())) {
             throw new \Exception("Connection initialisation failed (2)", 9874);
         }
-        if (substr($raw, 0, 4) == 'AMQP' && $raw !== wire\PROTOCOL_HEADER) {
+        if (substr($raw, 0, 4) == 'AMQP' && $raw !== PROTOCOL_HEADER) {
             // Unexpected AMQP version
             throw new \Exception("Connection initialisation failed (3)", 9875);
         }

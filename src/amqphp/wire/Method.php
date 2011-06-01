@@ -23,10 +23,6 @@ use amqphp\protocol as proto; // Alias avoids name clash with class of same name
 use amqphp\protocol\abstrakt;
 
 
-const PROTOCOL_HEADER = "AMQP\x00\x00\x09\x01";
-
-
-
 /**
  * Represents a single Amqp method, either incoming or outgoing.  Note that a
  * method may be composed of multiple Amqp frames, depending on it's type
