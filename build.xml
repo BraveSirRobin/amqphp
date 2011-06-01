@@ -1,0 +1,132 @@
+<?xml version="1.0"?>
+<!--
+Amqphp build  system, can  build to either  "class per file"  (CPF) or
+"namespace per file" (NSPF) granularity.
+-->
+
+<project name="amqphp" default="dist">
+
+  <taskdef name="useclean" classname="phing.PhpUseFilterTask" />
+
+  <taskdef name="codegen" classname="phing.AmqpCodeGenTask" />
+
+  <property file="build.properties"/>
+
+  <target name="clean">
+    <delete dir="${builddir}" includeemptydirs="true" verbose="true" failonerror="true" />
+    <delete dir="${build.tempdir}" includeemptydirs="true" verbose="true" failonerror="true" />
+  </target>
+
+
+<!--
+Runs the custom code generator task.
+-->
+  <target name="generateAmqpBindings" depends="clean">
+    <mkdir dir="${gencode.tempdir}"/>
+
+    <codegen stylesheet="${gencode.stylesheet}"
+             specfile="${gencode.specfile}"
+             outputDir="${gencode.tempdir}"/>
+  </target>
+
+
+
+  <!--
+Prepare the NSPF and CPF source trees.
+  -->
+  <target name="build" depends="generateAmqpBindings">
+    <mkdir dir="${builddir}"/>
+    <mkdir dir="${builddir.nsPerFile}"/>
+    <mkdir dir="${builddir.classPerFile}"/>
+    <mkdir dir="${build.tempdir}"/>
+
+
+    <!-- Copy all sources to the temp dir -->
+    <copy todir="${build.tempdir}">
+      <fileset dir="${srcdir}">
+        <include name="**/*.php"/>
+      </fileset>
+    </copy>
+
+
+    <!-- Write out nspf packages -->
+    <foreach param="fileName" absparam="fullPath" target="doNspfPackage">
+      <fileset dir="${build.tempdir}">
+        <include name="**"/>
+      </fileset>
+    </foreach>
+
+
+
+
+
+    <!-- Copy over cpf package files -->
+    <copy todir="${builddir.classPerFile}">
+      <filterchain>
+        <stripphpcomments />
+        <stripwhitespace />
+      </filterchain>
+
+      <fileset dir="${build.tempdir}">
+        <include name="**/*.php"/>
+      </fileset>
+    </copy>
+  </target>
+
+
+  <!--
+      This target is called in a foreach which visits every file / folder in
+      the  ${srcdir} source tree.   Files are  ignored, and  directories are
+      converted in to NSPF packages.
+  -->
+  <target name="doNspfPackage">
+    <php function="is_dir" returnProperty="isDir">
+      <param value="${fullPath}"/>
+    </php>
+    <if>
+      <and>
+        <istrue value="${isDir}"/>
+        <istrue value="${fileName}"/>
+      </and>
+      <then>
+        <!-- Calculate a package file name -->
+        <php expression="implode('.', array_slice(explode('/', '${fullPath}'), count(explode('/', '${build.tempdir}')))) . '.php'"
+             returnProperty="nspfName"/>
+        <php expression="implode('\\', array_slice(explode('/', '${fullPath}'), count(explode('/', '${build.tempdir}'))))"
+             returnProperty="namespace"/>
+
+        <echo msg="Generate an nspf file, src=${fullPath}  dst=${builddir.nsPerFile}/${nspfName}  nspfName=${nspfName}"/>
+
+        <echo file="${builddir.nsPerFile}/${nspfName}">&lt;?php</echo>
+        <echo file="${builddir.nsPerFile}/${nspfName}" append="true">
+namespace ${namespace};</echo>
+        <append destFile="${builddir.nsPerFile}/${nspfName}">
+          <filterchain>
+            <replaceregexp>
+              <regexp pattern="^[\s]*namespace.*$" replace="" modifiers="m"/>
+            </replaceregexp>
+
+            <stripphpcomments />
+            <stripwhitespace />
+
+            <replaceregexp>
+              <regexp pattern="&lt;\?php" replace=""/>
+            </replaceregexp>
+          </filterchain>
+          <fileset dir="${fullPath}">
+            <include name="*.php"/>
+          </fileset>
+        </append>
+
+        <useclean file="${builddir.nsPerFile}/${nspfName}" fromDir="${fullPath}"/>
+
+      </then>
+    </if>
+  </target>
+
+
+
+  <target name="dist" depends="build">
+    <echo msg="Hi From Phing : ${srcdir} ${magic}"/>
+  </target>
+</project>
