@@ -136,6 +136,7 @@ class Socket
      * Call select to wait for content then read and return it all
      */
     function read () {
+        $buff = '';
         $select = $this->select(5);
         if ($select === false) {
             return false;

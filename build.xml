@@ -4,7 +4,7 @@ Amqphp build  system, can  build to either  "class per file"  (CPF) or
 "namespace per file" (NSPF) granularity.
 -->
 
-<project name="amqphp" default="dist">
+<project name="amqphp" default="build">
 
   <taskdef name="useclean" classname="phing.PhpUseFilterTask" />
 
@@ -19,7 +19,8 @@ Amqphp build  system, can  build to either  "class per file"  (CPF) or
 
 
 <!--
-Runs the custom code generator task.
+Runs  the Amqp  code  generation  routine.  This  is  Xslt based,  and
+generates a set of Amqp binding classes in the specified dir.
 -->
   <target name="generateAmqpBindings" depends="clean">
     <mkdir dir="${gencode.tempdir}"/>
@@ -31,54 +32,13 @@ Runs the custom code generator task.
 
 
 
-  <!--
-Prepare the NSPF and CPF source trees.
-  -->
-  <target name="build" depends="generateAmqpBindings">
-    <mkdir dir="${builddir}"/>
-    <mkdir dir="${builddir.nsPerFile}"/>
-    <mkdir dir="${builddir.classPerFile}"/>
-    <mkdir dir="${build.tempdir}"/>
 
 
-    <!-- Copy all sources to the temp dir -->
-    <copy todir="${build.tempdir}">
-      <fileset dir="${srcdir}">
-        <include name="**/*.php"/>
-      </fileset>
-    </copy>
-
-
-    <!-- Write out nspf packages -->
-    <foreach param="fileName" absparam="fullPath" target="doNspfPackage">
-      <fileset dir="${build.tempdir}">
-        <include name="**"/>
-      </fileset>
-    </foreach>
-
-
-
-
-
-    <!-- Copy over cpf package files -->
-    <copy todir="${builddir.classPerFile}">
-      <filterchain>
-        <stripphpcomments />
-        <stripwhitespace />
-      </filterchain>
-
-      <fileset dir="${build.tempdir}">
-        <include name="**/*.php"/>
-      </fileset>
-    </copy>
-  </target>
-
-
-  <!--
-      This target is called in a foreach which visits every file / folder in
-      the  ${srcdir} source tree.   Files are  ignored, and  directories are
-      converted in to NSPF packages.
-  -->
+<!--
+This target is called in a foreach which visits every file / folder in
+the  ${srcdir} source tree.   Files are  ignored, and  directories are
+converted in to NSPF packages.
+-->
   <target name="doNspfPackage">
     <php function="is_dir" returnProperty="isDir">
       <param value="${fullPath}"/>
@@ -126,7 +86,46 @@ namespace ${namespace};</echo>
 
 
 
-  <target name="dist" depends="build">
-    <echo msg="Hi From Phing : ${srcdir} ${magic}"/>
+<!--
+Prepare the NSPF and CPF source trees.
+-->
+  <target name="build" depends="generateAmqpBindings">
+    <mkdir dir="${builddir}"/>
+    <mkdir dir="${builddir.nsPerFile}"/>
+    <mkdir dir="${builddir.classPerFile}"/>
+    <mkdir dir="${build.tempdir}"/>
+
+
+    <!-- Copy all sources to the temp dir -->
+    <copy todir="${build.tempdir}" haltonerror="true">
+      <fileset dir="${srcdir}">
+        <include name="**/*.php"/>
+      </fileset>
+    </copy>
+
+
+    <!-- Write out nspf packages -->
+    <foreach param="fileName" absparam="fullPath" target="doNspfPackage">
+      <fileset dir="${build.tempdir}">
+        <include name="**"/>
+      </fileset>
+    </foreach>
+
+
+    <!-- Copy over cpf package files -->
+    <copy todir="${builddir.classPerFile}" haltonerror="true">
+      <filterchain>
+        <stripphpcomments />
+        <stripwhitespace />
+      </filterchain>
+
+      <fileset dir="${build.tempdir}">
+        <include name="**/*.php"/>
+      </fileset>
+    </copy>
+
+    <!-- Copy over the readme -->
+    <copy file="${builddir.readme}" tofile="${builddir}/README.txt"/>
   </target>
+
 </project>
