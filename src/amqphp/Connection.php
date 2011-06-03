@@ -69,7 +69,7 @@ class Connection
     /** Default client-properties field used during connection setup */
     private static $ClientProperties = array(
         'product' => ' BraveSirRobin/amqphp',
-        'version' => '0.9-beta',
+        'version' => '0.9.0',
         'platform' => 'PHP 5.3 +',
         'copyright' => 'Copyright (c) 2010,2011 Robin Harvey (harvey.robin@gmail.com)',
         'information' => 'This software is released under the terms of the GNU LGPL: http://www.gnu.org/licenses/lgpl-3.0.txt');
