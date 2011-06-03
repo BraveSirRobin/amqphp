@@ -1,2 +1,0 @@
-<?php
- namespace amqphp; use amqphp\protocol; use amqphp\wire; class ConditionalSelectHelper implements SelectLoopHelper { private $conn; function configure ($sMode) {} function init (Connection $conn) { $this->conn = $conn; } function preSelect () { $hasConsumers = false; foreach ($this->conn->getChannels() as $chan) { if ($chan->canListen()) { $hasConsumers = true; break; } } if (! $hasConsumers) { return false; } else { return array(null, 0); } } function complete () { $this->conn = null; } } 

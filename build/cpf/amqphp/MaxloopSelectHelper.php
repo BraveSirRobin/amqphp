@@ -1,2 +1,0 @@
-<?php
- namespace amqphp; use amqphp\protocol; use amqphp\wire; class MaxloopSelectHelper implements SelectLoopHelper { private $maxLoops; private $nLoops; function configure ($sMode, $ml=null) { if (! is_int($ml) || $ml == 0) { trigger_error("Select mode - invalid maxloops params", E_USER_WARNING); return false; } else { $this->maxLoops = $ml; return true; } } function init (Connection $conn) { $this->nLoops = 0; } function preSelect () { if (++$this->nLoops > $this->maxLoops) { return false; } else { return array(null, 0); } } function complete () {} } 

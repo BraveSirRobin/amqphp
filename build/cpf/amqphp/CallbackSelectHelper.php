@@ -1,2 +1,0 @@
-<?php
- namespace amqphp; use amqphp\protocol; use amqphp\wire; class CallbackSelectHelper implements SelectLoopHelper { private $cb; private $args; function configure ($sMode, $cb=null, $args=null) { if (! is_callable($cb)) { trigger_error("Select mode - invalid callback params", E_USER_WARNING); return false; } else { $this->cb = $cb; $this->args = $args; return true; } } function init (Connection $conn) {} function preSelect () { if (true !== call_user_func_array($this->cb, $this->args)) { return false; } else { return array(null, 0); } } function complete () {} } 

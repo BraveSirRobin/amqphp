@@ -1,2 +1,0 @@
-<?php
- namespace amqphp\protocol\v0_9_1\connection; class TuneOkHeartbeatField extends \amqphp\protocol\v0_9_1\ShortDomain implements \amqphp\protocol\abstrakt\XmlSpecField { function getSpecFieldName() { return 'heartbeat'; } function getSpecFieldDomain() { return 'short'; } }

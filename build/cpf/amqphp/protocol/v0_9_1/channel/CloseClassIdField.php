@@ -1,2 +1,0 @@
-<?php
- namespace amqphp\protocol\v0_9_1\channel; class CloseClassIdField extends \amqphp\protocol\v0_9_1\ClassIdDomain implements \amqphp\protocol\abstrakt\XmlSpecField { function getSpecFieldName() { return 'class-id'; } function getSpecFieldDomain() { return 'class-id'; } }

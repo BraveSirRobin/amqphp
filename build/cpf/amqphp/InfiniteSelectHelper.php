@@ -1,2 +1,0 @@
-<?php
- namespace amqphp; use amqphp\protocol; use amqphp\wire; class InfiniteSelectHelper implements SelectLoopHelper { function configure ($sMode) {} function init (Connection $conn) {} function preSelect () { return array(null, 0); } function complete () {} } 
