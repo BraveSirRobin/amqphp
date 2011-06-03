@@ -1,0 +1,2 @@
+<?php
+ namespace amqphp; use amqphp\protocol; use amqphp\wire; interface SelectLoopHelper { function configure ($sMode); function init (Connection $conn); function preSelect (); function complete (); } 

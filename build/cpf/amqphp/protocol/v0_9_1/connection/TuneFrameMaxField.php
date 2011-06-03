@@ -1,0 +1,2 @@
+<?php
+ namespace amqphp\protocol\v0_9_1\connection; class TuneFrameMaxField extends \amqphp\protocol\v0_9_1\LongDomain implements \amqphp\protocol\abstrakt\XmlSpecField { function getSpecFieldName() { return 'frame-max'; } function getSpecFieldDomain() { return 'long'; } }

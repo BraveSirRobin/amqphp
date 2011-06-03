@@ -1,0 +1,2 @@
+<?php
+ namespace amqphp; use amqphp\protocol; use amqphp\wire; interface Consumer { function handleCancelOk (wire\Method $meth, Channel $chan); function handleConsumeOk (wire\Method $meth, Channel $chan); function handleDelivery (wire\Method $meth, Channel $chan); function handleRecoveryOk (wire\Method $meth, Channel $chan); function getConsumeMethod (Channel $chan); } 

@@ -1,0 +1,2 @@
+<?php
+ namespace amqphp\protocol\v0_9_1\connection; class StartVersionMajorField extends \amqphp\protocol\v0_9_1\OctetDomain implements \amqphp\protocol\abstrakt\XmlSpecField { function getSpecFieldName() { return 'version-major'; } function getSpecFieldDomain() { return 'octet'; } }
