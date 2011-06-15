@@ -12,10 +12,24 @@ Amqphp build  system, can  build to either  "class per file"  (CPF) or
 
   <property file="build.properties"/>
 
+
+  <fileset dir="${srcdir}" id="SOURCES">
+    <include name="**/*.php"/>
+  </fileset>
+
+  <fileset dir="${build.tempdir}" id="BUILD_ALL">
+    <include name="**"/>
+  </fileset>
+
+  <fileset dir="${build.tempdir}" id="BUILD_PHP_FILES">
+    <include name="**/*.php"/>
+  </fileset>
+
   <target name="clean">
     <delete dir="${builddir}" includeemptydirs="true" verbose="true" failonerror="true" />
     <delete dir="${build.tempdir}" includeemptydirs="true" verbose="true" failonerror="true" />
   </target>
+
 
 
 <!--
@@ -98,17 +112,13 @@ Prepare the NSPF and CPF source trees.
 
     <!-- Copy all sources to the temp dir -->
     <copy todir="${build.tempdir}" haltonerror="true">
-      <fileset dir="${srcdir}">
-        <include name="**/*.php"/>
-      </fileset>
+      <fileset refid="SOURCES"/>
     </copy>
 
 
     <!-- Write out nspf packages -->
     <foreach param="fileName" absparam="fullPath" target="doNspfPackage">
-      <fileset dir="${build.tempdir}">
-        <include name="**"/>
-      </fileset>
+      <fileset refid="BUILD_ALL"/>
     </foreach>
 
 
@@ -119,9 +129,7 @@ Prepare the NSPF and CPF source trees.
         <stripwhitespace />
       </filterchain>
 
-      <fileset dir="${build.tempdir}">
-        <include name="**/*.php"/>
-      </fileset>
+      <fileset refid="BUILD_PHP_FILES"/>
     </copy>
 
     <!-- Copy over the readme -->

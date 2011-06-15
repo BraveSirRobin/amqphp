@@ -164,7 +164,7 @@ class Connection
         $meth->setField('reply-text', '');
         $meth->setField('class-id', '');
         $meth->setField('method-id', '');
-        if (! $this->write($meth->toBin($this->getProtocolLoader()))) {
+        if (! $this->write($meth->toBin($pl))) {
             trigger_error("Unclean connection shutdown (1)", E_USER_WARNING);
             return;
         }
@@ -174,7 +174,7 @@ class Connection
         }
 
         $meth = new wire\Method();
-        $meth->readConstruct(new wire\Reader($raw), $this->getProtocolLoader());
+        $meth->readConstruct(new wire\Reader($raw), $pl);
         if (! ($meth->getClassProto() &&
                $meth->getClassProto()->getSpecName() == 'connection' &&
                $meth->getMethodProto() &&
@@ -217,7 +217,8 @@ class Connection
             throw new \Exception("Connection initialisation failed (3)", 9875);
         }
         $meth = new wire\Method();
-        $meth->readConstruct(new wire\Reader($raw), $this->getProtocolLoader());
+        $pl = $this->getProtocolLoader();
+        $meth->readConstruct(new wire\Reader($raw), $pl);
         if (($startF = $meth->getField('server-properties'))
             && isset($startF['capabilities'])
             && ($startF['capabilities']->getType() == 'F')) {
@@ -237,7 +238,7 @@ class Connection
         $meth->setField('response', $this->getSaslResponse());
         $meth->setField('locale', 'en_US');
         // Send start-ok
-        if (! ($this->write($meth->toBin($this->getProtocolLoader())))) {
+        if (! ($this->write($meth->toBin($pl)))) {
             throw new \Exception("Connection initialisation failed (6)", 9878);
         }
 
@@ -245,7 +246,7 @@ class Connection
             throw new \Exception("Connection initialisation failed (7)", 9879);
         }
         $meth = new wire\Method();
-        $meth->readConstruct(new wire\Reader($raw), $this->getProtocolLoader());
+        $meth->readConstruct(new wire\Reader($raw), $pl);
 
         $chanMax = $meth->getField('channel-max');
         $frameMax = $meth->getField('frame-max');
@@ -264,7 +265,7 @@ class Connection
         $meth->setField('frame-max', $this->frameMax);
         $meth->setField('heartbeat', $this->heartbeat);
         // Send tune-ok
-        if (! ($this->write($meth->toBin($this->getProtocolLoader())))) {
+        if (! ($this->write($meth->toBin($pl)))) {
             throw new \Exception("Connection initialisation failed (10)", 9882);
         }
 
@@ -419,7 +420,7 @@ class Connection
             $tmp = $meth->getMethodProto()->getResponses();
             $closeOk = new wire\Method($tmp[0]);
             $em = "[connection.close] reply-code={$errCode['name']} triggered by $culprit: $eb";
-            if ($this->write($closeOk->toBin($this->getProtocolLoader()))) {
+            if ($this->write($closeOk->toBin($pl))) {
                 $em .= " Connection closed OK";
                 $n = 7565;
             } else {
@@ -613,6 +614,7 @@ class Connection
         }
 
         $allMeths = array(); // Collect all method here
+        $pl = $this->getProtocolLoader();
         while (true) {
             $meth = null;
             // Check to see if the content can complete any locally held incomplete messages
@@ -620,7 +622,7 @@ class Connection
                 foreach ($this->incompleteMethods as $im) {
                     if ($im->canReadFrom($src)) {
                         $meth = $im;
-                        $rcr = $meth->readConstruct($src, $this->getProtocolLoader());
+                        $rcr = $meth->readConstruct($src, $pl);
                         break;
                     }
                 }
@@ -628,7 +630,7 @@ class Connection
             if (! $meth) {
                 $meth = new wire\Method;
                 $this->incompleteMethods[] = $meth;
-                $rcr = $meth->readConstruct($src, $this->getProtocolLoader());
+                $rcr = $meth->readConstruct($src, $pl);
             }
 
             if ($meth->readConstructComplete()) {
