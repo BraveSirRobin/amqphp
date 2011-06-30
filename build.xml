@@ -2,6 +2,10 @@
 <!--
 Amqphp build  system, can  build to either  "class per file"  (CPF) or
 "namespace per file" (NSPF) granularity.
+
+TODO: Add a  target which builds a dev platform with  the code in src/
+symlinked form the build dir.
+
 -->
 
 <project name="amqphp" default="build">

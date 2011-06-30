@@ -90,7 +90,7 @@ $chan->addConsumer($receiver);
 // you've got (esp. in web programming) is how to exit the loop safely.
 // You can use the Connection->setSelectMode() method to help, like this:
 
-if (0) {
+if (1) {
     // The default exit mode is "Conditional exit" - in this mode the
     // Connection objects calls to each connected channel every time
     // through the loop to see if there's anything still listening.  You

@@ -41,16 +41,26 @@ class StreamSocket
     private $port;
     private $connected;
     private $interrupt = false;
+    private $flags;
 
-    function __construct ($params) {
+    function __construct ($params, $flags) {
         $this->url = $params['url'];
         $this->context = isset($params['context']) ? $params['context'] : array();
+        $this->flags = $flags ? $flags : array();
         $this->id = ++self::$Counter;
     }
 
     function connect () {
         $context = stream_context_create($this->context);
-        $this->sock = stream_socket_client($this->url, $errno, $errstr, ini_get("default_socket_timeout"), STREAM_CLIENT_CONNECT, $context);
+        $flags = STREAM_CLIENT_CONNECT;
+        foreach ($this->flags as $f) {
+            printf("Set flag %s\n", $f);
+            $flags |= constant($f);
+        }
+        printf("Final flags: %d\n", $flags);
+        $this->sock = stream_socket_client($this->url, $errno, $errstr, 
+                                           ini_get("default_socket_timeout"), 
+                                           $flags, $context);
         if (! $this->sock) {
             throw new \Exception("Failed to connect stream socket {$this->url}, ($errno, $errstr)", 7568);
         }
@@ -58,7 +68,10 @@ class StreamSocket
         self::$All[] = $this;
     }
 
+
+
     function select ($tvSec, $tvUsec = 0, $rw = self::READ_SELECT) {
+        printf(" >select\n");
         $read = $write = $ex = null;
         if ($rw & self::READ_SELECT) {
             $read = $ex = array($this->sock);
@@ -138,6 +151,7 @@ class StreamSocket
     }
 
     function readAll ($readLen = self::READ_LENGTH) {
+        printf(" >readAll\n");
         $buff = '';
         do {
             $buff .= fread($this->sock, $readLen);
@@ -157,6 +171,7 @@ class StreamSocket
 
 
     function write ($buff) {
+        printf(" >write\n");
         $bw = 0;
         $contentLength = strlen($buff);
         while (true) {

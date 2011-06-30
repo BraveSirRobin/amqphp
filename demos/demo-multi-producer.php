@@ -12,6 +12,8 @@ $Q = 'most-basic';
 
 // Basic RabbitMQ connection settings
 $conConfigs = array();
+$conFlags = array();
+/*
 $conConfigs[] = array(
     'username' => 'testing',
     'userpass' => 'letmein',
@@ -24,6 +26,30 @@ $conConfigs[] = array(
     'vhost' => 'robin',
     'consumerName' => 'C2',
     'socketParams' => array('host' => 'rabbit2', 'port' => 5672));
+*/
+
+$conConfigs[] = array(
+    'username' => 'testing',
+    'userpass' => 'letmein',
+    'vhost' => 'robin',
+    'consumerName' => 'C1',
+    'heartbeat' => 5,
+    'socketImpl' => '\amqphp\StreamSocket',
+    'socketParams' => array('url' => 'tcp://rabbit1:5672'),
+    'socketFlags' => array('STREAM_CLIENT_PERSISTENT'));
+$conFlags[] = array('STREAM_CLIENT_PERSISTENT');
+
+$conConfigs[] = array(
+    'username' => 'testing',
+    'userpass' => 'letmein',
+    'vhost' => 'robin',
+    'consumerName' => 'C2',
+    'heartbeat' => 5,
+    'socketImpl' => '\amqphp\StreamSocket',
+    'socketParams' => array('url' => 'tcp://rabbit1:5672'),
+    'socketFlags' => array('STREAM_CLIENT_PERSISTENT'));
+
+
 
 
 $publishParams = array(
@@ -51,7 +77,7 @@ foreach ($conConfigs as $conf) {
 
 $content = "My god, sending the same message thousands of times?  How dull!";
 $n = 0;
-for ($i = 0; $i < 5000; $i++) {
+for ($i = 0; $i < 500; $i++) {
     foreach ($cons as $stuff) {
         $stuff[2]->setContent($content);
         $stuff[1]->invoke($stuff[2]);

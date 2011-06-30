@@ -23,7 +23,7 @@ namespace amqphp;
 use amqphp\protocol;
 use amqphp\wire;
 
-const DEBUG = false;
+const DEBUG = true;
 
 const PROTOCOL_HEADER = "AMQP\x00\x00\x09\x01";
 
@@ -79,7 +79,8 @@ class Connection
 
     /** List of class fields that are settable connection params */
     private static $CProps = array(
-        'socketImpl', 'socketParams', 'username', 'userpass', 'vhost', 'frameMax', 'chanMax', 'signalDispatch', 'heartbeat');
+        'socketImpl', 'socketParams', 'username', 'userpass', 'vhost',
+        'frameMax', 'chanMax', 'signalDispatch', 'heartbeat', 'socketFlags');
     //'blockTmSecs', 'blockTmMillis');
 
     /** Connection params */
@@ -88,6 +89,7 @@ class Connection
     private $protoImpl = 'v0_9_1'; // Protocol implementation namespace (generated code)
     private $protoLoader; // Closeure, set up in getProtocolLoader()
     private $socketParams = array('host' => 'localhost', 'port' => 5672); // Construct params for $socketImpl
+    private $socketFlags;
     private $username;
     private $userpass;
     private $vhost;
@@ -190,7 +192,7 @@ class Connection
         if (! isset($this->socketImpl)) {
             throw new \Exception("No socket implementation specified", 7545);
         }
-        $this->sock = new $this->socketImpl($this->socketParams);
+        $this->sock = new $this->socketImpl($this->socketParams, $this->socketFlags);
     }
 
 
@@ -227,7 +229,8 @@ class Connection
         }
 
         // Expect start
-        if ($meth->getMethodProto()->getSpecIndex() == 10 && $meth->getClassProto()->getSpecIndex() == 10) {
+        if ($meth->getMethodProto()->getSpecIndex() == 10 &&
+            $meth->getClassProto()->getSpecIndex() == 10) {
             $resp = $meth->getMethodProto()->getResponses();
             $meth = new wire\Method($resp[0]);
         } else {
