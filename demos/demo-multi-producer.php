@@ -46,7 +46,7 @@ $conConfigs[] = array(
     'consumerName' => 'C2',
     'heartbeat' => 5,
     'socketImpl' => '\amqphp\StreamSocket',
-    'socketParams' => array('url' => 'tcp://rabbit1:5672'),
+    'socketParams' => array('url' => 'tcp://rabbit2:5672'),
     'socketFlags' => array('STREAM_CLIENT_PERSISTENT'));
 
 

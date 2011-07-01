@@ -162,7 +162,7 @@ class Socket
         }
         if (DEBUG) {
             echo "\n<read>\n";
-            echo wire\hexdump($buff);
+            echo wire\Hexdump::hexdump($buff);
         }
         return $buff;
     }
@@ -173,7 +173,7 @@ class Socket
         while (true) {
             if (DEBUG) {
                 echo "\n<write>\n";
-                echo wire\hexdump($buff);
+                echo wire\Hexdump::hexdump($buff);
             }
             if (($tmp = socket_write($this->sock, $buff)) === false) {
                 throw new \Exception(sprintf("\nSocket write failed: %s\n",

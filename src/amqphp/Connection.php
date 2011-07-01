@@ -23,7 +23,7 @@ namespace amqphp;
 use amqphp\protocol;
 use amqphp\wire;
 
-const DEBUG = true;
+const DEBUG = false;
 
 const PROTOCOL_HEADER = "AMQP\x00\x00\x09\x01";
 

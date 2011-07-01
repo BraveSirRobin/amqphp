@@ -71,7 +71,6 @@ class StreamSocket
 
 
     function select ($tvSec, $tvUsec = 0, $rw = self::READ_SELECT) {
-        printf(" >select\n");
         $read = $write = $ex = null;
         if ($rw & self::READ_SELECT) {
             $read = $ex = array($this->sock);
@@ -151,7 +150,6 @@ class StreamSocket
     }
 
     function readAll ($readLen = self::READ_LENGTH) {
-        printf(" >readAll\n");
         $buff = '';
         do {
             $buff .= fread($this->sock, $readLen);
@@ -160,7 +158,7 @@ class StreamSocket
         } while ($smd['unread_bytes'] > 0);
         if (DEBUG) {
             echo "\n<read>\n";
-            echo wire\hexdump($buff);
+            echo wire\Hexdump::hexdump($buff);
         }
         return $buff;
     }
@@ -171,13 +169,12 @@ class StreamSocket
 
 
     function write ($buff) {
-        printf(" >write\n");
         $bw = 0;
         $contentLength = strlen($buff);
         while (true) {
             if (DEBUG) {
                 echo "\n<write>\n";
-                echo wire\hexdump($buff);
+                echo wire\Hexdump::hexdump($buff);
             }
             if (($tmp = fwrite($this->sock, $buff)) === false) {
                 throw new \Exception(sprintf("\nStream write failed: %s\n",
