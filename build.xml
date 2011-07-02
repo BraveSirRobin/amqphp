@@ -140,4 +140,12 @@ Prepare the NSPF and CPF source trees.
     <copy file="${builddir.readme}" tofile="${builddir}/README.txt"/>
   </target>
 
+
+<!--
+    Prepare  the  directory for  development  work  by symlinking  the
+    distribution cpf files to their equivalents in the ${srcdir}
+-->
+  <target name="build-devtime" depends="build">
+    <!-- -->
+  </target>
 </project>
