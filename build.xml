@@ -2,10 +2,6 @@
 <!--
 Amqphp build  system, can  build to either  "class per file"  (CPF) or
 "namespace per file" (NSPF) granularity.
-
-TODO: Add a  target which builds a dev platform with  the code in src/
-symlinked form the build dir.
-
 -->
 
 <project name="amqphp" default="build">
@@ -145,7 +141,20 @@ Prepare the NSPF and CPF source trees.
     Prepare  the  directory for  development  work  by symlinking  the
     distribution cpf files to their equivalents in the ${srcdir}
 -->
-  <target name="build-devtime" depends="build">
-    <!-- -->
+  <target name="build-devtime"  depends="build">
+    <!-- Set up individual symlinks from ${builddir} to ${srcdir} for all files in ${srcdir} -->
+    <foreach param="fileName" absparam="fullPath" target="doBuildDevSymlink">
+      <fileset dir="${srcdir}">
+        <include name="**/*.php"/>
+      </fileset>
+    </foreach>
+  </target>
+
+<!--
+    Replace given ${builddir} file with a link to the ${srcdir} file
+-->
+  <target name="doBuildDevSymlink">
+    <delete file="${builddir.classPerFile}/${fileName}"/>
+    <symlink target="${fullPath}" link="${builddir.classPerFile}/${fileName}"/>
   </target>
 </project>
