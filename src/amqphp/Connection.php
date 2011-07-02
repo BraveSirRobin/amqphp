@@ -208,6 +208,19 @@ class Connection
         $this->setConnectionParams($params);
         $this->initSocket();
         $this->sock->connect();
+
+        if ($this->sock->isReusedPSock()) {
+            // Assume that a re-used persistent socket has already gone through the handshake procedure.
+            $this->connected = true;
+            /**
+             * Note that the setup code initialises the following:
+             *  $this->capabilities
+             *  $this->chanMax
+             *  $this->frameMax
+             * TODO: Set up a framework to persist and reload these settings.
+             */
+            return;
+        }
         if (! $this->write(PROTOCOL_HEADER)) {
             throw new \Exception("Connection initialisation failed (1)", 9873);
         }

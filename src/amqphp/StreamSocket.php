@@ -24,7 +24,12 @@ use amqphp\protocol;
 use amqphp\wire;
 
 
-
+/**
+ * TODO:  Investigate persistent  streams  in different  environments.
+ * Note  that   connecting  to  the   same  broker  twice   fails  for
+ * PConnections - you  end up trying to reconnect  the same connection
+ * and triggering errors.
+ */
 class StreamSocket
 {
     const READ_SELECT = 1;
@@ -42,6 +47,7 @@ class StreamSocket
     private $connected;
     private $interrupt = false;
     private $flags;
+    private $isReusedPSock = false;
 
     function __construct ($params, $flags) {
         $this->url = $params['url'];
@@ -50,26 +56,51 @@ class StreamSocket
         $this->id = ++self::$Counter;
     }
 
+    /**
+     * Connect  to  the  given  URL  with the  given  flags.   If  the
+     * connection is  persistent, check  that the stream  socket isn't
+     * shared between this and another StreamSocket object
+     * @throws \Exception
+     */
     function connect () {
         $context = stream_context_create($this->context);
         $flags = STREAM_CLIENT_CONNECT;
         foreach ($this->flags as $f) {
-            printf("Set flag %s\n", $f);
             $flags |= constant($f);
         }
-        printf("Final flags: %d\n", $flags);
+
         $this->sock = stream_socket_client($this->url, $errno, $errstr, 
                                            ini_get("default_socket_timeout"), 
                                            $flags, $context);
         if (! $this->sock) {
-            throw new \Exception("Failed to connect stream socket {$this->url}, ($errno, $errstr)", 7568);
+            throw new \Exception("Failed to connect stream socket {$this->url}, ($errno, $errstr): flags $flags", 7568);
+        } else if (($flags & STREAM_CLIENT_PERSISTENT) && ftell($this->sock) > 0) {
+            $this->isReusedPSock = true;
+            foreach (self::$All as $sock) {
+                if ($sock !== $this && $sock->url == $this->url) {
+                    // TODO: Investigate whether non-persistent streams can be excluded and therefore allowed.
+                    $this->sock = null;
+                    throw new \Exception(sprintf("Stream socket connection created a new wrapper object for " .
+                                                 "an existing persistent connection on URL %s", $this->url), 8164);
+                }
+            }
         }
-        $this->connected = false;
+        $this->connected = true;
         self::$All[] = $this;
     }
 
+    /**
+     * Use tell to figure out if  the socket has been newly created or
+     * if it's a persistent socket which has been re-used.
+     */
+    function isReusedPSock () {
+        return $this->isReusedPSock;
+    }
 
 
+    /**
+     * A wrapper for the stream_socket function.
+     */
     function select ($tvSec, $tvUsec = 0, $rw = self::READ_SELECT) {
         $read = $write = $ex = null;
         if ($rw & self::READ_SELECT) {

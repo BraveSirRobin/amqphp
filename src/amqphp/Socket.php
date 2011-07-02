@@ -62,6 +62,16 @@ class Socket
         self::$All[] = $this;
     }
 
+
+    /**
+     * Used   only    for   compatibility   with    the   StreamSocket
+     * implementation: persistent connections  aren't supported in the
+     * sockets extension.
+     */
+    function isReusedPSock () {
+        return false;
+    }
+
     /**
      * Puts  the local  socket  in to  a  select loop  with the  given
      * timeout and returns the result
