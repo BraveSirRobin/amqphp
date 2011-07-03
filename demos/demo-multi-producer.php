@@ -84,8 +84,8 @@ for ($i = 0; $i < 500; $i++) {
 
 
 foreach ($cons as $stuff) {
-    $stuff[1]->shutdown();
-    $stuff[0]->shutdown();
+    $stuff[1]->shutdown(); // Shut down channel only.
+    //$stuff[0]->shutdown();
 }
 
-printf("Test complete, published %d messages\n", $n);
+printf("<pre>Test complete, published %d messages</pre>", $n);
