@@ -72,6 +72,11 @@ class StreamSocket
         $this->sock = stream_socket_client($this->url, $errno, $errstr, 
                                            ini_get("default_socket_timeout"), 
                                            $flags, $context);
+
+        if ($flags & STREAM_CLIENT_PERSISTENT) {
+            echo "<pre>Persistent connection initialised (" . ftell($this->sock) . ")</pre>";
+        }
+
         if (! $this->sock) {
             throw new \Exception("Failed to connect stream socket {$this->url}, ($errno, $errstr): flags $flags", 7568);
         } else if (($flags & STREAM_CLIENT_PERSISTENT) && ftell($this->sock) > 0) {

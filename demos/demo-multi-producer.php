@@ -12,7 +12,7 @@ $Q = 'most-basic';
 
 // Basic RabbitMQ connection settings
 $conConfigs = array();
-
+/*
 $conConfigs[] = array(
     'username' => 'testing',
     'userpass' => 'letmein',
@@ -25,15 +25,14 @@ $conConfigs[] = array(
     'vhost' => 'robin',
     'consumerName' => 'C2',
     'socketParams' => array('host' => 'rabbit2', 'port' => 5672));
+*/
 
 
-/*
 $conConfigs[] = array(
     'username' => 'testing',
     'userpass' => 'letmein',
     'vhost' => 'robin',
     'consumerName' => 'C1',
-    'heartbeat' => 5,
     'socketImpl' => '\amqphp\StreamSocket',
     'socketParams' => array('url' => 'tcp://rabbit1:5672'),
     'socketFlags' => array('STREAM_CLIENT_PERSISTENT'));
@@ -43,12 +42,11 @@ $conConfigs[] = array(
     'userpass' => 'letmein',
     'vhost' => 'robin',
     'consumerName' => 'C2',
-    'heartbeat' => 5,
     'socketImpl' => '\amqphp\StreamSocket',
     'socketParams' => array('url' => 'tcp://rabbit2:5672'),
     'socketFlags' => array('STREAM_CLIENT_PERSISTENT'));
 
-*/
+
 
 
 $publishParams = array(
@@ -62,7 +60,7 @@ $publishParams = array(
 
 $cons = array();
 foreach ($conConfigs as $conf) {
-    $conn = new amqp\Connection($conf);
+    $conn = new amqp\PConnection($conf);
     $conn->connect();
     $chan = $conn->getChannel();
     //initialiseDemo($chan);

@@ -84,7 +84,7 @@ class Connection
     //'blockTmSecs', 'blockTmMillis');
 
     /** Connection params */
-    private $sock; // Socket wrapper object
+    protected $sock; // Socket wrapper object
     private $socketImpl = '\amqphp\Socket'; // Socket impl class name
     private $protoImpl = 'v0_9_1'; // Protocol implementation namespace (generated code)
     private $protoLoader; // Closeure, set up in getProtocolLoader()
@@ -112,7 +112,7 @@ class Connection
     private $incompleteMethods = array(); // List of partial messages, Format: array(<wire\Method>)
     private $readSrc = null; // wire\Reader, used between reads when partial frames are read from the wire
 
-    private $connected = false; // Flag flipped after protcol connection setup is complete
+    protected $connected = false; // Flag flipped after protcol connection setup is complete
 
     private $slHelper;
 
@@ -199,28 +199,31 @@ class Connection
     /**
      * If not already  connected, connect to the target  broker and do
      * Amqp connection setup
+     * @throws \Exception
      */
-    function connect (array $params = array()) {
+    function connect () {
         if ($this->connected) {
             trigger_error("Connection is connected already", E_USER_WARNING);
             return;
         }
-        $this->setConnectionParams($params);
+        // Backward compat: if connection params are passed here, deal with them and emit a deprecated warning.
+        if (($args = func_get_args()) && is_array($args[0])) {
+            trigger_error("Setting connection parameters via. the connect method is deprecated, please specify " .
+                          "these parameters in the Connection class constructor instead.", E_USER_DEPRECATED);
+            $this->setConnectionParams($args[0]);
+        }
         $this->initSocket();
         $this->sock->connect();
+        $this->doConnectionStartup();
+    }
 
-        if ($this->sock->isReusedPSock()) {
-            // Assume that a re-used persistent socket has already gone through the handshake procedure.
-            $this->connected = true;
-            /**
-             * Note that the setup code initialises the following:
-             *  $this->capabilities
-             *  $this->chanMax
-             *  $this->frameMax
-             * TODO: Set up a framework to persist and reload these settings.
-             */
-            return;
-        }
+
+
+    /**
+     * Helper: perform the protocol startup procedure.
+     * @throws \Exception
+     */
+    protected function doConnectionStartup () {
         if (! $this->write(PROTOCOL_HEADER)) {
             throw new \Exception("Connection initialisation failed (1)", 9873);
         }
@@ -293,6 +296,9 @@ class Connection
         }
         $this->connected = true;
     }
+
+
+
 
     /**
      * Helper:  return   the  client  properties   parameter  used  in

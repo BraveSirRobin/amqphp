@@ -80,8 +80,8 @@ namespace ${namespace};</echo>
               <regexp pattern="^[\s]*namespace.*$" replace="" modifiers="m"/>
             </replaceregexp>
 
-            <stripphpcomments />
-            <stripwhitespace />
+            <!--<stripphpcomments />
+            <stripwhitespace />-->
 
             <replaceregexp>
               <regexp pattern="&lt;\?php" replace=""/>
@@ -125,8 +125,8 @@ Prepare the NSPF and CPF source trees.
     <!-- Copy over cpf package files -->
     <copy todir="${builddir.classPerFile}" haltonerror="true">
       <filterchain>
-        <stripphpcomments />
-        <stripwhitespace />
+        <!--<stripphpcomments />
+        <stripwhitespace />-->
       </filterchain>
 
       <fileset refid="BUILD_PHP_FILES"/>

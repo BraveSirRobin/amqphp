@@ -64,7 +64,7 @@ $conConfigs[] = array(
     'consumerName' => 'C2',
     'heartbeat' => 5,
     'socketImpl' => '\amqphp\StreamSocket',
-    'socketParams' => array('url' => 'tcp://rabbit1:5672'));
+    'socketParams' => array('url' => 'tcp://rabbit2:5672'));
 
 
 
@@ -104,7 +104,7 @@ foreach ($conConfigs as $i => $conf) {
 
 
 
-    if (0) {
+    if (1) {
     } else if (0) {
         list($uSecs, $secs) = explode(' ', microtime());
         $uSecs = bcmul($uSecs, '1000000');
@@ -113,7 +113,7 @@ foreach ($conConfigs as $i => $conf) {
                              bcadd($uSecs, '500000'));
     } else if (0) {
         $conn->setSelectMode(amqp\SELECT_TIMEOUT_REL, 1, 500000);
-    } else if ($i == 1) {
+    } else if (0) {
         echo "Second connection has callback exit function\n";
         $conn->setSelectMode(amqp\SELECT_CALLBACK,
                              function () {
