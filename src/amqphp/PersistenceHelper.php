@@ -28,41 +28,13 @@ namespace amqphp;
  */
 interface PersistenceHelper
 {
-    /**
-     * Set the processID of the persistent connection, usually use the
-     * result of getmypid()
-     *  @return void
-     */
-    function setProcessId ($pid);
+    function getData ();
 
-    /**
-     * Stored a named value in the data store
-     * @return void
-     */
-    function setDataItem ($key, $value);
+    function setData ($data);
 
-    /**
-     * Return a named  value from the data store.
-     * @return mixed
-     */
-    function getDataItem ($key);
-
-    /**
-     * Return true if the given data value exists in the data store.
-     * @return boolean
-     */
-    function hasDataItem ($key);
-
-    /**
-     * Flush  all data  to the  data  store, usually  used during  the
-     * p-connection sleep procedure.
-     * @return boolean
-     */
     function save ();
 
-    /**
-     * Load all data from the persistent store.
-     * @return boolean
-     */
     function load ();
+
+    function destroy ();
 }

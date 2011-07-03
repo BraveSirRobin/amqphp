@@ -61,6 +61,7 @@ $publishParams = array(
 $cons = array();
 foreach ($conConfigs as $conf) {
     $conn = new amqp\PConnection($conf);
+    $conn->setPersistenceHelper(new \amqphp\APCPersistenceHelper);
     $conn->connect();
     $chan = $conn->getChannel();
     //initialiseDemo($chan);
@@ -85,6 +86,7 @@ for ($i = 0; $i < 500; $i++) {
 
 foreach ($cons as $stuff) {
     $stuff[1]->shutdown(); // Shut down channel only.
+    $stuff[0]->sleep();
     //$stuff[0]->shutdown();
 }
 

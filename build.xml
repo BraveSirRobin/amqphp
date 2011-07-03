@@ -150,6 +150,15 @@ Prepare the NSPF and CPF source trees.
     </foreach>
   </target>
 
+<!-- TODO: Cut'n'paste mess! -->
+  <target name="build-devtime-only">
+    <!-- Set up individual symlinks from ${builddir} to ${srcdir} for all files in ${srcdir} -->
+    <foreach param="fileName" absparam="fullPath" target="doBuildDevSymlink">
+      <fileset dir="${srcdir}">
+        <include name="**/*.php"/>
+      </fileset>
+    </foreach>
+  </target>
 <!--
     Replace given ${builddir} file with a link to the ${srcdir} file
 -->

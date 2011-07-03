@@ -32,6 +32,39 @@ class PConnection extends Connection
 {
 
     /**
+     * At sleep time the connection will only persist connection-level
+     * properties, channels will not be touched.
+     */
+    const SLEEP_MODE_NONE = 1;
+
+    /**
+     * At sleep time, the connection will set the connection will call
+     * channel.flow on  all open  channels, meaning that  the channels
+     * remain  open  between  requests.   At wakeup  time,  previously
+     * opened  channels  will  be  re-created as  Channel  connections
+     * automatically.
+     */
+    const SLEEP_MODE_ALL = 2;
+
+
+    /**
+     * List of object fields that are persisted in both modes.
+     */
+    private static $BasicProps = array('capabilities', 'chanMax', 'frameMax');
+
+    private $sleepMode = self::SLEEP_MODE_NONE;
+
+    /**
+     * An instance of PersistenceHelper.
+     */
+    private $pHelper;
+
+    /**
+     * Flag to track whether the wakeup process has been triggered
+     */
+    private $wakeupFlag = false;
+
+    /**
      * Check that the given parameters make sense, throw exceptions if
      * an  illegal param  is found.   Delegate to  parent  to complete
      * object setup.
@@ -55,6 +88,13 @@ class PConnection extends Connection
         parent::__construct($params);
     }
 
+
+    /**
+     * Sets the local data persistence helper.
+     */
+    function setPersistenceHelper (PersistenceHelper $h) {
+        $this->pHelper = $h;
+    }
 
 
     /**
@@ -88,10 +128,69 @@ class PConnection extends Connection
              *  $this->frameMax
              * TODO: Set up a framework to persist and reload these settings.
              */
-            echo "<pre>Re-use connection</pre>";
-            return;
+            echo "<pre>Re-use PConnection</pre>";
+            $this->wakeupFlag = true;
+            return ($this->sleepMode == self::SLEEP_MODE_NONE)
+                ? $this->wakeupModeNone()
+                : $this->wakeupModeAll();
+
+        } else {
+            echo "<pre>Create new PConnection</pre> ";
+            $this->doConnectionStartup();
         }
-        echo "<pre>Create new connection</pre> ";
-        $this->doConnectionStartup();
+    }
+
+
+
+    function setSleepMode ($m) {
+        $this->sleepMode = $m;
+    }
+
+    /**
+     * Run the  sleep process.  This  must be called  at the end  of a
+     * request to put the connection in to sleep mode
+     */
+    function sleep () {
+        return ($this->sleepMode == self::SLEEP_MODE_NONE)
+            ? $this->sleepModeNone()
+            : $this->sleepModeAll();
+    }
+
+    /**
+     * The wakeup process for SLEEP_MODE_NONE
+     */
+    private function wakeupModeNone () {
+        if (! $this->pHelper->load()) {
+            trigger_error('Persistence helper failed to reload data', E_USER_WARNING);
+        }
+        $data = $this->pHelper->getData();
+        foreach (self::$BasicProps as $k) {
+            $this->$k = $data[$k];
+            printf("\nPConnection: Wake up none with param %s = %s\n", $k, $this->$k);
+        }
+    }
+
+    private function wakeupModeAll () {
+        trigger_error("All mode persistence not implemented", E_USER_ERROR);
+    }
+
+    /**
+     * The sleep process for SLEEP_MODE_NONE
+     */
+    private function sleepModeNone () {
+        if (! $this->wakeupFlag) {
+            $data = array();
+            foreach (self::$BasicProps as $k) {
+                $data[$k] = $this->$k;
+            }
+            $this->pHelper->setData($data);
+            $this->pHelper->save();
+        } else {
+            printf("<pre>PConnection: Sleep none (2)\n</pre>");
+        }
+    }
+
+    private function sleepModeAll () {
+        trigger_error("All mode persistence not implemented", E_USER_ERROR);
     }
 }

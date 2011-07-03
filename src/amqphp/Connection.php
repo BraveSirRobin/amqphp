@@ -87,14 +87,14 @@ class Connection
     protected $sock; // Socket wrapper object
     private $socketImpl = '\amqphp\Socket'; // Socket impl class name
     private $protoImpl = 'v0_9_1'; // Protocol implementation namespace (generated code)
-    private $protoLoader; // Closeure, set up in getProtocolLoader()
+    private $protoLoader; // Closure, set up in getProtocolLoader()
     private $socketParams = array('host' => 'localhost', 'port' => 5672); // Construct params for $socketImpl
     private $socketFlags;
     private $username;
     private $userpass;
     private $vhost;
-    private $frameMax = 65536; // Negotated during setup.
-    private $chanMax = 50; // Negotated during setup.
+    protected $frameMax = 65536; // Negotated during setup.
+    protected $chanMax = 50; // Negotated during setup.
     private $heartbeat = 0; // Negotated during setup.
     private $signalDispatch = true;
 
@@ -188,7 +188,7 @@ class Connection
     }
 
 
-    private function initSocket () {
+    protected function initSocket () {
         if (! isset($this->socketImpl)) {
             throw new \Exception("No socket implementation specified", 7545);
         }

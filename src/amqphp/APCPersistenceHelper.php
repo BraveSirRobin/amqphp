@@ -26,41 +26,33 @@ namespace amqphp;
  */
 class APCPersistenceHelper implements PersistenceHelper
 {
-    private $pid;
+    private $data;
 
-    private $data = array();
-
-    function setProcessId ($pid) {
-        $this->pid = $pid;
+    function getData () {
+        return $this->data;
     }
 
-    function setDataItem ($key, $value) {
-        $this->data[$key] = $value;
+    function setData ($data) {
+        $this->data = $data;
     }
 
-    function getDataItem ($key) {
-        return array_key_exists($key, $this->data)
-            ? $this->key[$data]
-            : null;
-    }
-
-    function hasDataItem ($key) {
-        return array_key_exists($key, $this->data);
+    private function getKey () {
+        return 'apc.amqphp.' . getmypid();
     }
 
     function save () {
-        if (is_null($this->pid)) {
-            throw new \Exception("Cannot save persistent connection metadata - processID is not set.", 8265);
-        }
-        return apc_store($this->pid, $this->data);
+        $k = $this->getKey();
+        printf("<pre>APC save with key %s\n%s\n</pre>", $k, print_r($this->data, true));
+        return apc_store($k, $this->data);
     }
 
     function load () {
-        if (is_null($this->pid)) {
-            throw new \Exception("Cannot save persistent connection metadata - processID is not set.", 8265);
-        }
         $success = false;
-        $this->data = apc_fetch($this->pid, $success);
+        $this->data = apc_fetch($this->getKey(), $success);
         return $success;
+    }
+
+    function destroy () {
+        return apc_delete(getmypid());
     }
 }
