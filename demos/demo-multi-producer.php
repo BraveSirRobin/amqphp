@@ -61,7 +61,7 @@ $publishParams = array(
 $cons = array();
 foreach ($conConfigs as $conf) {
     $conn = new amqp\PConnection($conf);
-    $conn->setPersistenceHelperImpl('\\amqphp\\APCPersistenceHelper');
+    $conn->setPersistenceHelperImpl('\\amqphp\\FilePersistenceHelper');
     $conn->connect();
     $chan = $conn->getChannel();
     //initialiseDemo($chan);

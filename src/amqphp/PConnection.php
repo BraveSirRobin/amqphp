@@ -35,7 +35,7 @@ class PConnection extends Connection
      * At sleep time the connection will only persist connection-level
      * properties, channels will not be touched.
      */
-    const SLEEP_MODE_NONE = 1;
+    const PERSIST_CONNECTION = 1;
 
     /**
      * At sleep time, the connection will set the connection will call
@@ -44,7 +44,7 @@ class PConnection extends Connection
      * opened  channels  will  be  re-created as  Channel  connections
      * automatically.
      */
-    const SLEEP_MODE_ALL = 2;
+    const PERSIST_CHANNELS = 2;
 
 
     /**
@@ -52,7 +52,7 @@ class PConnection extends Connection
      */
     private static $BasicProps = array('capabilities', 'chanMax', 'frameMax');
 
-    private $sleepMode = self::SLEEP_MODE_NONE;
+    private $sleepMode = self::PERSIST_CONNECTION;
 
     /**
      * An instance of PersistenceHelper.
@@ -142,7 +142,7 @@ class PConnection extends Connection
             // Assume that a re-used persistent socket has already gone through the handshake procedure.
             $this->connected = true;
             $this->wakeupFlag = true;
-            return ($this->sleepMode == self::SLEEP_MODE_NONE)
+            return ($this->sleepMode == self::PERSIST_CONNECTION)
                 ? $this->wakeupModeNone()
                 : $this->wakeupModeAll();
 
@@ -162,13 +162,13 @@ class PConnection extends Connection
      * request to put the connection in to sleep mode
      */
     function sleep () {
-        return ($this->sleepMode == self::SLEEP_MODE_NONE)
+        return ($this->sleepMode == self::PERSIST_CONNECTION)
             ? $this->sleepModeNone()
             : $this->sleepModeAll();
     }
 
     /**
-     * The wakeup process for SLEEP_MODE_NONE
+     * The wakeup process for PERSIST_CONNECTION
      */
     private function wakeupModeNone () {
         $ph = $this->getPersistenceHelper();
@@ -189,7 +189,7 @@ class PConnection extends Connection
     }
 
     /**
-     * The sleep process for SLEEP_MODE_NONE
+     * The sleep process for PERSIST_CONNECTION
      */
     private function sleepModeNone () {
         if (! $this->wakeupFlag) {
