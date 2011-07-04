@@ -1,3 +1,4 @@
+<?php
 /**
  *
  * Copyright (C) 2010, 2011  Robin Harvey (harvey.robin@gmail.com)
@@ -61,15 +62,13 @@ class FilePersistenceHelper implements PersistenceHelper
 
     /** @throws \Exception */
     function save () {
-        $k = $this->getKey();
         return file_put_contents($this->getTmpFile(), serialize($this->data));
     }
 
     /** @throws \Exception */
     function load () {
-        $success = false;
-        $this->data = file_get_contents($this->getTmpFile(), $success);
-        return $success;
+        $this->data = unserialize(file_get_contents($this->getTmpFile()));
+        return ($this->data !== false);
     }
 
     /** @throws \Exception */
