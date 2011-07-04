@@ -40,6 +40,8 @@ class Socket
     /** Assign each socket an ID */
     private static $Counter = 0;
 
+    private $host;
+    private $port;
 
     private $sock;
     private $id;
@@ -50,6 +52,11 @@ class Socket
         $this->host = $params['host'];
         $this->port = $params['port'];
         $this->id = ++self::$Counter;
+    }
+
+    /** Return a cache key for this socket's address */
+    function getCK () {
+        return sprintf("%s:%s", $this->host, $this->port);
     }
 
     function connect () {

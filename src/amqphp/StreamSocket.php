@@ -56,6 +56,12 @@ class StreamSocket
         $this->id = ++self::$Counter;
     }
 
+    /** Return a cache key for this socket's address */
+    function getCK () {
+        // TODO: BUG: $this->flags is not necessarily what will be used for fopen
+        return sprintf("%s:%s", $this->url, implode('-', $this->flags));
+    }
+
     /**
      * Connect  to  the  given  URL  with the  given  flags.   If  the
      * connection is  persistent, check  that the stream  socket isn't
@@ -73,17 +79,15 @@ class StreamSocket
                                            ini_get("default_socket_timeout"), 
                                            $flags, $context);
 
-        if ($flags & STREAM_CLIENT_PERSISTENT) {
-            echo "<pre>Persistent connection initialised (" . ftell($this->sock) . ")</pre>";
-        }
-
         if (! $this->sock) {
             throw new \Exception("Failed to connect stream socket {$this->url}, ($errno, $errstr): flags $flags", 7568);
         } else if (($flags & STREAM_CLIENT_PERSISTENT) && ftell($this->sock) > 0) {
             $this->isReusedPSock = true;
             foreach (self::$All as $sock) {
-                if ($sock !== $this && $sock->url == $this->url) {
-                    // TODO: Investigate whether non-persistent streams can be excluded and therefore allowed.
+                if ($sock !== $this && $sock->getCK() == $this->getCK()) {
+                    /* TODO: Investigate whether mixing persistent and
+                     * non-persistent connections to  the same URL can
+                     * provoke errors. */
                     $this->sock = null;
                     throw new \Exception(sprintf("Stream socket connection created a new wrapper object for " .
                                                  "an existing persistent connection on URL %s", $this->url), 8164);

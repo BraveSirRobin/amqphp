@@ -27,6 +27,15 @@ namespace amqphp;
 class APCPersistenceHelper implements PersistenceHelper
 {
     private $data;
+    private $uk;
+
+    /** @throws \Exception */
+    function setUrlKey ($k) {
+        if (is_null($k)) {
+            throw new \Exception("Url key cannot be null", 8260);
+        }
+        $this->uk = $k;
+    }
 
     function getData () {
         return $this->data;
@@ -37,22 +46,27 @@ class APCPersistenceHelper implements PersistenceHelper
     }
 
     private function getKey () {
-        return 'apc.amqphp.' . getmypid();
+        if (is_null($this->uk)) {
+            throw new \Exception("Url key cannot be null", 8261);
+        }
+        return sprintf('apc.amqphp.%s.%s', getmypid(), $this->uk);
     }
 
+    /** @throws \Exception */
     function save () {
         $k = $this->getKey();
-        printf("<pre>APC save with key %s\n%s\n</pre>", $k, print_r($this->data, true));
         return apc_store($k, $this->data);
     }
 
+    /** @throws \Exception */
     function load () {
         $success = false;
         $this->data = apc_fetch($this->getKey(), $success);
         return $success;
     }
 
+    /** @throws \Exception */
     function destroy () {
-        return apc_delete(getmypid());
+        return apc_delete($this->getKey());
     }
 }

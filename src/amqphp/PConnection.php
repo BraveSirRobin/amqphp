@@ -60,6 +60,11 @@ class PConnection extends Connection
     private $pHelper;
 
     /**
+     * The PersistenceHelper implementation class.
+     */
+    private $pHelperImpl;
+
+    /**
      * Flag to track whether the wakeup process has been triggered
      */
     private $wakeupFlag = false;
@@ -90,12 +95,27 @@ class PConnection extends Connection
 
 
     /**
-     * Sets the local data persistence helper.
+     * Sets the local data persistence helper implementation class.
      */
-    function setPersistenceHelper (PersistenceHelper $h) {
-        $this->pHelper = $h;
+    function setPersistenceHelperImpl ($clazz) {
+        $this->pHelperImpl = $clazz;
     }
 
+
+    private function getPersistenceHelper () {
+        if (! $this->connected) {
+            throw new \Exception("PConnection persistence helper cannot be created before the connection is open", 3789);
+        }
+        if (is_null($this->pHelper)) {
+            $c = $this->pHelperImpl;
+            $this->pHelper = new $c;
+            if (! ($this->pHelper instanceof PersistenceHelper)) {
+                throw new \Exception("PConnection persistence helper implementation is invalid", 26934);
+            }
+            $this->pHelper->setUrlKey($this->sock->getCK());
+        }
+        return $this->pHelper;
+    }
 
     /**
      * Over-ride the  connect method  so that we  can avoid  the setup
@@ -121,21 +141,12 @@ class PConnection extends Connection
         if ($this->sock->isReusedPSock()) {
             // Assume that a re-used persistent socket has already gone through the handshake procedure.
             $this->connected = true;
-            /**
-             * Note that the setup code initialises the following:
-             *  $this->capabilities
-             *  $this->chanMax
-             *  $this->frameMax
-             * TODO: Set up a framework to persist and reload these settings.
-             */
-            echo "<pre>Re-use PConnection</pre>";
             $this->wakeupFlag = true;
             return ($this->sleepMode == self::SLEEP_MODE_NONE)
                 ? $this->wakeupModeNone()
                 : $this->wakeupModeAll();
 
         } else {
-            echo "<pre>Create new PConnection</pre> ";
             $this->doConnectionStartup();
         }
     }
@@ -160,14 +171,17 @@ class PConnection extends Connection
      * The wakeup process for SLEEP_MODE_NONE
      */
     private function wakeupModeNone () {
-        if (! $this->pHelper->load()) {
+        $ph = $this->getPersistenceHelper();
+        if (! $ph->load()) {
             trigger_error('Persistence helper failed to reload data', E_USER_WARNING);
         }
-        $data = $this->pHelper->getData();
+        $data = $ph->getData();
+        echo "<pre>Restore From cache:\n";
         foreach (self::$BasicProps as $k) {
             $this->$k = $data[$k];
-            printf("\nPConnection: Wake up none with param %s = %s\n", $k, $this->$k);
+            echo "$k = {$this->$k}\n";
         }
+        echo "</pre>";
     }
 
     private function wakeupModeAll () {
@@ -180,13 +194,15 @@ class PConnection extends Connection
     private function sleepModeNone () {
         if (! $this->wakeupFlag) {
             $data = array();
+            echo "<pre>Persist basic connection data:\n";
             foreach (self::$BasicProps as $k) {
                 $data[$k] = $this->$k;
+                echo "$k = {$this->$k}\n";
             }
-            $this->pHelper->setData($data);
-            $this->pHelper->save();
-        } else {
-            printf("<pre>PConnection: Sleep none (2)\n</pre>");
+            echo "</pre>";
+            $ph = $this->getPersistenceHelper();
+            $ph->setData($data);
+            $ph->save();
         }
     }
 

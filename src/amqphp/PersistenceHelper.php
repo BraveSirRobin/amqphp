@@ -28,6 +28,10 @@ namespace amqphp;
  */
 interface PersistenceHelper
 {
+
+    /** Passed a url-specific identifier for this helper. */
+    function setUrlKey ($k);
+
     function getData ();
 
     function setData ($data);
