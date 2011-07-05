@@ -1,0 +1,8 @@
+<?php
+namespace amqphp\protocol\v0_9_1;
+
+class DomainFactory extends \amqphp\protocol\abstrakt\DomainFactory
+{
+    
+    protected static $Cache = array('class-id' => '\\amqphp\\protocol\\v0_9_1\\ClassIdDomain', 'consumer-tag' => '\\amqphp\\protocol\\v0_9_1\\ConsumerTagDomain', 'delivery-tag' => '\\amqphp\\protocol\\v0_9_1\\DeliveryTagDomain', 'exchange-name' => '\\amqphp\\protocol\\v0_9_1\\ExchangeNameDomain', 'method-id' => '\\amqphp\\protocol\\v0_9_1\\MethodIdDomain', 'no-ack' => '\\amqphp\\protocol\\v0_9_1\\NoAckDomain', 'no-local' => '\\amqphp\\protocol\\v0_9_1\\NoLocalDomain', 'no-wait' => '\\amqphp\\protocol\\v0_9_1\\NoWaitDomain', 'path' => '\\amqphp\\protocol\\v0_9_1\\PathDomain', 'peer-properties' => '\\amqphp\\protocol\\v0_9_1\\PeerPropertiesDomain', 'queue-name' => '\\amqphp\\protocol\\v0_9_1\\QueueNameDomain', 'redelivered' => '\\amqphp\\protocol\\v0_9_1\\RedeliveredDomain', 'message-count' => '\\amqphp\\protocol\\v0_9_1\\MessageCountDomain', 'reply-code' => '\\amqphp\\protocol\\v0_9_1\\ReplyCodeDomain', 'reply-text' => '\\amqphp\\protocol\\v0_9_1\\ReplyTextDomain', 'bit' => '\\amqphp\\protocol\\v0_9_1\\BitDomain', 'octet' => '\\amqphp\\protocol\\v0_9_1\\OctetDomain', 'short' => '\\amqphp\\protocol\\v0_9_1\\ShortDomain', 'long' => '\\amqphp\\protocol\\v0_9_1\\LongDomain', 'longlong' => '\\amqphp\\protocol\\v0_9_1\\LonglongDomain', 'shortstr' => '\\amqphp\\protocol\\v0_9_1\\ShortstrDomain', 'longstr' => '\\amqphp\\protocol\\v0_9_1\\LongstrDomain', 'timestamp' => '\\amqphp\\protocol\\v0_9_1\\TimestampDomain', 'table' => '\\amqphp\\protocol\\v0_9_1\\TableDomain');
+}
