@@ -166,4 +166,17 @@ Prepare the NSPF and CPF source trees.
     <delete file="${builddir.classPerFile}/${fileName}"/>
     <symlink target="${fullPath}" link="${builddir.classPerFile}/${fileName}"/>
   </target>
+
+
+
+<!--
+-->
+  <target name="deploy-web-demo">
+    <exec command="scp demos/main-view.html phpvm:/var/www" dir="${project.basedir}"/>
+    <exec command="scp demos/demo-pconnect.php phpvm:/var/www" dir="${project.basedir}"/>
+  </target>
+  <target name="deploy-web-libs">
+    <exec command="ssh phpvm rm -rf /var/www/amqphp" />
+    <exec command="scp -r build/cpf/amqphp phpvm:/var/www" dir="${project.basedir}"/>
+  </target>
 </project>

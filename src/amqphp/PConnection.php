@@ -209,4 +209,10 @@ class PConnection extends Connection
     private function sleepModeAll () {
         trigger_error("All mode persistence not implemented", E_USER_ERROR);
     }
+
+    function shutdown () {
+        parent::shutdown();
+        $ph = $this->getPersistenceHelper();
+        $ph->destroy();
+    }
 }
