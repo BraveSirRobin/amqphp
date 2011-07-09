@@ -27,6 +27,9 @@ use amqphp\wire;
 /**
  * This  class is  intended as  a helper  class to  make  dealing with
  * persistent connections easier.
+ *
+ * TODO: When a  fresh connection is opened, clear  any old cache that
+ * might be lying around before opening the connection.
  */
 class PConnection extends Connection
 {
@@ -50,7 +53,7 @@ class PConnection extends Connection
     /**
      * List of object fields that are persisted in both modes.
      */
-    private static $BasicProps = array('capabilities', 'chanMax', 'frameMax');
+    private static $BasicProps = array('capabilities', 'chanMax', 'frameMax', 'vhost');
 
     private $sleepMode = self::PERSIST_CONNECTION;
 
@@ -147,6 +150,7 @@ class PConnection extends Connection
                 : $this->wakeupModeAll();
 
         } else {
+            // TODO: (1)
             $this->doConnectionStartup();
         }
     }
@@ -178,6 +182,7 @@ class PConnection extends Connection
         $data = $ph->getData();
         echo "<pre>Restore From cache:\n";
         foreach (self::$BasicProps as $k) {
+            if ($this->vhost != 
             $this->$k = $data[$k];
             echo "$k = {$this->$k}\n";
         }

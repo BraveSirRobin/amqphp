@@ -48,18 +48,24 @@ class StreamSocket
     private $interrupt = false;
     private $flags;
     private $isReusedPSock = false;
+    private $vhost;
 
-    function __construct ($params, $flags) {
+    function __construct ($params, $flags, $vhost) {
         $this->url = $params['url'];
         $this->context = isset($params['context']) ? $params['context'] : array();
         $this->flags = $flags ? $flags : array();
         $this->id = ++self::$Counter;
+        $this->vhost = $vhost;
+    }
+
+    function getVHost () {
+        return $this->vhost;
     }
 
     /** Return a cache key for this socket's address */
     function getCK () {
         // TODO: BUG: $this->flags is not necessarily what will be used for fopen
-        return sprintf("%s:%s", $this->url, implode('-', $this->flags));
+        return sprintf("%s:%s:%s", $this->url, implode('_', $this->flags), md5($this->vhost));
     }
 
     /**

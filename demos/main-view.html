@@ -15,11 +15,14 @@
         font-size: 2em;
       }
       label {
-        display:block;
-        clear:both;
+        display: block;
+        clear: both;
       }
       .sent .send .received .receive {
         vertical-align: top;
+      }
+      .point {
+        clear: right;
       }
     </style>
   </head>
@@ -35,6 +38,21 @@
       </ul>
     </div>
     <?php } ?><!-- End messages -->
+
+
+
+    <h2>Connection Data</h2>
+    <div id="conn-data">
+      <span class="point">PHP process ID: <strong><?php echo getmypid(); ?></strong></span>
+
+
+      <?php foreach ($this->demo->getConnections() as $conn) { ?>
+      <div class="conn-info">
+        <h3>Connection <?php echo $conn->getSocketCK() ?></h3>
+        <span class="point">Amqp VHost: <strong><?php $conn->getVHost() ?></strong></span>
+      </div>
+      <?php } ?>
+    </div>
 
 
 

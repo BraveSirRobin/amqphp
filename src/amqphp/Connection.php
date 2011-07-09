@@ -67,7 +67,7 @@ class Connection
     const SELECT_INFINITE = SELECT_INFINITE;
 
     /** Default client-properties field used during connection setup */
-    private static $ClientProperties = array(
+    public static $ClientProperties = array(
         'product' => ' BraveSirRobin/amqphp',
         'version' => '0.9.0',
         'platform' => 'PHP 5.3 +',
@@ -92,7 +92,7 @@ class Connection
     private $socketFlags;
     private $username;
     private $userpass;
-    private $vhost;
+    protected $vhost;
     protected $frameMax = 65536; // Negotated during setup.
     protected $chanMax = 50; // Negotated during setup.
     private $heartbeat = 0; // Negotated during setup.
@@ -192,7 +192,7 @@ class Connection
         if (! isset($this->socketImpl)) {
             throw new \Exception("No socket implementation specified", 7545);
         }
-        $this->sock = new $this->socketImpl($this->socketParams, $this->socketFlags);
+        $this->sock = new $this->socketImpl($this->socketParams, $this->socketFlags, $this->vhost);
     }
 
 
@@ -354,6 +354,11 @@ class Connection
 
     function getSocketId () {
         return $this->sock->getId();
+    }
+
+    /** CK = Cache Key */
+    function getSocketCK () {
+        return $this->sock->getCK();
     }
 
     private function initNewChannel () {

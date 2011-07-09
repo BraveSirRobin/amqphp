@@ -75,12 +75,12 @@ class Demo
     }
 
     function startConnections () {
-        foreach ($conConfigs as $conf) {
+        foreach ($this->conConfs as $conf) {
             $conn = new amqp\PConnection($conf);
             $conn->setPersistenceHelperImpl('\\amqphp\\FilePersistenceHelper');
             $conn->connect();
             $chan = $conn->getChannel();
-            $basicP = $chan->basic('publish', $publishParams);
+            $basicP = $chan->basic('publish', $this->publishParams);
             $this->pCons[] = array($conn, $chan, $basicP);
         }
     }
@@ -98,6 +98,10 @@ class Demo
             $stuff[1]->shutdown();
             $stuff[0]->shutdown();
         }
+    }
+
+    function getConnections () {
+        return array_map(function ($mi) { return $mi[0]; }, $this->pCons);
     }
 }
 
@@ -117,8 +121,6 @@ $tasks = isset($_REQUEST['action']['tasks'])
     ? $_REQUEST['action']['tasks']
     : array();
 
-var_dump($_REQUEST);
-
 $view = new View;
 
 /** Set up the persistent connection demo helper */
@@ -129,7 +131,7 @@ foreach ($conConfigs as $cc) {
 
 
 /** Always connect */
-
+$d->startConnections();
 
 /** Perform the desired action. */
 foreach ($tasks as $task) {
@@ -147,7 +149,19 @@ foreach ($tasks as $task) {
     $view->messages[] = sprintf("Completed action %s", $task);
 }
 
+/** Render view */
+$view->demo = $d;
 $view->render();
+
+
+/** Trailer tasks. */
+if (in_array('disconnect', $tasks)) {
+    $d->shutdown();
+    error_log("Demo disconnect");
+} else {
+    $d->sleep();
+    error_log("Demo sleep");
+}
 
 die;
 //
@@ -159,13 +173,13 @@ function disconnectAction (View $v, Demo $d) {
 }
 
 function sendAction (View $v, Demo $d) {
-    $d->connect();
+
     $v->messages[] = "You're sendin!";
-    $d->sleep();
+
 }
 
 function receiveAction (View $v, Demo $d) {
-    $d->connect();
+
     $v->messages[] = "You're receivein!";
-    $d->sleep();
+
 }

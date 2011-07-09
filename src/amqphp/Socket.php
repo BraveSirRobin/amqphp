@@ -45,18 +45,25 @@ class Socket
 
     private $sock;
     private $id;
+    private $vhost;
     private $connected = false;
     private static $interrupt = false;
+    
 
-    function __construct ($params) {
+    function __construct ($params, $flags, $vhost) {
         $this->host = $params['host'];
         $this->port = $params['port'];
         $this->id = ++self::$Counter;
+        $this->vhost = $vhost;
+    }
+
+    function getVHost () {
+        return $this->vhost;
     }
 
     /** Return a cache key for this socket's address */
     function getCK () {
-        return sprintf("%s:%s", $this->host, $this->port);
+        return sprintf("%s:%s:%s", $this->host, $this->port, md5($this->vhost));
     }
 
     function connect () {
