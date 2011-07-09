@@ -64,9 +64,18 @@ class StreamSocket
 
     /** Return a cache key for this socket's address */
     function getCK () {
-        // TODO: BUG: $this->flags is not necessarily what will be used for fopen
-        return sprintf("%s:%s:%s", $this->url, implode('_', $this->flags), md5($this->vhost));
+        return md5(sprintf("%s:%s:%s", $this->url, $this->getFlags(), $this->vhost));
     }
+
+
+    private function getFlags () {
+        $flags = STREAM_CLIENT_CONNECT;
+        foreach ($this->flags as $f) {
+            $flags |= constant($f);
+        }
+        return $flags;
+    }
+
 
     /**
      * Connect  to  the  given  URL  with the  given  flags.   If  the
@@ -76,10 +85,7 @@ class StreamSocket
      */
     function connect () {
         $context = stream_context_create($this->context);
-        $flags = STREAM_CLIENT_CONNECT;
-        foreach ($this->flags as $f) {
-            $flags |= constant($f);
-        }
+        $flags = $this->getFlags();
 
         $this->sock = stream_socket_client($this->url, $errno, $errstr, 
                                            ini_get("default_socket_timeout"), 

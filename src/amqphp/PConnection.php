@@ -51,6 +51,19 @@ class PConnection extends Connection
 
 
     /**
+     * Connection has been started during connect() sequence
+     */
+    const SOCK_NEW = 1;
+
+    /**
+     * Connection has been re-used,  having been started by a previous
+     * request.
+     */
+    const SOCK_REUSED = 2;
+
+
+
+    /**
      * List of object fields that are persisted in both modes.
      */
     private static $BasicProps = array('capabilities', 'chanMax', 'frameMax', 'vhost');
@@ -71,6 +84,8 @@ class PConnection extends Connection
      * Flag to track whether the wakeup process has been triggered
      */
     private $wakeupFlag = false;
+
+
 
     /**
      * Check that the given parameters make sense, throw exceptions if
@@ -123,6 +138,7 @@ class PConnection extends Connection
     /**
      * Over-ride the  connect method  so that we  can avoid  the setup
      * procedure for re-used sockets.
+     * @override
      * @throws \Exception
      */
     function connect () {
@@ -150,11 +166,25 @@ class PConnection extends Connection
                 : $this->wakeupModeAll();
 
         } else {
-            // TODO: (1)
             $this->doConnectionStartup();
+            $ph = $this->getPersistenceHelper();
+            $ph->destroy();
         }
     }
 
+    /**
+     * Return the persistence  status of this connection, or  0 if not
+     * connected.
+     */
+    function getPersistenceStatus () {
+        if (! $this->connected) {
+            return 0;
+        } else if ($this->wakeupFlag) {
+            return self::SOCK_REUSED;
+        } else {
+            return self::SOCK_NEW;
+        }
+    }
 
 
     function setSleepMode ($m) {
@@ -177,16 +207,21 @@ class PConnection extends Connection
     private function wakeupModeNone () {
         $ph = $this->getPersistenceHelper();
         if (! $ph->load()) {
-            trigger_error('Persistence helper failed to reload data', E_USER_WARNING);
+            // Also destroy the TCP connection.
+            try {
+                $e = null;
+                $this->shutdown();
+            } catch (\Exception $e) { }
+            throw new \Exception('Failed to reload amqp connection cache during wakeup', 8543, $e);
         }
         $data = $ph->getData();
-        echo "<pre>Restore From cache:\n";
+
         foreach (self::$BasicProps as $k) {
-            if ($this->vhost != 
+            if ($k == 'vhost' && $data[$k] != $this->sock->getVHost()) {
+                throw new \Exception("Persisted connection woken up as different VHost", 9250);
+            }
             $this->$k = $data[$k];
-            echo "$k = {$this->$k}\n";
         }
-        echo "</pre>";
     }
 
     private function wakeupModeAll () {
@@ -199,12 +234,9 @@ class PConnection extends Connection
     private function sleepModeNone () {
         if (! $this->wakeupFlag) {
             $data = array();
-            echo "<pre>Persist basic connection data:\n";
             foreach (self::$BasicProps as $k) {
                 $data[$k] = $this->$k;
-                echo "$k = {$this->$k}\n";
             }
-            echo "</pre>";
             $ph = $this->getPersistenceHelper();
             $ph->setData($data);
             $ph->save();
@@ -216,8 +248,8 @@ class PConnection extends Connection
     }
 
     function shutdown () {
-        parent::shutdown();
         $ph = $this->getPersistenceHelper();
+        parent::shutdown();
         $ph->destroy();
     }
 }

@@ -21,8 +21,8 @@
       .sent .send .received .receive {
         vertical-align: top;
       }
-      .point {
-        clear: right;
+      ul.conn-props {
+        list-style: none;
       }
     </style>
   </head>
@@ -49,7 +49,26 @@
       <?php foreach ($this->demo->getConnections() as $conn) { ?>
       <div class="conn-info">
         <h3>Connection <?php echo $conn->getSocketCK() ?></h3>
-        <span class="point">Amqp VHost: <strong><?php $conn->getVHost() ?></strong></span>
+        <ul class="conn-props">
+          <li>Amqp VHost: <strong><?php echo $conn->getVHost() ?></strong></li>
+          <li>Connection presistence status: <strong><?php
+switch ($_tmp = $conn->getPersistenceStatus()) {
+case \amqphp\PConnection::SOCK_NEW:
+  echo "New Connection";
+break;
+case \amqphp\PConnection::SOCK_REUSED:
+  echo "Connection re-used";
+break;
+default:
+  echo "Unknown ($_tmp)";
+}
+              ?></strong></li>
+          <li>Channels: <?php echo count($conn->getChannels()) ?></li>
+          <li>Capabilities:<ul class="conn-caps"><?php
+foreach ($conn->capabilities as $k => $cb) {?>
+              <li><?php echo $k ?> = <?php echo $cb; ?></li>
+<?php } ?></ul></li>
+        </ul>
       </div>
       <?php } ?>
     </div>

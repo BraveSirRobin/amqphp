@@ -53,11 +53,11 @@ class FilePersistenceHelper implements PersistenceHelper
         $this->data = $data;
     }
 
-    private function getTmpFile () {
+    function getTmpFile () {
         if (is_null($this->uk)) {
             throw new \Exception("Url key cannot be null", 8261);
         }
-        return sprintf('%s%sapc.amqphp.%s.%s', $this->tmpDir, DIRECTORY_SEPARATOR, getmypid(), md5($this->uk));
+        return sprintf('%s%sapc.amqphp.%s.%s', $this->tmpDir, DIRECTORY_SEPARATOR, getmypid(), $this->uk);
     }
 
     /** @throws \Exception */
@@ -73,6 +73,6 @@ class FilePersistenceHelper implements PersistenceHelper
 
     /** @throws \Exception */
     function destroy () {
-        return unlink($this->getTmpFile());
+        return @unlink($this->getTmpFile());
     }
 }
