@@ -199,7 +199,7 @@ class Channel
                 $culprit = '(Unknown or unspecified)';
             }
             // Note: ignores the soft-error, hard-error distinction in the xml
-            $errCode = $pl('ProtoConsts'. 'Konstant', array($meth->getField('reply-code')));
+            $errCode = $pl('ProtoConsts', 'Konstant', array($meth->getField('reply-code')));
             $eb = '';
             foreach ($meth->getFields() as $k => $v) {
                 $eb .= sprintf("(%s=%s) ", $k, $v);
