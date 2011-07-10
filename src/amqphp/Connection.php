@@ -344,6 +344,10 @@ class Connection
         $this->signalDispatch = (boolean) $val;
     }
 
+    function getSignalDispatch () {
+        return $this->signalDispatch;
+    }
+
     function removeChannel (Channel $chan) {
         if (false !== ($k = array_search($chan, $this->chans))) {
             unset($this->chans[$k]);

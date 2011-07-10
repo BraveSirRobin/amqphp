@@ -169,12 +169,11 @@ class EventLoop
     }
 
     private function signal () {
-        if (true) {
-            /**
-             * TODO:  Signal,  then  check  that at  least  once  more
-             * Connection is connected.
-             */
-            pcntl_signal_dispatch();
+        foreach ($this->cons as $c) {
+            if ($c->getSignalDispatch()) {
+                pcntl_signal_dispatch();
+                return;
+            }
         }
     }
 }

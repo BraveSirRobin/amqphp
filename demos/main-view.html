@@ -12,7 +12,7 @@
         padding: 0.25em;
       }
       .bigger {
-        font-size: 2em;
+        font-size: 1.5em;
       }
       label {
         display: block;
@@ -81,23 +81,52 @@ foreach ($conn->capabilities as $k => $cb) {?>
           <td>
             <div id="received">
               <h3>Received</h3>
+
+              <?php if (isset($this->received) && count($this->received) > 0) { ?>
               <table class="listing">
                 <thead>
+                  <tr>
+                    <th>Message</th>
+                  </tr>
                 </thead>
                 <tbody>
+                  <?php foreach ($this->received as $r) { ?>
+                  <tr>
+                    <td><?php echo $r ?></td>
+                  </tr>
+                  <?php } ?>
                 </tbody>
               </table>
+              <?php } else { ?>
+                <strong>No messages were received</strong>
+              <?php } ?>
+
             </div>
           </td>
           <td>
             <div id="sent">
               <h3>Sent</h3>
+
+              <?php if (isset($this->sent) && count($this->sent) > 0) { ?>
               <table class="listing">
                 <thead>
+                  <tr>
+                    <th>Message</th>
+                  </tr>
                 </thead>
                 <tbody>
+                  <?php foreach ($this->sent as $m) { ?>
+                  <tr>
+                    <td><?php echo $m ?></td>
+                  </tr>
+                  <?php } ?>
+
                 </tbody>
               </table>
+              <?php } else { ?>
+                <strong>No messages were sent</strong>
+              <?php } ?>
+
             </div>
           </td>
         </tr>
@@ -112,8 +141,8 @@ foreach ($conn->capabilities as $k => $cb) {?>
       </span>
 
       <span class="right">
-        <label for="action-sendfirst">Process sends first <input type="radio" name="action[web-req-seq]" value="send_first" checked="checked"/></label>
-        <label for="action-receivefirst">Process receives first <input type="radio" name="action[web-req-seq]" value="receive_first" checked="checked"/></label>
+        <label for="action-sendfirst">Process sends first <input id="action-sendfirst" type="radio" name="action[web-req-seq]" value="send_first" checked="checked"/></label>
+        <label for="action-receivefirst">Process receives first <input id="action-receivefirst" type="radio" name="action[web-req-seq]" value="receive_first" checked="checked"/></label>
       </span>
       <input type="submit" value="Go.."/>
 
@@ -124,7 +153,9 @@ foreach ($conn->capabilities as $k => $cb) {?>
             <td>
               <div id="send">
                 <h3>Send Messages</h3>
-                <span class="bigger">Repeat this sequence of messages <input type="send[ntimes]" value="1"/> time(s)</span>
+                <span class="bigger">Repeat this sequence of messages <input type="send[ntimes]" value="1"/> time(s)
+                  <label for="send-chans-cycle">Cycle channels<input id="send-chans-cycle" type="radio" name="send[chans]" value="cycle" selected="selected"/></label>
+                  <label for="send-chans-each">Per channel<input id="send-chans-each" type="radio" name="send[chans]" value="each" selected="selected"/></label></span>
                 <hr/>
                 <textarea id="new-msg-1" name="send[messages][]"></textarea>
                 <button id="new-msg-btn">Another</button>
@@ -133,8 +164,16 @@ foreach ($conn->capabilities as $k => $cb) {?>
             <td>
               <div id="receive">
                 <h3>Receive messages</h3>
-                <label for="select-relative">SELECT_TIMEOUT_REL <input id="select-relative" type="radio" name="read[select-mode]" value="relative" checked="checked"/></label>
-                <label for="select-maxloops">SELECT_MAXLOOPS <input id="select-maxloops" type="radio" name="read[select-mode]" value="maxloops"/></label>
+                <label for="select-relative">
+                  SELECT_TIMEOUT_REL <input id="select-relative" type="radio" name="read[select-mode]" value="relative" checked="checked"/>
+                </label>
+                <label for="read-select-rel-secs">Secs<input type="text" name="read[select-rel-secs]" value="1"/></label>
+                <label for="read-select-rel-usecs">Usecs<input type="text" name="read[select-rel-usecs]" value="5000"/></label>
+
+                <label for="select-maxloops">
+                  SELECT_MAXLOOPS <input id="select-maxloops" type="radio" name="read[select-mode]" value="maxloops"/>
+                </label>
+                <label for="read-select-maxloops-num"><input type="text" name="read[select-maxloops-num]"/></label>
               </div>
             </td>
           </tr>
