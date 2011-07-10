@@ -18,27 +18,11 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-namespace amqphp;
+namespace amqphp\persistent;
 
 
-/**
- * Definition  of an  object  to hold  connection  / channel  metadata
- * between  requests  for Persistent  connections.   Data  is saved  /
- * loaded based on the current process ID
- */
-interface PersistenceHelper
+
+class PChannel extends \amqphp\Channel
 {
 
-    /** Passed a url-specific identifier for this helper. */
-    function setUrlKey ($k);
-
-    function getData ();
-
-    function setData ($data);
-
-    function save ();
-
-    function load ();
-
-    function destroy ();
 }

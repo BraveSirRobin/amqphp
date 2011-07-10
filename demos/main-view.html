@@ -52,11 +52,11 @@
         <ul class="conn-props">
           <li>Amqp VHost: <strong><?php echo $conn->getVHost() ?></strong></li>
           <li>Connection presistence status: <strong><?php
-switch ($_tmp = $conn->getPersistenceStatus()) {
-case \amqphp\PConnection::SOCK_NEW:
+switch ($_tmip = $conn->getPersistenceStatus()) {
+case \amqphp\persistent\PConnection::SOCK_NEW:
   echo "New Connection";
 break;
-case \amqphp\PConnection::SOCK_REUSED:
+case \amqphp\persistent\PConnection::SOCK_REUSED:
   echo "Connection re-used";
 break;
 default:

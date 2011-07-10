@@ -18,7 +18,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-namespace amqphp;
+namespace amqphp\persistent;
 
 use amqphp\protocol;
 use amqphp\wire;
@@ -31,7 +31,7 @@ use amqphp\wire;
  * TODO: When a  fresh connection is opened, clear  any old cache that
  * might be lying around before opening the connection.
  */
-class PConnection extends Connection
+class PConnection extends \amqphp\Connection
 {
 
     /**
@@ -40,7 +40,7 @@ class PConnection extends Connection
      */
     const PERSIST_CONNECTION = 1;
 
-    /**
+   /**
      * At sleep time, the connection will set the connection will call
      * channel.flow on  all open  channels, meaning that  the channels
      * remain  open  between  requests.   At wakeup  time,  previously
@@ -163,8 +163,9 @@ class PConnection extends Connection
     }
 
 
-    protected function initNewChannel ($impl="PChannel") {
-        parent::initNewChannel($impl);
+    protected function initNewChannel () {
+        $impl = __NAMESPACE__ . "\\PChannel";
+        return parent::initNewChannel($impl);
     }
 
 

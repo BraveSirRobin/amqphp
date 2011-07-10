@@ -5,9 +5,10 @@
  * 'pwd' in order for the classloader to work.
  **/
 
-use amqphp as amqp;
-use amqphp\protocol;
-use amqphp\wire;
+use amqphp as amqp,
+    amqphp\persistent as pconn,
+    amqphp\protocol,
+    amqphp\wire;
 
 
 
@@ -146,14 +147,14 @@ class Demo
 
     function startConnections () {
         foreach ($this->conConfs as $conf) {
-            $conn = new amqp\PConnection($conf);
-            //$conn->setPersistenceHelperImpl('\\amqphp\\FilePersistenceHelper');
-            $conn->setPersistenceHelperImpl('\\amqphp\\APCPersistenceHelper');
+            $conn = new pconn\PConnection($conf);
+            //$conn->setPersistenceHelperImpl('\\amqphp\\persistent\\FilePersistenceHelper');
+            $conn->setPersistenceHelperImpl('\\amqphp\\persistent\\APCPersistenceHelper');
             $conn->connect();
             $chan = $conn->getChannel();
             $basicP = $chan->basic('publish', $this->publishParams);
             $this->pCons[] = array($conn, $chan, $basicP);
-            if ($conn->getPersistenceStatus() == amqp\PConnection::SOCK_NEW) {
+            if ($conn->getPersistenceStatus() == pconn\PConnection::SOCK_NEW) {
                 $this->initialiseDemo($chan);
             }
         }
