@@ -100,7 +100,7 @@ class Connection
 
 
     private $chans = array(); // Format: array(<chan-id> => Channel)
-    private $nextChan = 1;
+    protected $nextChan = 1;
 
 
     /** Flag set when connection is in read blocking mode, waiting for messages */
@@ -365,7 +365,8 @@ class Connection
         return $this->sock->getCK();
     }
 
-    private function initNewChannel () {
+
+    protected function initNewChannel ($impl=null) {
         if (! $this->connected) {
             trigger_error("Connection is not connected - cannot create Channel", E_USER_WARNING);
             return null;
@@ -374,7 +375,9 @@ class Connection
         if ($this->chanMax > 0 && $newChan > $this->chanMax) {
             throw new \Exception("Channels are exhausted!", 23756);
         }
-        $this->chans[$newChan] = new Channel($this, $newChan, $this->frameMax);
+        $this->chans[$newChan] = is_null($impl)
+            ? new Channel($this, $newChan, $this->frameMax)
+            : new $impl($this, $newChan, $this->frameMax);
         $this->chans[$newChan]->initChannel();
         return $this->chans[$newChan];
     }

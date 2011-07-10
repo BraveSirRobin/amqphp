@@ -66,7 +66,7 @@ class PConnection extends Connection
     /**
      * List of object fields that are persisted in both modes.
      */
-    private static $BasicProps = array('capabilities', 'chanMax', 'frameMax', 'vhost');
+    private static $BasicProps = array('capabilities', 'chanMax', 'frameMax', 'vhost', 'nextChan');
 
     private $sleepMode = self::PERSIST_CONNECTION;
 
@@ -91,6 +91,7 @@ class PConnection extends Connection
      * Check that the given parameters make sense, throw exceptions if
      * an  illegal param  is found.   Delegate to  parent  to complete
      * object setup.
+     * @override
      * @throws \Exception
      */
     function __construct (array $params = array()) {
@@ -111,29 +112,6 @@ class PConnection extends Connection
         parent::__construct($params);
     }
 
-
-    /**
-     * Sets the local data persistence helper implementation class.
-     */
-    function setPersistenceHelperImpl ($clazz) {
-        $this->pHelperImpl = $clazz;
-    }
-
-
-    private function getPersistenceHelper () {
-        if (! $this->connected) {
-            throw new \Exception("PConnection persistence helper cannot be created before the connection is open", 3789);
-        }
-        if (is_null($this->pHelper)) {
-            $c = $this->pHelperImpl;
-            $this->pHelper = new $c;
-            if (! ($this->pHelper instanceof PersistenceHelper)) {
-                throw new \Exception("PConnection persistence helper implementation is invalid", 26934);
-            }
-            $this->pHelper->setUrlKey($this->sock->getCK());
-        }
-        return $this->pHelper;
-    }
 
     /**
      * Over-ride the  connect method  so that we  can avoid  the setup
@@ -171,6 +149,49 @@ class PConnection extends Connection
             $ph->destroy();
         }
     }
+
+
+
+    /**
+     * Destroy the  persistence data  after the connection  is closed.
+     * @override
+     */
+    function shutdown () {
+        $ph = $this->getPersistenceHelper();
+        parent::shutdown();
+        $ph->destroy();
+    }
+
+
+    protected function initNewChannel ($impl="PChannel") {
+        parent::initNewChannel($impl);
+    }
+
+
+    /**
+     * Sets the local data persistence helper implementation class.
+     */
+    function setPersistenceHelperImpl ($clazz) {
+        $this->pHelperImpl = $clazz;
+    }
+
+
+    private function getPersistenceHelper () {
+        if (! $this->connected) {
+            throw new \Exception("PConnection persistence helper cannot be created before the connection is open", 3789);
+        }
+        if (is_null($this->pHelper)) {
+            $c = $this->pHelperImpl;
+            $this->pHelper = new $c;
+            if (! ($this->pHelper instanceof PersistenceHelper)) {
+                throw new \Exception("PConnection persistence helper implementation is invalid", 26934);
+            }
+            $this->pHelper->setUrlKey($this->sock->getCK());
+        }
+        return $this->pHelper;
+    }
+
+
 
     /**
      * Return the persistence  status of this connection, or  0 if not
@@ -245,11 +266,5 @@ class PConnection extends Connection
 
     private function sleepModeAll () {
         trigger_error("All mode persistence not implemented", E_USER_ERROR);
-    }
-
-    function shutdown () {
-        $ph = $this->getPersistenceHelper();
-        parent::shutdown();
-        $ph->destroy();
     }
 }
