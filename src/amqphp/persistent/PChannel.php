@@ -22,7 +22,40 @@ namespace amqphp\persistent;
 
 
 
-class PChannel extends \amqphp\Channel
+class PChannel extends \amqphp\Channel implements \Serializable
 {
 
+    private static $PersProps = array('chanId', 'frameMax', 'confirmSeqs',
+                                      'confirmSeq', 'confirmMode');
+
+    /**
+     * Called  when the  connection is  sleeping to  save  the channel
+     * state.
+     */
+    function serialize () {
+        $data = array();
+        foreach (self::$PersProps as $k) {
+            $data[$k] = $this->$k;
+        }
+        $data['consumers'] = array();
+        foreach ($this->consumers as $cons) {
+            if ($cons instanceof \Serializable) {
+                $data['consumers'][] = array(serailize($cons[0]),
+                                             $cons[1], $cons[2]);
+            }
+        }
+        return $data;
+    }
+
+    /**
+     * Called when rehydrating a serialised channel
+     */
+    function unserialize ($data) {
+        foreach (self::$PersProps as $p) {
+            $this->p = $data[$p];
+        }
+        foreach ($data['consumers'] as $i => $c) {
+            $this->consumers[$i] = array(unserialize($c[0]), $cons[1], $cons[2]);
+        }
+    }
 }

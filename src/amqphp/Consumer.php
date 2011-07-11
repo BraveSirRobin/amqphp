@@ -20,7 +20,6 @@
 
 namespace amqphp;
 
-use amqphp\protocol;
 use amqphp\wire;
 
 

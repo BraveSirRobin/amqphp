@@ -30,7 +30,7 @@ class Channel
     private $myConn;
 
     /** The channel ID we're linked to */
-    private $chanId;
+    protected $chanId;
 
     /**
      * As  set  by  the  channel.flow Amqp  method,  controls  whether
@@ -47,7 +47,7 @@ class Channel
     /**
      * Set by negotiation during channel setup
      */
-    private $frameMax;
+    protected $frameMax;
 
     /**
      * Used to track whether the channel.open returned OK.
@@ -61,7 +61,7 @@ class Channel
      *  'READY' - started and ready to recieve messages
      *  'CLOSED' - previously live but now closed, receiving a basic.cancel-ok triggers this.
      */
-    private $consumers = array();
+    protected $consumers = array();
 
     /** Channel level callbacks for basic.ack (RMQ confirm feature) and basic.return */
     private $callbacks = array('publishConfirm' => null,
@@ -69,11 +69,11 @@ class Channel
                                'publishNack' => null);
 
     /** Store of basic.publish sequence numbers. */
-    private $confirmSeqs = array();
-    private $confirmSeq = 0;
+    protected $confirmSeqs = array();
+    protected $confirmSeq = 0;
 
     /** Flag set during RMQ confirm mode */
-    private $confirmMode = false;
+    protected $confirmMode = false;
 
 
     function setPublishConfirmCallback (\Closure $c) {
