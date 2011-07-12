@@ -68,7 +68,7 @@ class PConnection extends \amqphp\Connection
      */
     private static $BasicProps = array('capabilities', 'chanMax', 'frameMax', 'vhost', 'nextChan');
 
-    private $sleepMode = self::PERSIST_CONNECTION;
+    private $sleepMode = self::PERSIST_CHANNELS;
 
     /**
      * An instance of PersistenceHelper.
@@ -136,13 +136,9 @@ class PConnection extends \amqphp\Connection
         $this->sock->connect();
 
         if ($this->sock->isReusedPSock()) {
-            // Assume that a re-used persistent socket has already gone through the handshake procedure.
-            $this->connected = true;
-            $this->wakeupFlag = true;
-            return ($this->sleepMode == self::PERSIST_CONNECTION)
-                ? $this->wakeupModeNone()
-                : $this->wakeupModeAll();
-
+            // Assume  that a  re-used persistent  socket  has already
+            // gone through the handshake procedure.
+            $this->wakeup();
         } else {
             $this->doConnectionStartup();
             $ph = $this->getPersistenceHelper();
@@ -163,6 +159,9 @@ class PConnection extends \amqphp\Connection
     }
 
 
+    /**
+     * This channel will load PChannels
+     */
     protected function initNewChannel () {
         $impl = __NAMESPACE__ . "\\PChannel";
         return parent::initNewChannel($impl);
@@ -210,6 +209,10 @@ class PConnection extends \amqphp\Connection
 
 
     function setSleepMode ($m) {
+        if (! ($m == self::PERSIST_CHANNELS || $m == self::PERSIST_CONNECTION)) {
+            trigger_error("Invalid sleep mode - ignored.", E_USER_WARNING);
+            return;
+        }
         $this->sleepMode = $m;
     }
 
@@ -218,15 +221,28 @@ class PConnection extends \amqphp\Connection
      * request to put the connection in to sleep mode
      */
     function sleep () {
-        return ($this->sleepMode == self::PERSIST_CONNECTION)
-            ? $this->sleepModeNone()
-            : $this->sleepModeAll();
+        $data = array();
+        foreach (self::$BasicProps as $k) {
+            $data[$k] = $this->$k;
+        }
+
+        $z = array();
+        $z[0] = $this->sleepMode;
+        $z[1] = $data;
+        if ($this->sleepMode == self::PERSIST_CHANNELS) {
+            $z[2] = $this->chans;
+        }
+        $ph = $this->getPersistenceHelper();
+        error_log("Sleep:\n" . print_r($z, true) . "\n");
+        $ph->setData(serialize($z));
+        $ph->save();
     }
 
-    /**
-     * The wakeup process for PERSIST_CONNECTION
-     */
-    private function wakeupModeNone () {
+    private function wakeup () {
+        $this->connected = true;
+        $this->wakeupFlag = true;
+
+        // Load data from persistence store.
         $ph = $this->getPersistenceHelper();
         if (! $ph->load()) {
             // Also destroy the TCP connection.
@@ -236,36 +252,25 @@ class PConnection extends \amqphp\Connection
             } catch (\Exception $e) { }
             throw new \Exception('Failed to reload amqp connection cache during wakeup', 8543, $e);
         }
-        $data = $ph->getData();
+        $data = unserialize($ph->getData());
 
+        // Warn  if  the  wake  up  state  is not  the  same  as  this
+        // connnection
+        if ($data[0] != $this->sleepMode) {
+            trigger_error("PConnection woke up in different state", E_USER_WARNING);
+            $this->sleepMode = $data[0];
+        }
+
+        // Restore Connection state
         foreach (self::$BasicProps as $k) {
-            if ($k == 'vhost' && $data[$k] != $this->sock->getVHost()) {
+            if ($k == 'vhost' && $data[1][$k] != $this->sock->getVHost()) {
                 throw new \Exception("Persisted connection woken up as different VHost", 9250);
             }
-            $this->$k = $data[$k];
+            $this->$k = $data[1][$k];
         }
-    }
 
-    private function wakeupModeAll () {
-        trigger_error("All mode persistence not implemented", E_USER_ERROR);
-    }
-
-    /**
-     * The sleep process for PERSIST_CONNECTION
-     */
-    private function sleepModeNone () {
-        if (! $this->wakeupFlag) {
-            $data = array();
-            foreach (self::$BasicProps as $k) {
-                $data[$k] = $this->$k;
-            }
-            $ph = $this->getPersistenceHelper();
-            $ph->setData($data);
-            $ph->save();
+        if ($this->sleepMode == self::PERSIST_CHANNELS && isset($data[2])) {
+            $this->chans = $data[2];
         }
-    }
-
-    private function sleepModeAll () {
-        trigger_error("All mode persistence not implemented", E_USER_ERROR);
     }
 }

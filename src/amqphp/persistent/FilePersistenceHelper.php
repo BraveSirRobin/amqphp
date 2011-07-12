@@ -62,12 +62,12 @@ class FilePersistenceHelper implements PersistenceHelper
 
     /** @throws \Exception */
     function save () {
-        return file_put_contents($this->getTmpFile(), serialize($this->data));
+        return file_put_contents($this->getTmpFile(), (string) $this->data);
     }
 
     /** @throws \Exception */
     function load () {
-        $this->data = unserialize(file_get_contents($this->getTmpFile()));
+        $this->data = file_get_contents($this->getTmpFile());
         return ($this->data !== false);
     }
 

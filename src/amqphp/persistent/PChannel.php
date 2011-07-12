@@ -40,22 +40,25 @@ class PChannel extends \amqphp\Channel implements \Serializable
         $data['consumers'] = array();
         foreach ($this->consumers as $cons) {
             if ($cons instanceof \Serializable) {
-                $data['consumers'][] = array(serailize($cons[0]),
-                                             $cons[1], $cons[2]);
+                $data['consumers'][] = $cons;
             }
         }
-        return $data;
+        error_log("PChannel serailize");
+        // HERE: Because this class is Serailize we HAVE to return a string here.
+        return serialize($data);
     }
 
     /**
      * Called when rehydrating a serialised channel
      */
     function unserialize ($data) {
+        $data = unserialize($data);
         foreach (self::$PersProps as $p) {
             $this->p = $data[$p];
         }
         foreach ($data['consumers'] as $i => $c) {
-            $this->consumers[$i] = array(unserialize($c[0]), $cons[1], $cons[2]);
+            $this->consumers[$i] = array($c[0], $cons[1], $cons[2]);
         }
+        error_log("PChannel unserailized\n");
     }
 }
