@@ -54,11 +54,12 @@ class PChannel extends \amqphp\Channel implements \Serializable
     function unserialize ($data) {
         $data = unserialize($data);
         foreach (self::$PersProps as $p) {
-            $this->p = $data[$p];
+            $this->$p = $data[$p];
         }
         foreach ($data['consumers'] as $i => $c) {
             $this->consumers[$i] = array($c[0], $cons[1], $cons[2]);
         }
         error_log("PChannel unserailized\n");
     }
+
 }

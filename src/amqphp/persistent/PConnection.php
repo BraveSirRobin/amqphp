@@ -233,8 +233,8 @@ class PConnection extends \amqphp\Connection
             $z[2] = $this->chans;
         }
         $ph = $this->getPersistenceHelper();
-        error_log("Sleep:\n" . print_r($z, true) . "\n");
-        $ph->setData(serialize($z));
+        $ph->setData($_tmp = serialize($z));
+        error_log("Sleep:\n{$_tmp}\n");
         $ph->save();
     }
 
@@ -271,6 +271,10 @@ class PConnection extends \amqphp\Connection
 
         if ($this->sleepMode == self::PERSIST_CHANNELS && isset($data[2])) {
             $this->chans = $data[2];
+            foreach ($this->chans as $chan) {
+                // Can't persistent cyclical relationships!
+                $chan->setConnection($this);
+            }
         }
     }
 }

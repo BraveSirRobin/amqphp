@@ -99,7 +99,7 @@ class Connection
     private $signalDispatch = true;
 
 
-    private $chans = array(); // Format: array(<chan-id> => Channel)
+    protected $chans = array(); // Format: array(<chan-id> => Channel)
     protected $nextChan = 1;
 
 
@@ -327,14 +327,32 @@ class Connection
     }
 
     /**
-     * Channel  accessor /  factory  method, call  with  no params  to
-     * create a  new channel,  or with a  channel number to  access an
-     * existing channel by number
+     * Return an existing channel.
+     *
+     * [Current implementation is  deprecated,  previously you  called
+     * this to  open a  new channel (without  a parameter) or  with an
+     * integer to retreive an existing channel.]
      */
-    function getChannel ($num = false) {
-        return ($num === false) ? $this->initNewChannel() : $this->chans[$num];
+    function getChannel ($num=false) {
+        if ($num === false) {
+            trigger_error("Opening new channels with the \amqp\Connection - " .
+                          "use \amqp\Connection->openChannel() instead", E_USER_DEPRECATED);
+            return $this->openChannel();
+        }
+        return $this->newGetChannel($num);
     }
 
+    /** TODO: rename to getChannel after deprecation period */
+    private function newGetChannel ($num) {
+        return $this->chans[$num];
+    }
+
+    /** Opens a new channel on this connection. */
+    function openChannel () {
+        return $this->initNewChannel(__NAMESPACE__ . '\\Channel');
+    }
+
+    /** Return all channels */
     function getChannels () {
         return $this->chans;
     }
@@ -376,8 +394,11 @@ class Connection
             throw new \Exception("Channels are exhausted!", 23756);
         }
         $this->chans[$newChan] = is_null($impl)
-            ? new Channel($this, $newChan, $this->frameMax)
-            : new $impl($this, $newChan, $this->frameMax);
+            ? new Channel
+            : new $impl;
+        $this->chans[$newChan]->setConnection($this);
+        $this->chans[$newChan]->setChanId($newChan);
+        $this->chans[$newChan]->setFrameMax($this->frameMax);
         $this->chans[$newChan]->initChannel();
         return $this->chans[$newChan];
     }

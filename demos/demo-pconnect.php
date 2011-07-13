@@ -151,7 +151,19 @@ class Demo
             //$conn->setPersistenceHelperImpl('\\amqphp\\persistent\\FilePersistenceHelper');
             $conn->setPersistenceHelperImpl('\\amqphp\\persistent\\APCPersistenceHelper');
             $conn->connect();
-            $chan = $conn->getChannel();
+
+            /** 
+             * Because this  connection  persists channels  we have to
+             * check  that  the  channel  isn't  already  open  before
+             * opening it
+             */
+            if ($conn->getPersistenceStatus() == pconn\PConnection::SOCK_NEW) {
+                error_log("Open new channel");
+                $chan = $conn->openChannel();
+            } else {
+                $chan = $conn->getChannel(1);
+                error_log("Get existing channel (" . gettype($chan) . ')');
+            }
             $basicP = $chan->basic('publish', $this->publishParams);
             $this->pCons[] = array($conn, $chan, $basicP);
             if ($conn->getPersistenceStatus() == pconn\PConnection::SOCK_NEW) {
@@ -162,7 +174,7 @@ class Demo
 
     function sleep () {
         foreach ($this->pCons as $stuff) {
-            $stuff[1]->shutdown(); // Shut down channel only.
+            //$stuff[1]->shutdown(); // Shut down channel only.
             $stuff[0]->sleep();
         }
     }
@@ -212,7 +224,7 @@ class Demo
         // Set the desired modes and add consumers.
         foreach ($this->pCons as $i => $c) {
             // TODO: Figure out why this is needed
-            $this->initialiseDemo($c[1]);
+            //$this->initialiseDemo($c[1]);
             $qosParams = array('prefetch-count' => 1,
                                'global' => false);
             $qOk = $c[1]->invoke($c[1]->basic('qos', $qosParams));
@@ -297,14 +309,18 @@ $view->render();
 
 
 /** Trailer tasks. */
+
+
+$d->sleep();
+/*
 if (in_array('disconnect', $tasks)) {
     $d->shutdown();
     error_log("Demo disconnect");
 } else {
-    $d->sleep();
+
     error_log("Demo sleep");
 }
-
+*/
 die;
 //
 // Script ends

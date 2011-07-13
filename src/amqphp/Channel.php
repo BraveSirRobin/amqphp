@@ -27,7 +27,7 @@ use amqphp\wire;
 class Channel
 {
     /** The parent Connection object */
-    private $myConn;
+    protected $myConn;
 
     /** The channel ID we're linked to */
     protected $chanId;
@@ -109,11 +109,20 @@ class Channel
     }
 
 
-    function __construct (Connection $rConn, $chanId, $frameMax) {
-        $this->myConn = $rConn;
-        $this->chanId = $chanId;
-        $this->frameMax = $frameMax;
+    function __construct () {
         $this->callbacks['publishConfirm'] = $this->callbacks['publishReturn'] = function () {};
+    }
+
+    function setConnection (Connection $rConn) {
+        $this->myConn = $rConn;
+    }
+
+    function setChanId ($chanId) {
+        $this->chanId = $chanId;
+    }
+
+    function setFrameMax ($frameMax) {
+        $this->frameMax = $frameMax;
     }
 
 
