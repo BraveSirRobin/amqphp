@@ -295,17 +295,7 @@ class Channel
                 break;
             case CONSUMER_CANCEL:
                 // Basic.cancel this consumer, then change the it's status flag
-                $cnl = $this->basic('cancel', array('consumer-tag' => $ctag, 'no-wait' => false));
-                $cOk = $this->invoke($cnl);
-                if ($cOk && ($cOk->getClassProto()->getSpecName() == 'basic'
-                             && $cOk->getMethodProto()->getSpecName() == 'cancel-ok')) {
-                    $this->setConsumerStatus($ctag, 'CLOSED') OR
-                        trigger_error("Failed to set consumer status flag", E_USER_WARNING);
-
-                } else {
-                    throw new \Exception("Failed to cancel consumer - bad broker response", 9768);
-                }
-                $cons->handleCancelOk($cOk, $this);
+                $this->removeConsumerByTag($cons, $ctag);
                 break;
             }
         }
@@ -379,9 +369,47 @@ class Channel
         return $this->hasListeningConsumers() || $this->hasOutstandingConfirms();
     }
 
+    /**
+     * Send basic.cancel to cancel the given consumer subscription and
+     * mark as closed internally.
+     */
     function removeConsumer (Consumer $cons) {
-        trigger_error("Consumers can no longer be directly removed", E_USER_DEPRECATED);
-        return;
+        foreach ($this->consumers as $c) {
+            if ($c[0] === $cons) {
+                if ($c[2] == 'READY') {
+                    $this->removeConsumerByTag($c[0], $c[1]);
+                }
+                return;
+            }
+        }
+        trigger_error("Consumer does not belong to this Channel", E_USER_WARNING);
+    }
+
+
+    /**
+     * Cancel all consumers.
+     */
+    function removeAllConsumers () {
+        foreach ($this->consumers as $c) {
+            if ($c[2] == 'READY') {
+                $this->removeConsumerByTag($c[0], $c[1]);
+            }
+        }
+    }
+
+
+    private function removeConsumerByTag (Consumer $cons, $ctag) {
+        $cnl = $this->basic('cancel', array('consumer-tag' => $ctag, 'no-wait' => false));
+        $cOk = $this->invoke($cnl);
+        if ($cOk && ($cOk->getClassProto()->getSpecName() == 'basic'
+                     && $cOk->getMethodProto()->getSpecName() == 'cancel-ok')) {
+            $this->setConsumerStatus($ctag, 'CLOSED') OR
+                trigger_error("Failed to set consumer status flag", E_USER_WARNING);
+
+        } else {
+            throw new \Exception("Failed to cancel consumer - bad broker response", 9768);
+        }
+        $cons->handleCancelOk($cOk, $this);
     }
 
     private function setConsumerStatus ($tag, $status) {

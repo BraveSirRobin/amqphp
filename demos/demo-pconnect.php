@@ -240,6 +240,12 @@ class Demo
             $el->addConnection($c[0]);
         }
         $el->select();
+        foreach ($this->pCons as $c) {
+            $c[1]->removeAllConsumers();
+        }
+        // Here.  Need to add a disconnect helper to the Channel to be able to
+        // stop consuming (re-instate removeConsumer() !!!)
+        // Alternatively, don't call removeConsumer() and make the demo Consumer persistable
     }
 }
 
