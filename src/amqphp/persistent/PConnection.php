@@ -25,11 +25,14 @@ use amqphp\wire;
 
 
 /**
- * This  class is  intended as  a helper  class to  make  dealing with
- * persistent connections easier.
+ * A  persistence  manager   wrapper  around  a  standard  connection.
+ * Invokes  the  amqp  protocol  handshake only  when  the  underlying
+ * connection has just been opened, for other requests Connection (and
+ * possibly Channel  and Connection)  metadata is loaded  from storage
+ * and re-used.   Requires the use of  the StreamSocket implementation
+ * and forces the STREAM_CLIENT_PERSISTENT  flag to be passed when the
+ * socket is opened.
  *
- * TODO: When a  fresh connection is opened, clear  any old cache that
- * might be lying around before opening the connection.
  */
 class PConnection extends \amqphp\Connection
 {
@@ -64,7 +67,7 @@ class PConnection extends \amqphp\Connection
 
 
     /**
-     * List of object fields that are persisted in both modes.
+     * List of Connection (super class) properties to be persisted.
      */
     private static $BasicProps = array('capabilities', 'chanMax', 'frameMax', 'vhost', 'nextChan');
 
@@ -100,7 +103,7 @@ class PConnection extends \amqphp\Connection
             throw new \Exception("Persistent connections cannot use a heatbeat", 24803);
         }
         // Make sure that the StreamSocket implementation is being used.
-        if ($params['socketImpl'] != '\amqphp\StreamSocket') {
+        if ($params['socketImpl'] != '\\amqphp\\StreamSocket') {
             throw new \Exception("Persistent connections must use the StreamSocket socket implementation", 24804);
         }
         // Make sure that the persistent flag is set.
@@ -176,6 +179,9 @@ class PConnection extends \amqphp\Connection
     }
 
 
+    /**
+     * Must be called after connection
+     */
     private function getPersistenceHelper () {
         if (! $this->connected) {
             throw new \Exception("PConnection persistence helper cannot be created before the connection is open", 3789);
@@ -233,11 +239,13 @@ class PConnection extends \amqphp\Connection
             $z[2] = $this->chans;
         }
         $ph = $this->getPersistenceHelper();
-        $ph->setData($_tmp = serialize($z));
-        error_log("Sleep:\n{$_tmp}\n");
+        $ph->setData(serialize($z));
         $ph->save();
     }
 
+    /**
+     * Wakeup procedure is invoked by the connection opening.
+     */
     private function wakeup () {
         $this->connected = true;
         $this->wakeupFlag = true;
