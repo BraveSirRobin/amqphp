@@ -1,0 +1,317 @@
+<html>
+  <head>
+    <title>Test Persistent Amqphp</title>
+
+    <style type="text/css">
+
+      #container {
+        float: none;
+      }
+
+      #controls {
+        float: left;
+        padding: 0;
+        border: 0;
+        margin: 0;
+      }
+
+      #data {
+        float: left;
+        background: #A8C0D8;
+      }
+
+      #connections {
+        /* Connections floating menu */
+        background: #BEE2E7;
+      }
+
+      #connections label {
+        display: block;
+        padding-left: 15px;
+        text-indent: -15px;
+      }
+
+      #connections input {
+        vertical-align: bottom;
+        position: relative;
+      }
+
+      #new-conn {
+        /* New connection form */
+        background: #4F57AA;
+      }
+
+      #channels {
+        /* Channels container */
+        background: #72818B;
+      }
+
+      .channel {
+        /* Channel container */
+        background: #72818B;
+      }
+
+      .consumer {
+        /* Consumer container */
+        background: #8F002E;
+      }
+
+      #new-channel {
+        /* New channel form */
+        background: #454857;
+      }
+
+      #methods {
+        background: #788F7D;
+      }
+
+      #send {
+        background: #77775E;
+      }
+
+      #receive {
+        background: #DCDABB;
+      }
+    </style>
+
+  </head>
+  <body>
+
+    <h1>Amqphp in web servers.</h1>
+
+
+    <?php foreach ($this->messages as $m) { ?>
+    <div id="messages">
+      <span><?php echo $m; ?></span>
+    </div>
+    <?php } ?>
+
+
+    <div id="container">
+      <div id="controls">
+        <div id="connections">
+          <h2>Connections</h2>
+          <!-- TODO: Turn this is to a floater! -->
+          <ul>
+            <li>
+              <form method="POST">
+                tcp://rabbit1
+                <input type="hidden" name="action" value="remove-connection"/>
+                <input type="hidden" name="name" value="1"/>
+                <input type="submit" value="Remove"/>
+              </form>
+            </li>
+            <li>
+              <form method="POST">
+                tcp://rabbit2
+                <input type="hidden" name="action" value="remove-connection"/>
+                <input type="hidden" name="name" value="2"/>
+                <input type="submit" value="Remove"/>
+              </form>
+            </li>
+          </ul>
+          <div id="new-conn">
+            <h2>Create a new connection</h2>
+            <form method="POST">
+              <input type="hidden" name="action" value="new-connection"/>
+              <label>
+                Name
+                <input type="text" name="name"/>
+              </label>
+              <label>
+                Url
+                <input type="text" name="url"/>
+              </label>
+              <label>
+                VHost
+                <input type="text" name="vhost" />
+              </label>
+              <label>
+                Username
+                <input type="text" name="username" />
+              </label>
+              <label>
+                Password
+                <input type="text" name="password" />
+              </label>
+
+              <input type="submit" value="Go!"/>
+            </form>
+          </div>
+        </div>
+
+
+
+        <div id="channels">
+          <h2>Channels</h2>
+
+          <div class="channel">
+            <!-- Repeats -->
+            <ul>
+              <li>Connection: tcp://rabbit1</li>
+              <li>Number: 1</li>
+            </ul>
+            <form method="POST">
+              <input type="hidden" name="action" value="remove-channel"/>
+              <input type="hidden" name="channel" value="1"/>
+              <input type="hidden" name="connection" value="1"/>
+              <input type="submit" value="Remove Channel" id="channel-remove"/>
+            </form>
+
+            <h3>Consumers</h3>
+            <div class="consumer">
+              <!-- Repeats -->
+              <form method="POST">
+                <span class="consumer-tag">Consumer: abc-123</span>
+                <span class="consumer-class">Class: DemoConsumer</span>
+                <input type="hidden" name="action" value="remove-consumer"/>
+                <input type="hidden" name="connection" value="1"/>
+                <input type="hidden" name="channel" value="1"/>
+                <input type="hidden" name="consumer-tag" value="1"/>
+                <input type="submit" value="Remove Consumer"/>
+              </form>
+            </div>
+
+            <h3>Add Consumer</h3>
+            <div class="new-consumer">
+              <form method="POST">
+                <input type="hidden" name="action" value="new-consumer"/>
+                <input type="hidden" name="connection" value="1"/>
+                <input type="hidden" name="channel" value="1"/>
+                <label>
+                  Consumer Class
+                  <select name="impl">
+                    <option value="DemoConsumer">DemoConsumer</option>
+                    <option value="DemoPConsumer">DemoPConsumer</option>
+                  </select>
+                </label>
+                <input type="submit" value="Add Consumer"/>
+              </form>
+            </div>
+            <!-- End channel -->
+          </div>
+
+          <div id="new-channel">
+            <h2>Add new Channel</h2>
+            <form method="POST">
+              <input type="hidden" name="action" value="new-channel"/>
+              <label>
+                Connection
+                <select name="connection">
+                  <option value="1">tcp://rabbit1</option>
+                  <option value="2">tcp://rabbit2</option>
+                </select>
+              </label>
+              <label>
+                Persistent
+                <input type="radio" name="persistent" value="yes" checked="checked"/>
+              </label>
+              <label>
+                Temporary
+                <input type="radio" name="persistent" value="no"/>
+              </label>
+              <input type="submit" value="Add Channel"/>
+            </form>
+          </div>
+        </div><!-- End Channels section -->
+
+
+
+        <div id="methods">
+          <h2>Methods</h2>
+          <form method="POST">
+            <input type="hidden" name="action" value="invoke-method"/>
+            <label>
+              Amqp Class
+              <select name="class">
+                <option value="basic">Basic</option>
+                <option value="..">..etc..</option>
+              </select>
+            </label>
+            <label>
+              Amqp Method
+              <select name="method">
+                <option value="todo">TODO: Dynamic</option>
+              </select>
+            </label>
+
+            <table>
+              <thead>
+                <tr>
+                  <th>Param Name</th>
+                  <th>Param Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>param 1</td>
+                  <td><input type="text" name="parameter[param-1]"/></td>
+                </tr>
+              </tbody>
+            </table>
+            <input type="submit" value="Invoke"/>
+          </form>
+        </div>
+
+
+
+        <div id="send">
+          <h2>Send</h2>
+          <form method="POST">
+            <input type="hidden" name="action" value="send"/>
+            <label>
+              Message
+              <textarea name="message" cols="45" rows="8"></textarea>
+            </label>
+
+            <fieldset>
+              <legend>Send to channels</legend>
+              <label>
+                Conn #1, Channel #1
+                <input type="checkbox" name="target[1][1]" value="1"/>
+              </label>
+              <label>
+                Conn #1, Channel #2
+                <input type="checkbox" name="target[1][2]" value="1"/>
+              </label>
+              <label>
+                Conn #2, Channel #1
+                <input type="checkbox" name="target[2][1]" value="1"/>
+              </label>
+            </fieldset>
+            <input type="submit" value="Send"/>
+          </form>
+        </div>
+
+
+        <div id="receive">
+          <h2>Receive</h2>
+          <form method="POST">
+            <input type="hidden" name="action" value="receive"/>
+
+            <fieldset>
+              <legend>Receive on channels</legend>
+              <label>
+                Conn #1
+                <input type="checkbox" name="connections[1]" value="1"/>
+              </label>
+              <label>
+                Conn #2
+                <input type="checkbox" name="connections[2]" value="1"/>
+              </label>
+            </fieldset>
+            <input type="submit" value="Receive"/>
+          </form>
+        </div>
+      </div><!-- End of controls -->
+
+
+      <div id="data">
+        <h2>Data - messages sent / received</h2>
+      </div>
+
+    </div><!-- End of container -->
+
+
+  </body>
+</html>

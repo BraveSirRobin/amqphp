@@ -442,6 +442,25 @@ class Channel
         return false;
     }
 
+    /** Return the consumer associated with consumer tag $t  */
+    function getConsumerByTag ($t) {
+        foreach ($this->consumers as $c) {
+            if ($c[2] == 'READY' && $c[1] === $t) {
+                return $c[0];
+            }
+        }
+    }
+
+    /** Return an array of all consumer tags */
+    function getConsumerTags () {
+        $tags = array();
+        foreach ($this->consumers as $c) {
+            if ($c[2] == 'READY') {
+                $tags[] = $c[1];
+            }
+        }
+        return $tags;
+    }
 
 
     /**

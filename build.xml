@@ -170,11 +170,19 @@ Prepare the NSPF and CPF source trees.
 
 
 <!--
--->
+
   <target name="deploy-web-demo">
     <exec command="scp demos/main-view.html phpvm:/var/www" dir="${project.basedir}"/>
     <exec command="scp demos/demo-pconnect.php phpvm:/var/www" dir="${project.basedir}"/>
   </target>
+-->
+
+  <target name="deploy-web-demo">
+    <exec command="scp demos/web-controls.phtml phpvm:/var/www" dir="${project.basedir}"/>
+    <exec command="scp demos/web-server-demo.php phpvm:/var/www" dir="${project.basedir}"/>
+  </target>
+
+
   <target name="deploy-web-libs">
     <exec command="ssh phpvm rm -rf /var/www/amqphp" />
     <exec command="scp -r build/cpf/amqphp phpvm:/var/www" dir="${project.basedir}"/>
