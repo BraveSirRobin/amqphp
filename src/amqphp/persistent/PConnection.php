@@ -34,7 +34,7 @@ use amqphp\wire;
  * socket is opened.
  *
  */
-class PConnection extends \amqphp\Connection
+class PConnection extends \amqphp\Connection implements \Serializable
 {
 
     /**
@@ -231,6 +231,14 @@ class PConnection extends \amqphp\Connection
      * request to put the connection in to sleep mode
      */
     function sleep () {
+        $ph = $this->getPersistenceHelper();
+        $ph->setData($this->serialize());
+        $ph->save();
+    }
+
+
+
+    function serialize () {
         $data = array();
         foreach (self::$BasicProps as $k) {
             $data[$k] = $this->$k;
@@ -242,29 +250,13 @@ class PConnection extends \amqphp\Connection
         if ($this->sleepMode == self::PERSIST_CHANNELS) {
             $z[2] = $this->chans;
         }
-        $ph = $this->getPersistenceHelper();
-        $ph->setData(serialize($z));
-        $ph->save();
+        return serialize($z);
     }
 
-    /**
-     * Wakeup procedure is invoked by the connection opening.
-     */
-    private function wakeup () {
-        $this->connected = true;
-        $this->wakeupFlag = true;
 
-        // Load data from persistence store.
-        $ph = $this->getPersistenceHelper();
-        if (! $ph->load()) {
-            // Also destroy the TCP connection.
-            try {
-                $e = null;
-                $this->shutdown();
-            } catch (\Exception $e) { }
-            throw new \Exception('Failed to reload amqp connection cache during wakeup', 8543, $e);
-        }
-        $data = unserialize($ph->getData());
+
+    function unserialize ($serialised) {
+        $data = unserialize($serialised);
 
         // Warn  if  the  wake  up  state  is not  the  same  as  this
         // connnection
@@ -288,5 +280,28 @@ class PConnection extends \amqphp\Connection
                 $chan->setConnection($this);
             }
         }
+    }
+
+
+
+
+    /**
+     * Wakeup procedure is invoked by the connection opening.
+     */
+    private function wakeup () {
+        $this->connected = true;
+        $this->wakeupFlag = true;
+
+        // Load data from persistence store.
+        $ph = $this->getPersistenceHelper();
+        if (! $ph->load()) {
+            // Also destroy the TCP connection.
+            try {
+                $e = null;
+                $this->shutdown();
+            } catch (\Exception $e) { }
+            throw new \Exception('Failed to reload amqp connection cache during wakeup', 8543, $e);
+        }
+        $this->unserialize($ph->getData());
     }
 }

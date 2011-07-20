@@ -113,7 +113,9 @@ class PConnHelper
         return apc_store($this->CK, serialize($this->cache));
     }
 
-
+    /**
+     * Shuts down standard connections, sleeps persistent ones.
+     */
     private function shutdownConnection ($conn) {
         if ($conn instanceof pconn\PConnection) {
             $conn->sleep();
