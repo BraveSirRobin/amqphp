@@ -25,10 +25,8 @@
         background: #BEE2E7;
       }
 
-      #connections label {
+      label {
         display: block;
-        padding-left: 15px;
-        text-indent: -15px;
       }
 
       #connections input {
@@ -114,6 +112,11 @@
             <h2>Create a new connection</h2>
             <form method="POST">
               <input type="hidden" name="action" value="new-connection"/>
+              <label>
+                Persistent
+                <input type="checkbox" name="persistent"/>
+              </label>
+
               <label>
                 Name
                 <input type="text" name="name"/>
@@ -303,14 +306,14 @@
             <input type="submit" value="Receive"/>
           </form>
         </div>
-      </div><!-- End of controls -->
+      </div><!-- End of controls container -->
 
 
       <div id="data">
         <h2>Data - messages sent / received</h2>
       </div>
 
-    </div><!-- End of container -->
+    </div><!-- End of data container -->
 
 
   </body>

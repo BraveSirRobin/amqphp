@@ -93,30 +93,58 @@ class PConnHelper
 
     /** Grab data from cache */
     protected function wakeup () {
-        $this->cache = apc_fetch($this->CK, $ret);
-        return $ret;
+        $srz = apc_fetch($this->CK, $flg);
+        if ($flg) {
+            $this->cache = unserialize($srz);
+            foreach ($this->cache as $conn) {
+                $conn->connect();
+            }
+        }
     }
 
-    /** Puts data in to cache */
+    /**
+     * Runs  shutdown sequence  and puts  connection refs  data  in to
+     * cache
+     */
     function sleep () {
-        return apc_store($this->CK, $this->cache);
+        foreach ($this->cache as $conn) {
+            $this->shutdownConnection($conn);
+        }
+        return apc_store($this->CK, serialize($this->cache));
     }
 
 
-    /** Called during wakeup to restore all previous Connections */
-    private function reConnection () {
+    private function shutdownConnection ($conn) {
+        if ($conn instanceof pconn\PConnection) {
+            $conn->sleep();
+        } else {
+            $conn->shutdown();
+        }
     }
+
+
 
 
     /**
      * Open a connection  with the given params and  store a reference
      * to it with $key
      */
-    function addConnection ($key, $params) {
-        if (array_key_exists($key, $this->cache['connections'])) {
+    function addConnection ($key, $params, $persistent) {
+        if (array_key_exists($key, $this->cache)) {
             throw new \Exception("Connection with key $key already exists", 2956);
         }
-        $this->cache['connections'][$key] = 'blar';
+
+        $params['socketImpl'] = '\\amqphp\\StreamSocket';
+        if ($persistent) {
+            $conn = new pconn\PConnection($params);
+            //$conn->setPersistenceHelperImpl('\\amqphp\\persistent\\FilePersistenceHelper');
+            $conn->setPersistenceHelperImpl('\\amqphp\\persistent\\APCPersistenceHelper');
+        } else {
+            $conn = new amqp\Connection($params);
+        }
+        $conn->connect();
+
+        $this->cache[$key] = $conn;
     }
 
     /**
@@ -124,6 +152,10 @@ class PConnHelper
      * storage.
      */
     function removeConnection ($key) {
+        if (array_key_exists($key, $this->cache)) {
+            $this->shutdownConnection($this->cache[$k]);
+            unset($this->cache[$k]);
+        }
     }
 
 
@@ -131,13 +163,19 @@ class PConnHelper
      * Opens a channel on the given connection with the given params.
      */
     function openChannel ($ckey, $chanParams) {
-        //
+        if (! array_key_exists($ckey, $this->cache)) {
+            $this->cache[$ckey]->openChannel();
+        }
     }
 
     /**
      * Closes the given channel on the given connection
      */
     function closeChannel ($ckey, $chanId) {
+        if (array_key_exists($ckey, $this->cache) && 
+            ($chan = $this->cache[$key]->getChannel($chanId))) {
+            // Here : Close / Cancel consumers?
+        }
     }
 
     /**
@@ -172,6 +210,11 @@ class PConnHelper
      */
     function sendMethod ($ckey, $chanId, $clazz, $meth, $params) {
     }
+
+
+    function getConnections () {
+        return $this->cache;
+    }
 }
 
 
@@ -201,10 +244,12 @@ class Actions
     function newConnectionAction () {
         $key = $_REQUEST['name'];
         $params = $_REQUEST;
+        $pers = array_key_exists('persistent', $_REQUEST);
         unset($params['name']);
+        unset($params['persistent']);
 
         try {
-            $this->ch->addConnection($key, $params);
+            $this->ch->addConnection($key, $params, $pers);
         } catch (\Exception $e) {
             $this->view->messages[] = sprintf("Exception in %s [%d]: %s",
                                               __METHOD__, $e->getCode(), $e->getMessage());

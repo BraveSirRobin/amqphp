@@ -69,7 +69,8 @@ class PConnection extends \amqphp\Connection
     /**
      * List of Connection (super class) properties to be persisted.
      */
-    private static $BasicProps = array('capabilities', 'chanMax', 'frameMax', 'vhost', 'nextChan');
+    private static $BasicProps = array('capabilities', 'chanMax','frameMax', 
+                                       'vhost', 'nextChan', 'pHelperImpl');
 
     private $sleepMode = self::PERSIST_CHANNELS;
 
@@ -92,8 +93,9 @@ class PConnection extends \amqphp\Connection
 
     /**
      * Check that the given parameters make sense, throw exceptions if
-     * an  illegal param  is found.   Delegate to  parent  to complete
+     * an illegal param  is found then delegate to  parent to complete
      * object setup.
+     *
      * @override
      * @throws \Exception
      */
@@ -103,7 +105,9 @@ class PConnection extends \amqphp\Connection
             throw new \Exception("Persistent connections cannot use a heatbeat", 24803);
         }
         // Make sure that the StreamSocket implementation is being used.
-        if ($params['socketImpl'] != '\\amqphp\\StreamSocket') {
+        if (! array_key_exists('socketImpl', $params)) {
+            $params['socketImpl'] = '\\amqphp\\StreamSocket';
+        } else if ($params['socketImpl'] != '\\amqphp\\StreamSocket') {
             throw new \Exception("Persistent connections must use the StreamSocket socket implementation", 24804);
         }
         // Make sure that the persistent flag is set.

@@ -54,7 +54,7 @@ $config = array(
     'username' => 'testing',
     'userpass' => 'letmein',
     'vhost' => 'robin',
-    'socketImpl' => '\amqphp\StreamSocket',
+    'socketImpl' => '\\amqphp\\StreamSocket',
     'socketParams' => array('url' => 'tcp://rabbit1:5672'));
 
 
