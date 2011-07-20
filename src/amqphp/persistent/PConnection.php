@@ -87,8 +87,12 @@ class PConnection extends \amqphp\Connection implements \Serializable
     /**
      * Flag to track whether the wakeup process has been triggered
      */
-    private $wakeupFlag = false;
+    private $wakeupFlag = false; // TODO : Remove, use $stateFlag instead
+    private $stateFlag = 0;
 
+    const ST_CONSTR = 1;
+    const ST_UNSER = 2;
+    const ST_SER = 4;
 
 
     /**
@@ -99,7 +103,8 @@ class PConnection extends \amqphp\Connection implements \Serializable
      * @override
      * @throws \Exception
      */
-    function __construct (array $params = array()) {
+    final function __construct (array $params = array()) {
+        $this->stateFlag |= self::ST_CONSTR;
         // Make sure that heartbeat is set to zero.
         if (isset($params['heartbeat']) && $params['heartbeat'] > 0) {
             throw new \Exception("Persistent connections cannot use a heatbeat", 24803);
@@ -111,7 +116,7 @@ class PConnection extends \amqphp\Connection implements \Serializable
             throw new \Exception("Persistent connections must use the StreamSocket socket implementation", 24804);
         }
         // Make sure that the persistent flag is set.
-        if (! is_array($params['socketFlags'])) {
+        if (! array_key_exists('socketFlags', $params)) {
             $params['socketFlags'] = array('STREAM_CLIENT_PERSISTENT');
         } else if ( ! in_array('STREAM_CLIENT_PERSISTENT', $params['socketFlags'])) {
             $params['socketFlags'][] = 'STREAM_CLIENT_PERSISTENT';
@@ -143,10 +148,12 @@ class PConnection extends \amqphp\Connection implements \Serializable
         $this->sock->connect();
 
         if ($this->sock->isReusedPSock()) {
+            error_log("PConnection : Re-use socket");
             // Assume  that a  re-used persistent  socket  has already
             // gone through the handshake procedure.
             $this->wakeup();
         } else {
+            error_log("PConnection : New socket");
             $this->doConnectionStartup();
             $ph = $this->getPersistenceHelper();
             $ph->destroy();
@@ -237,7 +244,9 @@ class PConnection extends \amqphp\Connection implements \Serializable
     }
 
 
-
+    /**
+     * @override \Serializable
+     */
     function serialize () {
         $data = array();
         foreach (self::$BasicProps as $k) {
@@ -250,29 +259,53 @@ class PConnection extends \amqphp\Connection implements \Serializable
         if ($this->sleepMode == self::PERSIST_CHANNELS) {
             $z[2] = $this->chans;
         }
+        $this->stateFlag |= self::ST_SER;
         return serialize($z);
     }
 
 
 
+    /**
+     * Can  be called manually  or from  unserialize(), in  the latter
+     * case the underlying connection is re-established.
+     * @override \Serializable
+     */
     function unserialize ($serialised) {
         $data = unserialize($serialised);
-
-        // Warn  if  the  wake  up  state  is not  the  same  as  this
-        // connnection
-        if ($data[0] != $this->sleepMode) {
-            trigger_error("PConnection woke up in different state", E_USER_WARNING);
-            $this->sleepMode = $data[0];
+        $rewake = false;
+        // Check the object state to see if the constructor needs to be called.
+        if ($this->stateFlag & self::ST_UNSER) {
+            throw new \Exception("PConnection is already unserialized", 2886);
+        } else if (! ($this->stateFlag & self::ST_CONSTR)) {
+            error_log("PConnection - manually invoke constructor during wakeup");
+            $this->__construct();
+            $rewake = true;
+        } else if ($data[0] != $this->sleepMode) {
+            trigger_error("PConnection constructed in different state", E_USER_WARNING);
         }
+        $this->sleepMode = $data[0];
 
         // Restore Connection state
         foreach (self::$BasicProps as $k) {
-            if ($k == 'vhost' && $data[1][$k] != $this->sock->getVHost()) {
-                throw new \Exception("Persisted connection woken up as different VHost", 9250);
-            }
             $this->$k = $data[1][$k];
         }
 
+        // Reconnect only if we're being unserialised
+        if ($rewake) {
+            $this->initSocket();
+            $this->sock->connect();
+            if (! $this->sock->isReusedPSock()) {
+                throw new \Exception("Persisted connection woken up with a fresh socket connection", 9249);
+            }
+
+            foreach (self::$BasicProps as $k) {
+                if ($k == 'vhost' && $data[1][$k] != $this->sock->getVHost()) {
+                    throw new \Exception("Persisted connection woken up as different VHost", 9250);
+                }
+            }
+        }
+
+        // Reawake channels if required
         if ($this->sleepMode == self::PERSIST_CHANNELS && isset($data[2])) {
             $this->chans = $data[2];
             foreach ($this->chans as $chan) {
@@ -280,6 +313,7 @@ class PConnection extends \amqphp\Connection implements \Serializable
                 $chan->setConnection($this);
             }
         }
+        $this->stateFlag |= self::ST_UNSER;
     }
 
 

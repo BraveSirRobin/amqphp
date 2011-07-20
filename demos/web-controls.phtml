@@ -75,7 +75,7 @@
   </head>
   <body>
 
-    <h1>Amqphp in web servers.</h1>
+    <h1>Amqphp in web servers: <?php echo getmypid() ?></h1>
 
 
     <?php foreach ($this->messages as $m) { ?>
@@ -114,28 +114,28 @@
               <input type="hidden" name="action" value="new-connection"/>
               <label>
                 Persistent
-                <input type="checkbox" name="persistent"/>
+                <input type="checkbox" name="persistent" checked="checked"/>
               </label>
 
               <label>
                 Name
-                <input type="text" name="name"/>
+                <input type="text" name="name" value="test1"/>
               </label>
               <label>
                 Url
-                <input type="text" name="url"/>
+                <input type="text" name="socketParams[url]" value="tcp://rabbit1:5672"/>
               </label>
               <label>
                 VHost
-                <input type="text" name="vhost" />
+                <input type="text" name="vhost" value="robin"/>
               </label>
               <label>
                 Username
-                <input type="text" name="username" />
+                <input type="text" name="username" value="testing"/>
               </label>
               <label>
                 Password
-                <input type="text" name="password" />
+                <input type="text" name="userpass" value="letmein"/>
               </label>
 
               <input type="submit" value="Go!"/>

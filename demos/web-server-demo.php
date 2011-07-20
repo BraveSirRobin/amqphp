@@ -88,6 +88,7 @@ class PConnHelper
         if (self::$Set) {
             throw new \Exception("PConnHelper is a singleton", 8539);
         }
+        $this->CK = sprintf("%s:%s", $this->CK, getmypid());
         $this->wakeup();
     }
 
@@ -95,10 +96,9 @@ class PConnHelper
     protected function wakeup () {
         $srz = apc_fetch($this->CK, $flg);
         if ($flg) {
+            // Connections should all wake up here.
+            error_log(sprintf("Wakup cache %s", $this->CK));
             $this->cache = unserialize($srz);
-            foreach ($this->cache as $conn) {
-                $conn->connect();
-            }
         }
     }
 
@@ -110,6 +110,7 @@ class PConnHelper
         foreach ($this->cache as $conn) {
             $this->shutdownConnection($conn);
         }
+        error_log(sprintf("Sleep cache %s", $this->CK));
         return apc_store($this->CK, serialize($this->cache));
     }
 
@@ -118,9 +119,12 @@ class PConnHelper
      */
     private function shutdownConnection ($conn) {
         if ($conn instanceof pconn\PConnection) {
-            $conn->sleep();
-        } else {
+            // TODO: Configurable sleep sequence
+        } else if (false !== ($k = array_search($conn, $this->cache, true))) {
             $conn->shutdown();
+            unset($this->cache[$k]);
+        } else {
+            throw new \Exception("Bad connection during shutdown", 2789);
         }
     }
 
@@ -138,13 +142,16 @@ class PConnHelper
 
         $params['socketImpl'] = '\\amqphp\\StreamSocket';
         if ($persistent) {
+            error_log(sprintf("Start pconnection with %s", print_r($params, true)));
             $conn = new pconn\PConnection($params);
             //$conn->setPersistenceHelperImpl('\\amqphp\\persistent\\FilePersistenceHelper');
             $conn->setPersistenceHelperImpl('\\amqphp\\persistent\\APCPersistenceHelper');
         } else {
             $conn = new amqp\Connection($params);
         }
+        error_log("Connect....");
         $conn->connect();
+        error_log("Done.");
 
         $this->cache[$key] = $conn;
     }
