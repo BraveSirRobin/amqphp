@@ -46,24 +46,31 @@ class View
 /** Trivial consumer implementation */
 class DemoConsumer extends amqp\SimpleConsumer
 {
-    private $name;
-    private $view;
+    protected $name;
+    protected $view;
 
-    function __construct ($name, $view) {
+    function __construct ($name) {
         $this->name = $name;
-        $this->view = $view;
-        if (! isset($this->view->received)) {
-            $this->view->received = array();
-        }
     }
 
 
     function handleDelivery (wire\Method $meth, amqp\Channel $chan) {
-        $this->view->received[] = $_tmp = sprintf("[recv:%s]\n%s\n", $this->name, substr($meth->getContent(), 0, 10));
+        error_log(sprintf("[recv:%s]\n%s\n", $this->name, substr($meth->getContent(), 0, 10)));
         return amqp\CONSUMER_ACK;
     }
 }
 
+
+class DemoPConsumer extends DemoConsumer implements \Serializable
+{
+    function serialize () {
+        return serialize($this->name);
+    }
+
+    function unserialize ($serialised) {
+        $this->name = unserialize($serialised);
+    }
+}
 
 
 
@@ -80,6 +87,18 @@ class PConnHelper
     private $CK = '__pconn-helper-private';
 
     private $pState;
+
+
+
+    private $publishParams = array(
+        'content-type' => 'text/plain',
+        'content-encoding' => 'UTF-8',
+        'routing-key' => '',
+        'mandatory' => false,
+        'immediate' => false,
+        'exchange' => 'most-basic');
+
+
 
     /**
      *
@@ -108,26 +127,18 @@ class PConnHelper
      */
     function sleep () {
         foreach ($this->cache as $conn) {
-            $this->shutdownConnection($conn);
+            if ($conn instanceof pconn\PConnection) {
+                // TODO: Configurable sleep sequence
+            } else if (false !== ($k = array_search($conn, $this->cache, true))) {
+                $conn->shutdown();
+                unset($this->cache[$k]);
+            } else {
+                throw new \Exception("Bad connection during shutdown", 2789);
+            }
         }
         error_log(sprintf("Sleep cache %s", $this->CK));
         return apc_store($this->CK, serialize($this->cache));
     }
-
-    /**
-     * Shuts down standard connections, sleeps persistent ones.
-     */
-    private function shutdownConnection ($conn) {
-        if ($conn instanceof pconn\PConnection) {
-            // TODO: Configurable sleep sequence
-        } else if (false !== ($k = array_search($conn, $this->cache, true))) {
-            $conn->shutdown();
-            unset($this->cache[$k]);
-        } else {
-            throw new \Exception("Bad connection during shutdown", 2789);
-        }
-    }
-
 
 
 
@@ -162,8 +173,9 @@ class PConnHelper
      */
     function removeConnection ($key) {
         if (array_key_exists($key, $this->cache)) {
-            $this->shutdownConnection($this->cache[$k]);
-            unset($this->cache[$k]);
+            $this->cache[$key]->shutdown();
+            unset($this->cache[$key]);
+            error_log("Removed connection $key");
         }
     }
 
@@ -172,8 +184,11 @@ class PConnHelper
      * Opens a channel on the given connection with the given params.
      */
     function openChannel ($ckey, $chanParams) {
-        if (! array_key_exists($ckey, $this->cache)) {
+        if (array_key_exists($ckey, $this->cache)) {
             $this->cache[$ckey]->openChannel();
+            error_log("Opened channel on connection $ckey OK");
+        } else {
+            error_log("No such channel: $ckey (" . implode(',', array_keys($this->cache)) . ')');
         }
     }
 
@@ -182,8 +197,8 @@ class PConnHelper
      */
     function closeChannel ($ckey, $chanId) {
         if (array_key_exists($ckey, $this->cache) && 
-            ($chan = $this->cache[$key]->getChannel($chanId))) {
-            // Here : Close / Cancel consumers?
+            ($chan = $this->cache[$ckey]->getChannel($chanId))) {
+            $chan->shutdown();
         }
     }
 
@@ -191,6 +206,20 @@ class PConnHelper
      * Adds a consumer to the given
      */
     function addConsumer ($ckey, $chanId, $impl) {
+        if (array_key_exists($ckey, $this->cache)) {
+            foreach ($this->cache[$ckey]->getChannels() as $chan) {
+                if ($chan->getChanId() == $chanId) {
+                    $cons = new $impl($tmp = rand());
+                    $chan->addConsumer($cons);
+                    error_log("Added a consumer of type $impl with name $tmp");
+                    $this->cache[$ckey]->setSelectMode(amqp\SELECT_TIMEOUT_REL, 1, 500000);
+                    $this->cache[$ckey]->select();
+                    error_log("Select is finished");
+                    return true;
+                }
+            }
+        }
+        return true;
     }
 
     /**
@@ -204,6 +233,17 @@ class PConnHelper
      * Sends a single message to the given connection, channel.
      */
     function sendMessage ($ckey, $chanId, $msg) {
+        if (array_key_exists($ckey, $this->cache)) {
+            $chans = $this->cache[$ckey]->getChannels();
+            foreach ($chans as $chan) {
+                if ($chan->getChanId() == $chanId) {
+                    $bp = $chan->basic('publish', $this->publishParams, $msg);
+                    $chan->invoke($bp);
+                    return $this->cache[$ckey];
+                }
+            }
+        }
+        return false;
     }
 
     /**
@@ -223,6 +263,15 @@ class PConnHelper
 
     function getConnections () {
         return $this->cache;
+    }
+
+    function hasChannels () {
+        foreach ($this->cache as $conn) {
+            if ($conn->getChannels()) {
+                return true;
+            }
+        }
+        return false;
     }
 }
 
@@ -305,7 +354,7 @@ class Actions
         $impl = $_REQUEST['impl'];
 
         try {
-            $this->ch->addconsumer($ckey, $chanId, $impl);
+            $this->ch->addConsumer($ckey, $chanId, $impl);
         } catch (\Exception $e) {
             $this->view->messages[] = sprintf("Exception in %s [%d]: %s",
                                               __METHOD__, $e->getCode(), $e->getMessage());
@@ -336,7 +385,9 @@ class Actions
         try {
             foreach ($targets as $ckey => $chans) {
                 foreach ($chans as $chanId) {
-                    $this->ch->sendMessage($ckey, $chanId, $msg);
+                    $this->view->messages[] = $this->ch->sendMessage($ckey, $chanId, $msg)
+                        ? "Message sent to $ckey.$chanId OK"
+                        : "Message send to $ckey.$chanId failed";
                 }
             }
         } catch (\Exception $e) {

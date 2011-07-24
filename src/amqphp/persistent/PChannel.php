@@ -38,7 +38,8 @@ class PChannel extends \amqphp\Channel implements \Serializable
         }
         $data['consumers'] = array();
         foreach ($this->consumers as $cons) {
-            if ($c[0] instanceof \Serializable && $c[2] == 'READY') {
+            if ($cons[0] instanceof \Serializable && $cons[2] == 'READY') {
+                error_log("Serialize consumer: {$cons[1]}");
                 $data['consumers'][] = $cons;
             }
         }

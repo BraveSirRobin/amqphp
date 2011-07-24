@@ -223,14 +223,20 @@ class StreamSocket
     function write ($buff) {
         $bw = 0;
         $contentLength = strlen($buff);
+        if ($contentLength == 0) {
+            return 0;
+        }
         while (true) {
             if (DEBUG) {
                 echo "\n<write>\n";
                 echo wire\Hexdump::hexdump($buff);
             }
             if (($tmp = fwrite($this->sock, $buff)) === false) {
-                throw new \Exception(sprintf("\nStream write failed: %s\n",
+                throw new \Exception(sprintf("\nStream write failed (error): %s\n",
                                              $this->strError()), 7854);
+            } else if ($tmp === 0) {
+                throw new \Exception(sprintf("\nStream write failed (zero bytes written): %s\n",
+                                             $this->strError()), 7855);
             }
             $bw += $tmp;
             if ($bw < $contentLength) {

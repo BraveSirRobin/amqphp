@@ -70,7 +70,7 @@ class PConnection extends \amqphp\Connection implements \Serializable
      * List of Connection (super class) properties to be persisted.
      */
     private static $BasicProps = array('capabilities', 'chanMax','frameMax', 
-                                       'vhost', 'nextChan', 'pHelperImpl');
+                                       'vhost', 'nextChan', 'socketParams');
 
     private $sleepMode = self::PERSIST_CHANNELS;
 
@@ -155,8 +155,10 @@ class PConnection extends \amqphp\Connection implements \Serializable
         } else {
             error_log("PConnection : New socket");
             $this->doConnectionStartup();
-            $ph = $this->getPersistenceHelper();
-            $ph->destroy();
+            if ($ph = $this->getPersistenceHelper()) {
+                error_log("Destroy previous cache for newly established connection", 26891);
+                $ph->destroy();
+            }
         }
     }
 
@@ -169,7 +171,9 @@ class PConnection extends \amqphp\Connection implements \Serializable
     function shutdown () {
         $ph = $this->getPersistenceHelper();
         parent::shutdown();
-        $ph->destroy();
+        if ($ph) {
+            $ph->destroy();
+        }
     }
 
 
@@ -196,6 +200,8 @@ class PConnection extends \amqphp\Connection implements \Serializable
     private function getPersistenceHelper () {
         if (! $this->connected) {
             throw new \Exception("PConnection persistence helper cannot be created before the connection is open", 3789);
+        } else if (! $this->pHelperImpl) {
+            return false;
         }
         if (is_null($this->pHelper)) {
             $c = $this->pHelperImpl;
@@ -238,7 +244,9 @@ class PConnection extends \amqphp\Connection implements \Serializable
      * request to put the connection in to sleep mode
      */
     function sleep () {
-        $ph = $this->getPersistenceHelper();
+        if (! ($ph = $this->getPersistenceHelper())) {
+            throw new \Exception("Failed to load a persistence helper during sleep", 10785);
+        }
         $ph->setData($this->serialize());
         $ph->save();
     }
@@ -303,6 +311,7 @@ class PConnection extends \amqphp\Connection implements \Serializable
                     throw new \Exception("Persisted connection woken up as different VHost", 9250);
                 }
             }
+            $this->connected = true;
         }
 
         // Reawake channels if required
@@ -327,7 +336,9 @@ class PConnection extends \amqphp\Connection implements \Serializable
         $this->wakeupFlag = true;
 
         // Load data from persistence store.
-        $ph = $this->getPersistenceHelper();
+        if (! ($ph = $this->getPersistenceHelper())) {
+            throw new \Exception("Failed to load persistence helper during wakeup", 1798);
+        }
         if (! $ph->load()) {
             // Also destroy the TCP connection.
             try {

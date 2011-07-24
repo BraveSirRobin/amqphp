@@ -121,6 +121,10 @@ class Channel
         $this->chanId = $chanId;
     }
 
+    function getChanId () {
+        return $this->chanId;
+    }
+
     function setFrameMax ($frameMax) {
         $this->frameMax = $frameMax;
     }

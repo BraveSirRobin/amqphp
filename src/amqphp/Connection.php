@@ -88,7 +88,7 @@ class Connection
     private $socketImpl = '\amqphp\Socket'; // Socket impl class name
     private $protoImpl = 'v0_9_1'; // Protocol implementation namespace (generated code)
     private $protoLoader; // Closure, set up in getProtocolLoader()
-    private $socketParams = array('host' => 'localhost', 'port' => 5672); // Construct params for $socketImpl
+    protected $socketParams = array('host' => 'localhost', 'port' => 5672); // Construct params for $socketImpl
     private $socketFlags;
     private $username;
     private $userpass;
