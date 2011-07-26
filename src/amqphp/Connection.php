@@ -85,8 +85,8 @@ class Connection
 
     /** Connection params */
     protected $sock; // Socket wrapper object
-    private $socketImpl = '\amqphp\Socket'; // Socket impl class name
-    private $protoImpl = 'v0_9_1'; // Protocol implementation namespace (generated code)
+    protected $socketImpl = '\amqphp\Socket'; // Socket impl class name
+    protected $protoImpl = 'v0_9_1'; // Protocol implementation namespace (generated code)
     private $protoLoader; // Closure, set up in getProtocolLoader()
     protected $socketParams = array('host' => 'localhost', 'port' => 5672); // Construct params for $socketImpl
     private $socketFlags;
@@ -96,7 +96,7 @@ class Connection
     protected $frameMax = 65536; // Negotated during setup.
     protected $chanMax = 50; // Negotated during setup.
     private $heartbeat = 0; // Negotated during setup.
-    private $signalDispatch = true;
+    protected $signalDispatch = true;
 
 
     protected $chans = array(); // Format: array(<chan-id> => Channel)

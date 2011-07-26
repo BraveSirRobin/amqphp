@@ -70,7 +70,8 @@ class PConnection extends \amqphp\Connection implements \Serializable
      * List of Connection (super class) properties to be persisted.
      */
     private static $BasicProps = array('capabilities', 'chanMax','frameMax', 
-                                       'vhost', 'nextChan', 'socketParams');
+                                       'vhost', 'nextChan', 'socketParams',
+                                       'socketImpl', 'protoImpl', 'signalDispatch');
 
     private $sleepMode = self::PERSIST_CHANNELS;
 

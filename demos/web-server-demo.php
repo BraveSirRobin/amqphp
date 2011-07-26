@@ -50,6 +50,7 @@ class DemoConsumer extends amqp\SimpleConsumer
     protected $view;
 
     function __construct ($name) {
+        parent::__construct(array('queue' => 'most-basic'));
         $this->name = $name;
     }
 
@@ -152,6 +153,8 @@ class PConnHelper
         }
 
         $params['socketImpl'] = '\\amqphp\\StreamSocket';
+        $params['signalDispatch'] = false;
+
         if ($persistent) {
             error_log(sprintf("Start pconnection with %s", print_r($params, true)));
             $conn = new pconn\PConnection($params);

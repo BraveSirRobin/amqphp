@@ -353,6 +353,9 @@ class Channel
         $this->myConn = $this->chanId = $this->ticket = null;
     }
 
+    /**
+     * TODO: Add a second parameter so for basic.consume params (?)
+     */
     function addConsumer (Consumer $cons) {
         foreach ($this->consumers as $c) {
             if ($c === $cons) {
