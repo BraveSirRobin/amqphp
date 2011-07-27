@@ -47,7 +47,6 @@ class View
 class DemoConsumer extends amqp\SimpleConsumer
 {
     protected $name;
-    protected $view;
 
     function __construct ($name) {
         parent::__construct(array('queue' => 'most-basic'));
@@ -214,10 +213,14 @@ class PConnHelper
                 if ($chan->getChanId() == $chanId) {
                     $cons = new $impl($tmp = rand());
                     $chan->addConsumer($cons);
-                    error_log("Added a consumer of type $impl with name $tmp");
-                    $this->cache[$ckey]->setSelectMode(amqp\SELECT_TIMEOUT_REL, 1, 500000);
+                    if ($chan->startConsumer($cons)) {
+                        error_log("Added a consumer of type $impl with name $tmp");
+                    } else {
+                        error_log("Failed to start consumer!");
+                    }
+                    /*$this->cache[$ckey]->setSelectMode(amqp\SELECT_TIMEOUT_REL, 1, 500000);
                     $this->cache[$ckey]->select();
-                    error_log("Select is finished");
+                    error_log("Select is finished");*/
                     return true;
                 }
             }
@@ -253,7 +256,24 @@ class PConnHelper
      * Puts the given  connections in to an event  loop with the given
      * parameters.
      */
-    function consume ($cons, $params) {
+    function consume ($cons) {
+        $wd = false;
+        $evl = new amqp\EventLoop;
+
+        foreach ($cons as $k) {
+            if (array_key_exists($k, $this->cache)) {
+                $this->cache[$k]->setSelectMode(amqp\SELECT_TIMEOUT_REL, 1, 500000);
+                $evl->addConnection($this->cache[$k]);
+                $wd = true;
+            }
+        }
+        if (! $wd) {
+            throw new \Exception("No valid channels specified", 4940);
+        } else {
+            error_log("Start select loop");
+            $evl->select();
+            error_log("Select loop done.");
+        }
     }
 
 
@@ -400,7 +420,7 @@ class Actions
     }
 
     function receiveAction () {
-        $conns = $_REQUEST['connections'];
+        $conns = $_REQUEST['connection'];
 
         try {
             $this->ch->consume($conns);

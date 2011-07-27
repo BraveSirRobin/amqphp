@@ -257,26 +257,24 @@
         </div>
         <?php }?>
 
-
+        <?php if ($this->conns->hasChannels()) { ?>
         <div id="receive">
           <h2>Receive</h2>
           <form method="POST">
             <input type="hidden" name="action" value="receive"/>
-
             <fieldset>
-              <legend>Receive on channels</legend>
+              <legend>Receive on Connections</legend>
+              <?php foreach ($this->conns->getConnections() as $k => $conn) { $f = false; foreach ($conn->getChannels() as $chan) { if ($chan->getConsumerTags()) { $f = true; break; } } ?>
               <label>
-                Conn #1
-                <input type="checkbox" name="connections[1]" value="1"/>
+                Connection <?php echo $k ?>
+                <input type="checkbox" name="connection[]" value="<?php echo $k ?>"/>
               </label>
-              <label>
-                Conn #2
-                <input type="checkbox" name="connections[2]" value="1"/>
-              </label>
+              <?php } ?>
             </fieldset>
             <input type="submit" value="Receive"/>
           </form>
         </div>
+        <?php } ?>
       </div><!-- End of controls container -->
 
 

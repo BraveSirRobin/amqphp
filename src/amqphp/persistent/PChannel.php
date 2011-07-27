@@ -55,7 +55,7 @@ class PChannel extends \amqphp\Channel implements \Serializable
             $this->$p = $data[$p];
         }
         foreach ($data['consumers'] as $i => $c) {
-            $this->consumers[$i] = array($c[0], $cons[1], $cons[2]);
+            $this->consumers[$i] = array($c[0], $c[1], $c[2]);
         }
     }
 

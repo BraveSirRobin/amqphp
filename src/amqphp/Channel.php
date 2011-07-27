@@ -473,25 +473,55 @@ class Channel
     /**
      * Channel  callback from  Connection->select()  - prepare  signal
      * raised just before entering the select loop.
-     * @return  boolean         Return true if there are consumers present
+     * @return  boolean         Return true if any consumers were started
      */
     function onSelectStart () {
         if (! $this->consumers) {
             return false;
         }
+        $r = false;
         foreach (array_keys($this->consumers) as $cnum) {
             if (false === $this->consumers[$cnum][1]) {
-                $consume = $this->consumers[$cnum][0]->getConsumeMethod($this);
-                $cOk = $this->invoke($consume);
-                $this->consumers[$cnum][0]->handleConsumeOk($cOk, $this);
-                $this->consumers[$cnum][2] = 'READY';
-                $this->consumers[$cnum][1] = $cOk->getField('consumer-tag');
+                $this->_startConsumer($cnum);
+                $r = true;
             }
         }
-        return true;
+        return $r;
+    }
+
+
+    private function _startConsumer ($cnum) {
+        $consume = $this->consumers[$cnum][0]->getConsumeMethod($this);
+        $cOk = $this->invoke($consume);
+        $this->consumers[$cnum][0]->handleConsumeOk($cOk, $this);
+        $this->consumers[$cnum][2] = 'READY';
+        $this->consumers[$cnum][1] = $cOk->getField('consumer-tag');
+    }
+
+    /**
+     * Manually  start consuming  for the  given consumer.   Note that
+     * this is normally done automatically.
+     * @return       boolean        True if the consumer was actually started.
+     */
+    function startConsumer (Consumer $cons) {
+        foreach ($this->consumers as $i => $c) {
+            if ($c[0] === $cons && $c[1] === false) {
+                $this->_startConsumer($i);
+                return true;
+            }
+        }
+        return false;
     }
 
     function onSelectEnd () {
         $this->consuming = false;
     }
 }
+
+    /**
+     * Consumers for this channel, format array(array(<Consumer>, <consumer-tag OR false>, <#FLAG#>)+)
+     * #FLAG# is the consumer status, this is:
+     *  'READY_WAIT' - not yet started, i.e. before basic.consume/basic.consume-ok
+     *  'READY' - started and ready to recieve messages
+     *  'CLOSED' - previously live but now closed, receiving a basic.cancel-ok triggers this.
+     */
