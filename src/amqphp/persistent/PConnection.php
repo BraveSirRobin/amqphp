@@ -149,15 +149,12 @@ class PConnection extends \amqphp\Connection implements \Serializable
         $this->sock->connect();
 
         if ($this->sock->isReusedPSock()) {
-            error_log("PConnection : Re-use socket");
             // Assume  that a  re-used persistent  socket  has already
             // gone through the handshake procedure.
             $this->wakeup();
         } else {
-            error_log("PConnection : New socket");
             $this->doConnectionStartup();
             if ($ph = $this->getPersistenceHelper()) {
-                error_log("Destroy previous cache for newly established connection", 26891);
                 $ph->destroy();
             }
         }
@@ -286,7 +283,6 @@ class PConnection extends \amqphp\Connection implements \Serializable
         if ($this->stateFlag & self::ST_UNSER) {
             throw new \Exception("PConnection is already unserialized", 2886);
         } else if (! ($this->stateFlag & self::ST_CONSTR)) {
-            error_log("PConnection - manually invoke constructor during wakeup");
             $this->__construct();
             $rewake = true;
         } else if ($data[0] != $this->sleepMode) {

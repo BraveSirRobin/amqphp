@@ -71,6 +71,14 @@
       #receive {
         background: #DCDABB;
       }
+
+      span.in-message {
+        display: block;
+      }
+
+      span.out-message {
+        display: block;
+      }
     </style>
 
   </head>
@@ -280,6 +288,29 @@
 
       <div id="data">
         <h2>Data - messages sent / received</h2>
+
+        <?php if (isset($this->received) && $this->received) { ?>
+        <div id="received">
+          <h3>Received</h3>
+          <?php foreach ($this->received as $m) { ?>
+          <span class="in-message"><?php echo $m ?></span>
+          <?php } ?>
+        </div>
+        <?php } ?>
+
+
+
+
+        <?php if (isset($this->sent) && $this->sent) { ?>
+        <div id="received">
+          <h3>Sent</h3>
+          <?php foreach ($this->sent as $m) { ?>
+          <span class="out-message"><?php printf('Sent to %s.%s: %s', $m[0], $m[1], $m[2]) ?></span>
+          <?php } ?>
+        </div>
+        <?php } ?>
+
+
       </div>
 
     </div><!-- End of data container -->

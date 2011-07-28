@@ -55,7 +55,7 @@ class DemoConsumer extends amqp\SimpleConsumer
 
 
     function handleDelivery (wire\Method $meth, amqp\Channel $chan) {
-        error_log(sprintf("[recv:%s]\n%s\n", $this->name, substr($meth->getContent(), 0, 10)));
+        PConnHelper::ConsumerCallback(sprintf("[recv:%s]\n%s\n", $this->name, substr($meth->getContent(), 0, 10)));
         return amqp\CONSUMER_ACK;
     }
 }
@@ -90,6 +90,13 @@ class PConnHelper
 
 
 
+    private static $ConsMsg = array();
+    static function ConsumerCallback ($msg) {
+        self::$ConsMsg[] = $msg;
+    }
+
+
+
     private $publishParams = array(
         'content-type' => 'text/plain',
         'content-encoding' => 'UTF-8',
@@ -116,7 +123,6 @@ class PConnHelper
         $srz = apc_fetch($this->CK, $flg);
         if ($flg) {
             // Connections should all wake up here.
-            error_log(sprintf("Wakup cache %s", $this->CK));
             $this->cache = unserialize($srz);
         }
     }
@@ -136,7 +142,6 @@ class PConnHelper
                 throw new \Exception("Bad connection during shutdown", 2789);
             }
         }
-        error_log(sprintf("Sleep cache %s", $this->CK));
         return apc_store($this->CK, serialize($this->cache));
     }
 
@@ -155,16 +160,12 @@ class PConnHelper
         $params['signalDispatch'] = false;
 
         if ($persistent) {
-            error_log(sprintf("Start pconnection with %s", print_r($params, true)));
             $conn = new pconn\PConnection($params);
-            //$conn->setPersistenceHelperImpl('\\amqphp\\persistent\\FilePersistenceHelper');
             $conn->setPersistenceHelperImpl('\\amqphp\\persistent\\APCPersistenceHelper');
         } else {
             $conn = new amqp\Connection($params);
         }
-        error_log("Connect....");
         $conn->connect();
-        error_log("Done.");
 
         $this->cache[$key] = $conn;
     }
@@ -177,7 +178,6 @@ class PConnHelper
         if (array_key_exists($key, $this->cache)) {
             $this->cache[$key]->shutdown();
             unset($this->cache[$key]);
-            error_log("Removed connection $key");
         }
     }
 
@@ -188,9 +188,6 @@ class PConnHelper
     function openChannel ($ckey, $chanParams) {
         if (array_key_exists($ckey, $this->cache)) {
             $this->cache[$ckey]->openChannel();
-            error_log("Opened channel on connection $ckey OK");
-        } else {
-            error_log("No such channel: $ckey (" . implode(',', array_keys($this->cache)) . ')');
         }
     }
 
@@ -213,14 +210,9 @@ class PConnHelper
                 if ($chan->getChanId() == $chanId) {
                     $cons = new $impl($tmp = rand());
                     $chan->addConsumer($cons);
-                    if ($chan->startConsumer($cons)) {
-                        error_log("Added a consumer of type $impl with name $tmp");
-                    } else {
-                        error_log("Failed to start consumer!");
+                    if (! $chan->startConsumer($cons)) {
+                        throw new \Exception("Failed to start consumer on {$ckey}.{$chanId}", 1778);
                     }
-                    /*$this->cache[$ckey]->setSelectMode(amqp\SELECT_TIMEOUT_REL, 1, 500000);
-                    $this->cache[$ckey]->select();
-                    error_log("Select is finished");*/
                     return true;
                 }
             }
@@ -270,9 +262,9 @@ class PConnHelper
         if (! $wd) {
             throw new \Exception("No valid channels specified", 4940);
         } else {
-            error_log("Start select loop");
+            self::$ConsMsg = array();
             $evl->select();
-            error_log("Select loop done.");
+            return self::$ConsMsg;
         }
     }
 
@@ -313,8 +305,6 @@ class Actions
         $this->ch = $ch;
 
         $meth = preg_replace('/(-(.{1}))/e', 'strtoupper(\'$2\')', $action) . 'Action';
-        $this->view->messages[] = sprintf("Route %s to %s", $action, $meth);
-        $this->view->messages[] = sprintf("Request: <pre>%s</pre>", print_r($_REQUEST, true));
         if (! method_exists($this, $meth)) {
             throw new \Exception("Failed to route action $action", 964);
         }
@@ -331,6 +321,7 @@ class Actions
 
         try {
             $this->ch->addConnection($key, $params, $pers);
+            $this->view->messages[] = "Connection added OK";
         } catch (\Exception $e) {
             $this->view->messages[] = sprintf("Exception in %s [%d]: %s",
                                               __METHOD__, $e->getCode(), $e->getMessage());
@@ -341,6 +332,7 @@ class Actions
 
         try {
             $this->ch->removeConnection($key);
+            $this->view->messages[] = "Connection removed OK";
         } catch (\Exception $e) {
             $this->view->messages[] = sprintf("Exception in %s [%d]: %s",
                                               __METHOD__, $e->getCode(), $e->getMessage());
@@ -354,6 +346,7 @@ class Actions
 
         try {
             $this->ch->openChannel($ckey, $params);
+            $this->view->messages[] = "New Channel added OK";
         } catch (\Exception $e) {
             $this->view->messages[] = sprintf("Exception in %s [%d]: %s",
                                               __METHOD__, $e->getCode(), $e->getMessage());
@@ -365,6 +358,7 @@ class Actions
 
         try {
             $this->ch->closeChannel($ckey, $chanId);
+            $this->view->messages[] = "Channel Removed OK";
         } catch (\Exception $e) {
             $this->view->messages[] = sprintf("Exception in %s [%d]: %s",
                                               __METHOD__, $e->getCode(), $e->getMessage());
@@ -378,6 +372,7 @@ class Actions
 
         try {
             $this->ch->addConsumer($ckey, $chanId, $impl);
+            $this->view->messages[] = "Consumer added OK";
         } catch (\Exception $e) {
             $this->view->messages[] = sprintf("Exception in %s [%d]: %s",
                                               __METHOD__, $e->getCode(), $e->getMessage());
@@ -392,6 +387,7 @@ class Actions
 
         try {
             $this->ch->removeConsumer($ckey, $chanId, $ctag);
+            $this->view->messages[] = "Consumer removed OK";
         } catch (\Exception $e) {
             $this->view->messages[] = sprintf("Exception in %s [%d]: %s",
                                               __METHOD__, $e->getCode(), $e->getMessage());
@@ -406,13 +402,17 @@ class Actions
         $msg = $_REQUEST['message'];
 
         try {
+            $m = array();
             foreach ($targets as $ckey => $chans) {
                 foreach ($chans as $chanId) {
+                    $m[] = array($ckey, $chanId, $msg);
                     $this->view->messages[] = $this->ch->sendMessage($ckey, $chanId, $msg)
                         ? "Message sent to $ckey.$chanId OK"
                         : "Message send to $ckey.$chanId failed";
                 }
             }
+            $this->view->sent = $m;
+            $this->view->messages[] = "Message(s) sent OK";
         } catch (\Exception $e) {
             $this->view->messages[] = sprintf("Exception in %s [%d]: %s",
                                               __METHOD__, $e->getCode(), $e->getMessage());
@@ -423,7 +423,8 @@ class Actions
         $conns = $_REQUEST['connection'];
 
         try {
-            $this->ch->consume($conns);
+            $this->view->received = $this->ch->consume($conns);
+            $this->view->messages[] = "Message(s) received OK";
         } catch (\Exception $e) {
             $this->view->messages[] = sprintf("Exception in %s [%d]: %s",
                                               __METHOD__, $e->getCode(), $e->getMessage());
