@@ -36,7 +36,7 @@ $conConfigs[] = array(
     'socketImpl' => '\amqphp\StreamSocket',
     'socketParams' => array('url' => 'tcp://rabbit1:5672'),
     'socketFlags' => array('STREAM_CLIENT_PERSISTENT'));
-
+/*
 $conConfigs[] = array(
     'username' => 'testing',
     'userpass' => 'letmein',
@@ -45,7 +45,7 @@ $conConfigs[] = array(
     'socketImpl' => '\amqphp\StreamSocket',
     'socketParams' => array('url' => 'tcp://rabbit2:5672'),
     'socketFlags' => array('STREAM_CLIENT_PERSISTENT'));
-
+*/
 
 
 
@@ -60,8 +60,8 @@ $publishParams = array(
 
 $cons = array();
 foreach ($conConfigs as $conf) {
-    $conn = new amqp\PConnection($conf);
-    $conn->setPersistenceHelperImpl('\\amqphp\\FilePersistenceHelper');
+    $conn = new amqp\Connection($conf);
+//    $conn->setPersistenceHelperImpl('\\amqphp\\FilePersistenceHelper');
     $conn->connect();
     $chan = $conn->getChannel();
     //initialiseDemo($chan);
@@ -75,7 +75,11 @@ foreach ($conConfigs as $conf) {
 
 $content = "My god, sending the same message thousands of times?  How dull!";
 $n = 0;
-for ($i = 0; $i < 500; $i++) {
+$N = array_key_exists(1, $argv) && is_numeric($argv[1])
+    ? (int) $argv[1]
+    : 500;
+
+for ($i = 0; $i < $N; $i++) {
     foreach ($cons as $stuff) {
         $stuff[2]->setContent($content);
         $stuff[1]->invoke($stuff[2]);
@@ -86,8 +90,8 @@ for ($i = 0; $i < 500; $i++) {
 
 foreach ($cons as $stuff) {
     $stuff[1]->shutdown(); // Shut down channel only.
-    $stuff[0]->sleep();
-    //$stuff[0]->shutdown();
+//    $stuff[0]->sleep();
+    $stuff[0]->shutdown();
 }
 
 printf("<pre>Test complete, published %d messages</pre>", $n);

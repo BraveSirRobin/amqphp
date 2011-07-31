@@ -88,6 +88,9 @@ class PConnHelper
 
     private $pState;
 
+    private $EX_NAME = 'most-basic';
+    private $EX_TYPE = 'direct';
+    private $Q = 'most-basic';
 
 
     private static $ConsMsg = array();
@@ -161,7 +164,7 @@ class PConnHelper
 
         if ($persistent) {
             $conn = new pconn\PConnection($params);
-            $conn->setPersistenceHelperImpl('\\amqphp\\persistent\\APCPersistenceHelper');
+//            $conn->setPersistenceHelperImpl('\\amqphp\\persistent\\APCPersistenceHelper');
         } else {
             $conn = new amqp\Connection($params);
         }
@@ -187,7 +190,44 @@ class PConnHelper
      */
     function openChannel ($ckey, $chanParams) {
         if (array_key_exists($ckey, $this->cache)) {
-            $this->cache[$ckey]->openChannel();
+            $chan = $this->cache[$ckey]->openChannel();
+
+            $excDecl = $chan->exchange('declare', array(
+                                           'type' => $this->EX_TYPE,
+                                           'durable' => true,
+                                           'exchange' => $this->EX_NAME));
+            $eDeclResponse = $chan->invoke($excDecl); // Declare the queue
+
+
+            if (false) {
+                /**
+                 * This code demonstrates  how to set a TTL  value on a queue.
+                 * You have to  manually specify the table field  type using a
+                 * TableField  object  because  RabbitMQ expects  the  integer
+                 * x-message-ttl value to be  a long-long int (that's what the
+                 * second parameter, 'l', in  the constructore means).  If you
+                 * don't use a TableField,  Amqphp guesses the integer type by
+                 * choosing the smallest possible storage type.
+                 */
+                $args = new \amqphp\wire\Table;
+                $args['x-message-ttl'] = new \amqphp\wire\TableField(5000, 'l');
+
+                $qDecl = $chan->queue('declare', array(
+                                          'queue' => $this->Q,
+                                          'arguments' => $args)); // Declare the Queue
+            } else {
+                $qDecl = $chan->queue('declare', array('queue' => $this->Q));
+            }
+
+            $chan->invoke($qDecl);
+
+            $qBind = $chan->queue('bind', array(
+                                      'queue' => $this->Q,
+                                      'routing-key' => '',
+                                      'exchange' => $this->EX_NAME));
+            $chan->invoke($qBind);// Bind Q to EX
+
+
         }
     }
 
@@ -210,9 +250,15 @@ class PConnHelper
                 if ($chan->getChanId() == $chanId) {
                     $cons = new $impl($tmp = rand());
                     $chan->addConsumer($cons);
+/*
                     if (! $chan->startConsumer($cons)) {
                         throw new \Exception("Failed to start consumer on {$ckey}.{$chanId}", 1778);
                     }
+                    error_log("Force consume:");
+                    $r = $this->consume(array($ckey));
+                    error_log("...force complete.");
+                    return $r;
+*/
                     return true;
                 }
             }
@@ -224,6 +270,15 @@ class PConnHelper
      * Remove the given consumer from the given connection/channel
      */
     function removeConsumer ($ckey, $chanId, $ctag) {
+        if (array_key_exists($ckey, $this->cache)) {
+            $chans = $this->cache[$ckey]->getChannels();
+            foreach ($chans as $chan) {
+                if ($chan->getChanId() == $chanId && $cons = $chan->getConsumerByTag($ctag)) {
+                    return $chan->removeConsumer($cons);
+                }
+            }
+        }
+        return false;
     }
 
 
@@ -376,7 +431,10 @@ class Actions
         } catch (\Exception $e) {
             $this->view->messages[] = sprintf("Exception in %s [%d]: %s",
                                               __METHOD__, $e->getCode(), $e->getMessage());
+            return;
         }
+        $_REQUEST['connection'] = array($_REQUEST['connection']);
+        $this->receiveAction();
     }
 
 

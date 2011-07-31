@@ -259,6 +259,18 @@ class PConnection extends \amqphp\Connection implements \Serializable
             $data[$k] = $this->$k;
         }
 
+
+        // Test code
+        error_log("TEST SLEEP:");
+        sleep(1);
+        if ($left = $this->sock->nbReadAll()) {
+            error_log(sprintf("Found %d unread bytes during shutdown\n%s", strlen($left), wire\Hexdump::hexdump($left)));
+        } else {
+            error_log("No unread bytes.");
+        }
+
+
+
         $z = array();
         $z[0] = $this->sleepMode;
         $z[1] = $data;
@@ -346,4 +358,5 @@ class PConnection extends \amqphp\Connection implements \Serializable
         }
         $this->unserialize($ph->getData());
     }
+
 }

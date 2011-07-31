@@ -220,6 +220,39 @@ class StreamSocket
     }
 
 
+    /**
+     * Return the number of unread bytes, or false
+     * @return  mixed    Int = number of bytes, False = error
+     */
+    function getUnreadBytes () {
+        return ($smd = stream_get_meta_data($this->sock))
+            ? $smd['unread_bytes']
+            : false;
+    }
+
+
+    function eof () {
+        return feof($this->sock);
+    }
+
+    /**
+     * Wrapper for  readAll which sets  the socket in  to non-blocking
+     * mode first.
+     */
+    function nbReadAll () {
+        if (stream_set_blocking($this->sock, 0)) {
+            try {
+                $r = $this->readAll();
+                stream_set_blocking($this->sock, 1);
+                return $r;
+            } catch (\Exception $e) {
+                stream_set_blocking($this->sock, 1);
+            }
+        }
+        return false;
+    }
+
+
     function write ($buff) {
         $bw = 0;
         $contentLength = strlen($buff);
