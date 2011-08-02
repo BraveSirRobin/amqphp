@@ -34,8 +34,7 @@ $conConfigs[] = array(
     'vhost' => 'robin',
     'consumerName' => 'C1',
     'socketImpl' => '\amqphp\StreamSocket',
-    'socketParams' => array('url' => 'tcp://rabbit1:5672'),
-    'socketFlags' => array('STREAM_CLIENT_PERSISTENT'));
+    'socketParams' => array('url' => 'tcp://rabbit1:5672'));
 /*
 $conConfigs[] = array(
     'username' => 'testing',
@@ -43,8 +42,7 @@ $conConfigs[] = array(
     'vhost' => 'robin',
     'consumerName' => 'C2',
     'socketImpl' => '\amqphp\StreamSocket',
-    'socketParams' => array('url' => 'tcp://rabbit2:5672'),
-    'socketFlags' => array('STREAM_CLIENT_PERSISTENT'));
+    'socketParams' => array('url' => 'tcp://rabbit2:5672'));
 */
 
 
@@ -61,7 +59,6 @@ $publishParams = array(
 $cons = array();
 foreach ($conConfigs as $conf) {
     $conn = new amqp\Connection($conf);
-//    $conn->setPersistenceHelperImpl('\\amqphp\\FilePersistenceHelper');
     $conn->connect();
     $chan = $conn->getChannel();
     //initialiseDemo($chan);

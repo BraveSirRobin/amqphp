@@ -97,10 +97,11 @@ foreach ($conConfigs as $i => $conf) {
 
 
 
-    $receiver = new DemoConsumer($conf['consumerName']);
+//    $receiver = new DemoConsumer($conf['consumerName']);
 
     // Attach our consumer receiver object to the channel
-    $chan->addConsumer($receiver);
+    $chan->addConsumer(new DemoConsumer($conf['consumerName']));
+    $chan->addConsumer(new DemoConsumer($conf['consumerName'] . "_tother"));
 
 
 

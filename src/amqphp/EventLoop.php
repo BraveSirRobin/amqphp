@@ -115,6 +115,13 @@ class EventLoop
                     printf("--(Socket Exception (?))--\n");
                 }
             }
+        } // End - the loop
+
+        // Notify all existing connections that the loop has ended.
+        foreach ($this->cons as $id => $conn) {
+            $conn->notifyComplete();
+            $conn->setBlocking(false);
+            $this->removeConnection($conn);
         }
     }
 

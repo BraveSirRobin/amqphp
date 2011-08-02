@@ -589,6 +589,11 @@ class Connection
      */
     function notifyComplete () {
         $this->slHelper->complete();
+        error_log(sprintf("Connection->notifyComplete: There are %d unread messages", count($this->unDelivered)));
+        // Notify all channels
+        foreach ($this->chans as $chan) {
+            $chan->onSelectEnd();
+        }
     }
 
 

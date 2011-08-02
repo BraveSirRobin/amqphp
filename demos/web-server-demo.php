@@ -70,6 +70,14 @@ class DemoPConsumer extends DemoConsumer implements \Serializable
     function unserialize ($serialised) {
         $this->name = unserialize($serialised);
     }
+
+
+    function getConsumeMethod (amqp\Channel $chan) {
+        $r = $chan->basic('consume', $this->consumeParams);
+        error_log("DemoPConsumer->getConsumeMethod() : Consume method:\n" . print_r($r->getFields(), true));
+        return $r;
+    }
+
 }
 
 
@@ -250,15 +258,7 @@ class PConnHelper
                 if ($chan->getChanId() == $chanId) {
                     $cons = new $impl($tmp = rand());
                     $chan->addConsumer($cons);
-/*
-                    if (! $chan->startConsumer($cons)) {
-                        throw new \Exception("Failed to start consumer on {$ckey}.{$chanId}", 1778);
-                    }
-                    error_log("Force consume:");
-                    $r = $this->consume(array($ckey));
-                    error_log("...force complete.");
-                    return $r;
-*/
+                    error_log("web-server-demo: addConsumer: Consumer added.");
                     return true;
                 }
             }
@@ -378,6 +378,7 @@ class Actions
             $this->ch->addConnection($key, $params, $pers);
             $this->view->messages[] = "Connection added OK";
         } catch (\Exception $e) {
+            error_log("Exception in newConnectionAction:\n {$e->getMessage()}");
             $this->view->messages[] = sprintf("Exception in %s [%d]: %s",
                                               __METHOD__, $e->getCode(), $e->getMessage());
         }
@@ -389,6 +390,7 @@ class Actions
             $this->ch->removeConnection($key);
             $this->view->messages[] = "Connection removed OK";
         } catch (\Exception $e) {
+            error_log("Exception in removeConnectionAction:\n {$e->getMessage()}");
             $this->view->messages[] = sprintf("Exception in %s [%d]: %s",
                                               __METHOD__, $e->getCode(), $e->getMessage());
         }
@@ -403,6 +405,7 @@ class Actions
             $this->ch->openChannel($ckey, $params);
             $this->view->messages[] = "New Channel added OK";
         } catch (\Exception $e) {
+            error_log("Exception in newChannelAction:\n {$e->getMessage()}");
             $this->view->messages[] = sprintf("Exception in %s [%d]: %s",
                                               __METHOD__, $e->getCode(), $e->getMessage());
         }
@@ -415,6 +418,7 @@ class Actions
             $this->ch->closeChannel($ckey, $chanId);
             $this->view->messages[] = "Channel Removed OK";
         } catch (\Exception $e) {
+            error_log("Exception in removeChannelAction:\n {$e->getMessage()}");
             $this->view->messages[] = sprintf("Exception in %s [%d]: %s",
                                               __METHOD__, $e->getCode(), $e->getMessage());
         }
@@ -429,6 +433,7 @@ class Actions
             $this->ch->addConsumer($ckey, $chanId, $impl);
             $this->view->messages[] = "Consumer added OK";
         } catch (\Exception $e) {
+            error_log("Exception in newConsumerAction:\n {$e->getMessage()}");
             $this->view->messages[] = sprintf("Exception in %s [%d]: %s",
                                               __METHOD__, $e->getCode(), $e->getMessage());
             return;
@@ -447,6 +452,7 @@ class Actions
             $this->ch->removeConsumer($ckey, $chanId, $ctag);
             $this->view->messages[] = "Consumer removed OK";
         } catch (\Exception $e) {
+            error_log("Exception in removeConsumerAction:\n {$e->getMessage()}");
             $this->view->messages[] = sprintf("Exception in %s [%d]: %s",
                                               __METHOD__, $e->getCode(), $e->getMessage());
         }
@@ -472,6 +478,7 @@ class Actions
             $this->view->sent = $m;
             $this->view->messages[] = "Message(s) sent OK";
         } catch (\Exception $e) {
+            error_log("Exception in sendAction:\n {$e->getMessage()}");
             $this->view->messages[] = sprintf("Exception in %s [%d]: %s",
                                               __METHOD__, $e->getCode(), $e->getMessage());
         }
@@ -482,14 +489,13 @@ class Actions
 
         try {
             $this->view->received = $this->ch->consume($conns);
-            $this->view->messages[] = "Message(s) received OK";
+            $this->view->messages[] = sprintf("%d message(s) received OK", count($this->view->received));
         } catch (\Exception $e) {
+            error_log("Exception in receiveAction:\n {$e->getMessage()}");
             $this->view->messages[] = sprintf("Exception in %s [%d]: %s",
                                               __METHOD__, $e->getCode(), $e->getMessage());
         }
     }
-
-
 }
 
 

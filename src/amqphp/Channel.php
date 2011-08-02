@@ -491,11 +491,16 @@ class Channel
 
 
     private function _startConsumer ($cnum) {
+        error_log("Channel->_startConsumer() : start");
         $consume = $this->consumers[$cnum][0]->getConsumeMethod($this);
+        error_log("Channel->_startConsumer() : 2");
         $cOk = $this->invoke($consume);
+        error_log("Channel->_startConsumer() : 3");
         $this->consumers[$cnum][0]->handleConsumeOk($cOk, $this);
+        error_log("Channel->_startConsumer() : 4");
         $this->consumers[$cnum][2] = 'READY';
         $this->consumers[$cnum][1] = $cOk->getField('consumer-tag');
+        error_log("Channel->_startConsumer() : done");
     }
 
     /**
@@ -515,6 +520,7 @@ class Channel
 
     function onSelectEnd () {
         $this->consuming = false;
+        error_log("Channel consume select complete");
     }
 }
 
