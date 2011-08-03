@@ -63,10 +63,7 @@ class Channel
      */
     protected $consumers = array();
 
-    /** Channel level callbacks for basic.ack (RMQ confirm feature) and basic.return */
-    private $callbacks = array('publishConfirm' => null,
-                               'publishReturn' => null,
-                               'publishNack' => null);
+    private $callbackHandler;
 
     /** Store of basic.publish sequence numbers. */
     protected $confirmSeqs = array();
@@ -76,19 +73,12 @@ class Channel
     protected $confirmMode = false;
 
 
-    function setPublishConfirmCallback (\Closure $c) {
-        $this->callbacks['publishConfirm'] = $c;
+    /**
+     * Assigns a channel event handler
+     */
+    function setEventHandler (ChannelEventHandler $evh) {
+        $this->callbackHandler = $evh;
     }
-
-
-    function setPublishReturnCallback (\Closure $c) {
-        $this->callbacks['publishReturn'] = $c;
-    }
-
-    function setPublishNackCallback (\Closure $c) {
-        $this->callbacks['publishNack'] = $c;
-    }
-
 
     function hasOutstandingConfirms () {
         return (bool) $this->confirmSeqs;
@@ -108,10 +98,6 @@ class Channel
         $this->confirmMode = true;
     }
 
-
-    function __construct () {
-        $this->callbacks['publishConfirm'] = $this->callbacks['publishReturn'] = function () {};
-    }
 
     function setConnection (Connection $rConn) {
         $this->myConn = $rConn;
@@ -249,15 +235,15 @@ class Channel
         case 'basic.deliver':
             return $this->deliverConsumerMessage($meth, $sid);
         case 'basic.return':
-            $cb = $this->callbacks['publishReturn'];
+            if ($this->callbackHandler) {
+                $this->callbackHandler->publishReturn($meth);
+            }
             return false;
         case 'basic.ack':
-            $cb = $this->callbacks['publishConfirm'];
-            $this->removeConfirmSeqs($meth, $cb);
+            $this->removeConfirmSeqs($meth, 'publishConfirm');
             return false;
         case 'basic.nack':
-            $cb = $this->callbacks['publishNack'];
-            $this->removeConfirmSeqs($meth, $cb);
+            $this->removeConfirmSeqs($meth, 'publishNack');
             return false;
         default:
             throw new \Exception("Received unexpected channel delivery:\n$sid", 87998);
@@ -308,20 +294,22 @@ class Channel
     }
 
 
+
     /**
      * Helper:  remove  message   sequence  record(s)  for  the  given
      * basic.{n}ack (RMQ Confirm key)
      */
-    private function removeConfirmSeqs (wire\Method $meth, \Closure $handler = null) {
+    private function removeConfirmSeqs (wire\Method $meth, $event) {
         if ($meth->getField('multiple')) {
 
             $dtag = $meth->getField('delivery-tag');
+            $evh = $this->callbackHandler;
             $this->confirmSeqs = 
                 array_filter($this->confirmSeqs,
-                             function ($id) use ($dtag, $handler, $meth) {
+                             function ($id) use ($dtag, $evh, $event, $meth) {
                                  if ($id <= $dtag) {
-                                     if ($handler) {
-                                         $handler($meth);
+                                     if ($evh) {
+                                         $evh->$event($meth);
                                      }
                                      return false;
                                  } else {
@@ -331,13 +319,14 @@ class Channel
         } else {
             $dt = $meth->getField('delivery-tag');
             if (isset($this->confirmSeqs)) {
-                if ($handler) {
-                    $handler($meth);
+                if ($this->callbackHandler) {
+                    $this->callbackHandler->$event($meth);
                 }
                 unset($this->confirmSeqs[array_search($dt, $this->confirmSeqs)]);
             }
         }
     }
+
 
 
     /**

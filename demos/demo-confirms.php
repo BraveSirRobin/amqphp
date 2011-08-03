@@ -36,7 +36,7 @@ $config = array (
 // Connect to the RabbitMQ server, set up an Amqp channel
 $conn = new amqp\Connection($config);
 $conn->connect();
-$chan = $conn->getChannel();
+$chan = $conn->openChannel();
 
 initialiseDemo();
 
@@ -53,16 +53,26 @@ $publishParams = array('content-type' => 'text/plain',
 // Create a Message object
 $basicP = $chan->basic('publish', $publishParams);
 
-// Set listener functions on the channel
-$chan->setPublishConfirmCallback(function ($meth) {
+
+class DemoCEH implements amqp\ChannelEventHandler
+{
+
+
+    function publishConfirm (wire\Method $meth) {
         printf("Publish confirmed for message %s\n", $meth->getField('delivery-tag'));
-});
-$chan->setPublishReturnCallback(function ($meth) {
+    }
+
+    function publishReturn (wire\Method $meth) {
         printf("Message returned for message %s\n", $meth->getField('delivery-tag'));
-});
-$chan->setPublishNackCallback(function ($meth) {
+    }
+
+    function publishNack (wire\Method $meth) {
         printf("Publish nack for message %s\n", $meth->getField('delivery-tag'));
-});
+    }
+}
+
+$ceh = new DemoCEH;
+$chan->setEventHandler($ceh);
 
 // Set the channel in to Confirm mode, this sends the required AMQP commands.
 $chan->setConfirmMode();
@@ -74,6 +84,7 @@ foreach ($messages as $m) {
     $basicP->setContent($m);
     $chan->invoke($basicP);
 }
+
 
 // invoke the select method to listen for responses
 $conn->select();
