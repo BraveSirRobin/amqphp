@@ -184,7 +184,7 @@ class Method
 
     /** Read a full method frame from $src */
     private function readMethodContent (Reader $src, $wireSize) {
-        $st = $src->getReadPointer();
+        $st = $src->p;
         $this->wireClassId = $src->read('short');
         $this->wireMethodId = $src->read('short');
 
@@ -200,7 +200,7 @@ class Method
         foreach ($this->methProto->getFields() as $f) {
             $this->fields[$f->getSpecFieldName()] = $src->read($f->getSpecDomainType());
         }
-        $en = $src->getReadPointer();
+        $en = $src->p;
         if ($wireSize != ($en - $st)) {
             throw new \Exception("Invalid method frame size", 9845);
         }
@@ -210,7 +210,7 @@ class Method
 
     /** Read a full content header frame from src */
     private function readContentHeaderContent (Reader $src, $wireSize) {
-        $st = $src->getReadPointer();
+        $st = $src->p;
         $wireClassId = $src->read('short');
         $src->read('short'); // pointless weight field
         $this->contentSize = $src->read('longlong');
@@ -245,7 +245,7 @@ class Method
                 $this->classFields[$f->getSpecFieldName()] = null;
             }
         }
-        $en = $src->getReadPointer();
+        $en = $src->p;
         if ($wireSize != ($en - $st)) {
             throw new \Exception("Invalid content header frame size", 2546);
         }

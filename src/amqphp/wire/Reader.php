@@ -27,10 +27,10 @@ use amqphp\protocol\abstrakt;
 
 class Reader extends Protocol
 {
-    private $p = 0;
-    private $binPackOffset = 0;
-    private $binBuffer;
-    private $binLen = 0;
+    public $p = 0;
+    public $binPackOffset = 0;
+    public $binBuffer;
+    public $binLen = 0;
 
     function __construct ($bin) {
         $this->bin = $bin;
@@ -42,11 +42,9 @@ class Reader extends Protocol
         return ($this->p + $n >= $this->binLen);
     }
 
-    function getBin () { return $this->bin; }
 
     function bytesRemaining () { return $this->binLen - $this->p; }
 
-    function getReadPointer () { return $this->p; }
 
     function getRemainingBuffer () {
         $r = substr($this->bin, $this->p);
