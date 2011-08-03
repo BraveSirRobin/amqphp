@@ -112,6 +112,14 @@ class Connection
     private $incompleteMethods = array(); // List of partial messages, Format: array(<wire\Method>)
     private $readSrc = null; // wire\Reader, used between reads when partial frames are read from the wire
 
+
+    function deleteMeProof () {
+        $s = sprintf("[unDelivered, unDeliverable, incompleteMethods, readSrc] = [%d, %d, %d, %s]",
+                     count($this->unDelivered), count($this->unDeliverable), count($this->incompleteMethods), get_class($this->readSrc));
+        error_log($s);
+    }
+
+
     protected $connected = false; // Flag flipped after protcol connection setup is complete
 
     private $slHelper;
@@ -632,28 +640,35 @@ class Connection
                     }
                 }
             }
+if (isset($_POST) && array_key_exists('DEBUG_TRIGGER', $_POST)) error_log("(Connection->invoke())  (start)");
             while (true) {
+if (isset($_POST) && array_key_exists('DEBUG_TRIGGER', $_POST)) error_log("(Connection->invoke())  (1)");
                 if (! ($buff = $this->read())) {
                     throw new \Exception(sprintf("(2) Send message failed for %s.%s:\n",
                                                  $inMeth->getClassProto()->getSpecName(),
                                                  $inMeth->getMethodProto()->getSpecName()), 5624);
                 }
-
+if (isset($_POST) && array_key_exists('DEBUG_TRIGGER', $_POST)) error_log("(Connection->invoke())  (2)");
                 $meths = $this->readMessages($buff);
                 foreach (array_keys($meths) as $k) {
+if (isset($_POST) && array_key_exists('DEBUG_TRIGGER', $_POST)) error_log("(Connection->invoke())  (3)");
                     $meth = $meths[$k];
                     unset($meths[$k]);
                     if ($inMeth->isResponse($meth)) {
+if (isset($_POST) && array_key_exists('DEBUG_TRIGGER', $_POST)) error_log("(Connection->invoke())  (4)");
                         if ($meths) {
+if (isset($_POST) && array_key_exists('DEBUG_TRIGGER', $_POST)) error_log("(Connection->invoke())  (5)");
                             $this->unDelivered = array_merge($this->unDelivered, $meths);
                         }
                         return $meth;
                     } else {
+if (isset($_POST) && array_key_exists('DEBUG_TRIGGER', $_POST)) error_log("(Connection->invoke())  (6)");
                         $this->unDelivered[] = $meth;
                     }
                 }
             }
         }
+if (isset($_POST) && array_key_exists('DEBUG_TRIGGER', $_POST)) error_log("(Connection->invoke())  (7)");
     }
 
 

@@ -335,6 +335,12 @@ class PConnHelper
         return $this->cache;
     }
 
+    function getConnection ($k) {
+        return array_key_exists($k, $this->cache)
+            ? $this->cache[$k]
+            : false;
+    }
+
     function hasChannels () {
         foreach ($this->cache as $conn) {
             if ($conn->getChannels()) {
@@ -406,6 +412,8 @@ class Actions
             $this->view->messages[] = "New Channel added OK";
         } catch (\Exception $e) {
             error_log("Exception in newChannelAction:\n {$e->getMessage()}");
+            error_log(sprintf("newChannelAction: N undelivered = %d", count($this->ch->getConnection($ckey)->getUndeliveredMessages())));
+            $this->ch->getConnection($ckey)->deleteMeProof();
             $this->view->messages[] = sprintf("Exception in %s [%d]: %s",
                                               __METHOD__, $e->getCode(), $e->getMessage());
         }
