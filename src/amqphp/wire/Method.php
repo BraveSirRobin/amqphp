@@ -27,7 +27,7 @@ use amqphp\protocol\abstrakt;
  * Represents a single Amqp method, either incoming or outgoing.  Note that a
  * method may be composed of multiple Amqp frames, depending on it's type
  */
-class Method
+class Method implements \Serializable
 {
     /** Used to track progress of read construct */
     const ST_METH_READ = 1;
@@ -36,6 +36,15 @@ class Method
 
     /** Used as a signal when returned from readConstruct */
     const PARTIAL_FRAME = 7;
+
+
+    /** List of fields that will be persisted as-is */
+    private static $PlainPFields = 
+        array('rcState', 'mode', 'fields', 'classFields', 'content',
+              'frameMax', 'wireChannel', 'isHb', 'wireMethodId', 'wireClassId',
+              'contentSize');
+
+
 
     private $rcState = 0; // Holds a bitmask of ST_* consts
 
@@ -56,6 +65,48 @@ class Method
 
     private $protoLoader; // Closure passed in to readConstruct from Connection
 
+    function serialize () {
+        if ($this->mode != 'read') {
+            trigger_error("Only read mode methods should be serialised", E_USER_WARNING);
+            return null;
+        }
+        $ret = array();
+        $ret['plainFields'] = array();
+        foreach (self::$PlainPFields as $k) {
+            $ret['plainFields'] = $this->k;
+        }
+        if ($this->methProto && $this->classProto) {
+            $ret['protos'] = array(get_class($this->methProto), get_class($this->classProto));
+        }
+        return $ret;
+    }
+
+
+    function unserialize ($s) {
+        $state = unserialize($s);
+        foreach (self::$PlainPFields as $k) {
+            $this->$k = $state[$k];
+        }
+        if ($state['protos']) {
+            list($mc, $cc) = $state['protos'];
+            /* Note:   breaks   convention;   in   all   other   cases
+             * XmlSpecClass /  XmlSpecProto instances are  loaded (and
+             * re-used) from their factories. */
+            $this->methProto = new $mc;
+            $this->classProto = new $cc;
+        }
+    }
+
+    /**
+     * Required  only  for  unserialisation,  seems hacky.   Might  be
+     * better  to  refactor and  get  rid  of  the loader  Closure  in
+     * Connection  and replace  with a  class /  factory which  can be
+     * referenced statically
+     */
+    function setProtocolLoader ($l) {
+        $this->protoLoader = $l;
+    }
+
     /**
      * @param mixed   $src    String = A complete Amqp frame = read mode
      *                        XmlSpecMethod = The type of message this should be = write mode
@@ -67,6 +118,8 @@ class Method
             $this->classProto = $this->methProto->getClass();
             $this->mode = 'write';
             $this->wireChannel = $chan;
+        } else {
+            $this->mode = 'read';
         }
     }
 
@@ -274,7 +327,7 @@ class Method
 
 
     function setField ($name, $val) {
-        if ($this->mode === 'read') {
+        if ($this->mode == 'read') {
             trigger_error('Setting field value for read constructed method', E_USER_WARNING);
         } else {
             $this->fields[$name] = $val;
@@ -286,7 +339,7 @@ class Method
     function getFields () { return $this->fields; }
 
     function setClassField ($name, $val) {
-        if ($this->mode === 'read') {
+        if ($this->mode == 'read') {
             trigger_error('Setting class field value for read constructed method', E_USER_WARNING);
         } else if (! $this->methProto->getSpecHasContent()) {
             trigger_error('Setting class field value for a method which doesn\'t take content (' .
@@ -303,7 +356,7 @@ class Method
     function setContent ($content) {
         if (! $content) {
             return;
-        } else if ($this->mode === 'read') {
+        } else if ($this->mode == 'read') {
             trigger_error('Setting content value for read constructed method', E_USER_WARNING);
         } else if (! $this->methProto->getSpecHasContent()) {
             trigger_error('Setting content value for a method which doesn\'t take content', E_USER_WARNING);
