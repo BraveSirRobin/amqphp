@@ -35,7 +35,7 @@ $conConfigs[] = array(
     'consumerName' => 'C1',
     'socketImpl' => '\amqphp\StreamSocket',
     'socketParams' => array('url' => 'tcp://rabbit1:5672'));
-/*
+
 $conConfigs[] = array(
     'username' => 'testing',
     'userpass' => 'letmein',
@@ -43,7 +43,7 @@ $conConfigs[] = array(
     'consumerName' => 'C2',
     'socketImpl' => '\amqphp\StreamSocket',
     'socketParams' => array('url' => 'tcp://rabbit2:5672'));
-*/
+
 
 
 

@@ -79,12 +79,63 @@
       span.out-message {
         display: block;
       }
+
+
+      div#messages span {
+        display: block;
+        color: red;
+      }
+
+
     </style>
+
+
 
   </head>
   <body>
 
     <h1>Amqphp in web servers: <?php echo getmypid() ?></h1>
+
+
+    <p>
+      This demo  was used to  test the Persistent  connection library,
+      you can add and  remove connections, channels and consumers, you
+      can send  and receive messages.  To start,  enter the connection
+      details  of  your  test Amqp  server  in  to  the form,  once  a
+      connection is established you can add channels etc. in your next
+      request.  On each reload, the interface shows all currently open
+      connections, channels and consumers.
+    </p>
+    <p>
+      Because of the  nature of web servers, the  best (in fact, maybe
+      the only sane) way to use  this tool is to tweak your web server
+      so that it only has a single worker thread.  This way, each time
+      you  send a  command to  the  demo (running  inside the  server)
+      you're sending a command  to the same <i>connection</i>.  Recall
+      that PConnections are  <i>&quot;Per worker process&quot;</i>, so
+      if your  web server has more  than one worker  the commands that
+      you send through  the interface won't necessarily be  run by the
+      same  process as  the one  which generated  the  interface.  For
+      example, consider a server with 2 worker processes, the sequence
+      of command as received by the server might look like this:
+      <ol>
+        <li>Start web server, 2 worker processes are 5000 and 5001</li>
+        <li><strong>User     request:</strong>     Open     connection
+        &quot;conn-1&quot; (5000 - OK)</li>
+        <li><strong>User      request:</strong>      Open      channel
+        &quot;chan-1.1&quot; on  connection &quot;conn-1&quot; (5000 -
+        OK)</li>
+        <li><strong>User      request:</strong>      Send      message
+        &quot;Hi!&quot; to  channel &quot;chan-1.1&quot; on connection
+        &quot;conn-1&quot; (5001 - Error: no such channel!)</li>
+      </ol>
+
+      The  last message  failed because  this request  happened  to be
+      handled by  a different worker process to  the previous request,
+      so the  connection &quot;conn-1&quot; doesn't exist  yet in this
+      process.   If this request  had been  handled by  worker process
+      5000, the request would have worked OK.
+    </p>
 
 
     <?php foreach ($this->messages as $m) { ?>
@@ -120,10 +171,7 @@
             <h2>Create a new connection</h2>
             <form method="POST">
               <input type="hidden" name="action" value="new-connection"/>
-              <label>
-                Persistent
-                <input type="checkbox" name="persistent" checked="checked"/>
-              </label>
+              <input type="hidden" name="persistent" value="1"/>
 
               <label>
                 Name
@@ -198,10 +246,7 @@
                 <input type="hidden" name="channel" value="<?php echo $k2 ?>"/>
                 <label>
                   Consumer Class
-                  <select name="impl">
-                    <option value="DemoConsumer">DemoConsumer</option>
-                    <option value="DemoPConsumer">DemoPConsumer</option>
-                  </select>
+                  <input type="hidden" name="impl" value="DemoPConsumer"/>
                 </label>
                 <input type="submit" value="Add Consumer"/>
               </form>
@@ -224,19 +269,7 @@
                   <?php } ?>
                 </select>
               </label>
-              <label>
-                Persistent
-                <input type="radio" name="persistent" value="yes" checked="checked"/>
-              </label>
-              <label>
-                Temporary
-                <input type="radio" name="persistent" value="no"/>
-              </label>
-<!-- TEMP ** TESTING -->
-              <label>
-                Test flag <input type="checkbox" name="DEBUG_TRIGGER" value="1"/>
-              </label>
-<!-- TEMP ** TESTING -->
+              <input type="hidden" name="persistent" value="yes"/>
               <input type="submit" value="Add Channel"/>
             </form>
           </div>
