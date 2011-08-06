@@ -36,7 +36,7 @@ class Channel
      * As  set  by  the  channel.flow Amqp  method,  controls  whether
      * content can be sent or not
      */
-    private $flow = true;
+    protected $flow = true;
 
     /**
      * Flag set when  the underlying Amqp channel has  been closed due
@@ -52,7 +52,7 @@ class Channel
     /**
      * Used to track whether the channel.open returned OK.
      */
-    private $isOpen = false;
+    protected $isOpen = false;
 
     /**
      * Consumers for this channel, format array(array(<Consumer>, <consumer-tag OR false>, <#FLAG#>)+)
@@ -63,7 +63,7 @@ class Channel
      */
     protected $consumers = array();
 
-    private $callbackHandler;
+    protected $callbackHandler;
 
     /** Store of basic.publish sequence numbers. */
     protected $confirmSeqs = array();
@@ -93,7 +93,7 @@ class Channel
         if (! ($confSelectOk instanceof wire\Method) ||
             ! ($confSelectOk->getClassProto()->getSpecName() == 'confirm' &&
                $confSelectOk->getMethodProto()->getSpecName() == 'select-ok')) {
-            throw new \Exception("Failed to selectg confirm mode", 8674);
+            throw new \Exception("Failed to set confirm mode", 8674);
         }
         $this->confirmMode = true;
     }
@@ -183,12 +183,10 @@ class Channel
         case 'channel.flow':
             $this->flow = ! $this->flow;
             if ($r = $meth->getMethodProto()->getResponses()) {
-                $meth = new wire\Method($r[0]);
-                $meth->setWireChannel($this->chanId);
+                $meth = new wire\Method($r[0], $this->chanId);
                 $this->invoke($meth);
             }
             return false;
-            break;
         case 'channel.close':
             $pl = $this->myConn->getProtocolLoader();
             //if ($culprit = protocol\ClassFactory::GetMethod($meth->getField('class-id'), $meth->getField('method-id'))) {
@@ -204,7 +202,7 @@ class Channel
                 $eb .= sprintf("(%s=%s) ", $k, $v);
             }
             $tmp = $meth->getMethodProto()->getResponses();
-            $closeOk = new wire\Method($tmp[0]);
+            $closeOk = new wire\Method($tmp[0], $this->chanId);
             $em = "[channel.close] reply-code={$errCode['name']} triggered by $culprit: $eb";
 
             try {

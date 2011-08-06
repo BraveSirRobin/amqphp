@@ -28,8 +28,7 @@ namespace amqphp\persistent;
 class PChannel extends \amqphp\Channel implements \Serializable
 {
 
-    private static $PersProps = array('chanId', 'frameMax', 'confirmSeqs',
-                                      'confirmSeq', 'confirmMode');
+    private static $PersProps = array('chanId', 'flow', 'frameMax', 'confirmSeqs', 'confirmSeq', 'confirmMode', 'isOpen', 'callbackHandler');
 
     function serialize () {
         $data = array();
