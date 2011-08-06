@@ -203,21 +203,14 @@ class StreamSocket
 
     function readAll ($readLen = self::READ_LENGTH) {
         $buff = '';
-        if (isset($_POST) && array_key_exists('DEBUG_TRIGGER', $_POST)) error_log("read all (1)");
         do {
-if (isset($_POST) && array_key_exists('DEBUG_TRIGGER', $_POST)) error_log("read all (2)");
             $buff .= fread($this->sock, $readLen);
-if (isset($_POST) && array_key_exists('DEBUG_TRIGGER', $_POST)) error_log("read all (3)");
             $smd = stream_get_meta_data($this->sock);
-if (isset($_POST) && array_key_exists('DEBUG_TRIGGER', $_POST)) error_log("read all (4)");
             $readLen = min($smd['unread_bytes'], $readLen);
-if (isset($_POST) && array_key_exists('DEBUG_TRIGGER', $_POST)) error_log(sprintf("read all [unread,readlen] = [%s,%s] (5)", $smd['unread_bytes'], $readLen));
         } while ($smd['unread_bytes'] > 0);
-if (isset($_POST) && array_key_exists('DEBUG_TRIGGER', $_POST)) error_log(sprintf("read all [unread,readlen] (6)"));
         if (DEBUG) {
             echo "\n<read>\n";
             echo wire\Hexdump::hexdump($buff);
-if (isset($_POST) && array_key_exists('DEBUG_TRIGGER', $_POST)) error_log(sprintf("\n<read>\n%s", wire\Hexdump::hexdump($buff)));
         }
         return $buff;
     }
@@ -240,23 +233,6 @@ if (isset($_POST) && array_key_exists('DEBUG_TRIGGER', $_POST)) error_log(sprint
 
     function eof () {
         return feof($this->sock);
-    }
-
-    /**
-     * Wrapper for  readAll which sets  the socket in  to non-blocking
-     * mode first.
-     */
-    function nbReadAll () {
-        if (stream_set_blocking($this->sock, 0)) {
-            try {
-                $r = $this->readAll();
-                stream_set_blocking($this->sock, 1);
-                return $r;
-            } catch (\Exception $e) {
-                stream_set_blocking($this->sock, 1);
-            }
-        }
-        return false;
     }
 
 

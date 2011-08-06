@@ -69,9 +69,7 @@ class PConnection extends \amqphp\Connection implements \Serializable
     /**
      * List of Connection (super class) properties to be persisted.
      */
-    private static $BasicProps = array('capabilities', 'chanMax','frameMax', 
-                                       'vhost', 'nextChan', 'socketParams',
-                                       'socketImpl', 'protoImpl', 'signalDispatch');
+    private static $BasicProps = array('capabilities', 'socketImpl', 'protoImpl', 'socketParams', 'vhost', 'frameMax', 'chanMax', 'signalDispatch', 'nextChan', 'unDelivered', 'unDeliverable', 'incompleteMethods', 'readSrc');
 
     private $sleepMode = self::PERSIST_CHANNELS;
 
@@ -258,17 +256,6 @@ class PConnection extends \amqphp\Connection implements \Serializable
         foreach (self::$BasicProps as $k) {
             $data[$k] = $this->$k;
         }
-
-
-        // Test code
-        error_log("TEST SLEEP:");
-        sleep(1);
-        if ($left = $this->sock->nbReadAll()) {
-            error_log(sprintf("Found %d unread bytes during shutdown\n%s", strlen($left), wire\Hexdump::hexdump($left)));
-        } else {
-            error_log("No unread bytes.");
-        }
-
 
 
         $z = array();

@@ -134,6 +134,7 @@ class PConnHelper
         $srz = apc_fetch($this->CK, $flg);
         if ($flg) {
             // Connections should all wake up here.
+            error_log(sprintf("%d bytes of data:%s\n", strlen($srz), $srz));
             $this->cache = unserialize($srz);
         }
     }

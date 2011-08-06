@@ -73,21 +73,22 @@ class Method implements \Serializable
         $ret = array();
         $ret['plainFields'] = array();
         foreach (self::$PlainPFields as $k) {
-            $ret['plainFields'] = $this->k;
+            $ret['plainFields'][$k] = $this->$k;
         }
         if ($this->methProto && $this->classProto) {
             $ret['protos'] = array(get_class($this->methProto), get_class($this->classProto));
         }
-        return $ret;
+
+        return serialize($ret);
     }
 
 
     function unserialize ($s) {
         $state = unserialize($s);
         foreach (self::$PlainPFields as $k) {
-            $this->$k = $state[$k];
+            $this->$k = $state['plainFields'][$k];
         }
-        if ($state['protos']) {
+        if (array_key_exists('protos', $state)) {
             list($mc, $cc) = $state['protos'];
             /* Note:   breaks   convention;   in   all   other   cases
              * XmlSpecClass /  XmlSpecProto instances are  loaded (and
