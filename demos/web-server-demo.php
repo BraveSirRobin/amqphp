@@ -74,11 +74,11 @@ class DemoPConsumer extends DemoConsumer implements \Serializable
 
     function getConsumeMethod (amqp\Channel $chan) {
         $r = $chan->basic('consume', $this->consumeParams);
-        error_log("DemoPConsumer->getConsumeMethod() : Consume method:\n" . print_r($r->getFields(), true));
         return $r;
     }
 
 }
+
 
 
 
@@ -166,7 +166,7 @@ class PConnHelper
      * Open a connection  with the given params and  store a reference
      * to it with $key
      */
-    function addConnection ($key, $params, $persistent) {
+    function addConnection ($key, $params) {
         if (array_key_exists($key, $this->cache)) {
             throw new \Exception("Connection with key $key already exists", 2956);
         }
@@ -174,12 +174,8 @@ class PConnHelper
         $params['socketImpl'] = '\\amqphp\\StreamSocket';
         $params['signalDispatch'] = false;
 
-        if ($persistent) {
-            $conn = new pconn\PConnection($params);
-//            $conn->setPersistenceHelperImpl('\\amqphp\\persistent\\APCPersistenceHelper');
-        } else {
-            $conn = new amqp\Connection($params);
-        }
+
+        $conn = new pconn\PConnection($params);
         $conn->connect();
 
         $this->cache[$key] = $conn;
@@ -262,7 +258,6 @@ class PConnHelper
                 if ($chan->getChanId() == $chanId) {
                     $cons = new $impl($tmp = rand());
                     $chan->addConsumer($cons);
-                    error_log("web-server-demo: addConsumer: Consumer added.");
                     return true;
                 }
             }
@@ -356,6 +351,91 @@ class PConnHelper
 }
 
 
+
+
+/**
+ * This demo over-rides the main demo and shows how to use "automatic"
+ * persistent   connections.   We  cache   a  list   open  connections
+ * separately, and allow the PConnection implementation to do it's own
+ * thing.  Notice  how we re-create  the PConnection using  'new' each
+ * time,  the  PConnection   implementation  handles  the  details  of
+ * restoring the connection state.
+ */
+class PConnHelperAlt extends PConnHelper
+{
+
+    private $globalCacheFile = '/tmp/pconn-cache2';
+
+    /**
+     * Application  cache,  we  save  the  connection  params  of  the
+     * PConnections so  that we can automatically  wake up connections
+     * on subsequent requests.  Note that the actual PConnection cahce
+     * is held elsewhere
+     */
+    private $altCache = array();
+
+    function sleep () {
+        $data = array();
+        // Call sleep on all connections and collect a list of connection configs to put in *our* cache.
+        foreach ($this->cache as $k => $conn) {
+            $data[$k] = $this->altCache[$k];
+            $conn->sleep();
+        }
+
+        // Load the full application cache, this might include connections for other processes
+        if (is_file($this->globalCacheFile)) {
+            $cache = unserialize(file_get_contents($this->globalCacheFile));
+        } else {
+            $cache = array();
+        }
+
+        // Update or add our cache
+        $set = false;
+        foreach ($cache as $k => $k2) {
+            if ($k == getmypid()) {
+                $cache[$k] = $data;
+                $set = true;
+                break;
+            }
+        }
+        if (! $set) {
+            $cache[getmypid()] = $data;
+        }
+        return file_put_contents($this->globalCacheFile, serialize($cache));
+    }
+
+    function wakeup () {
+        if (is_file($this->globalCacheFile)) {
+            $cache = unserialize(file_get_contents($this->globalCacheFile));
+            foreach ($cache as $pid => $k) {
+                if ($pid == getmypid()) {
+                    // Found some connections for this process, wake em up!
+                    foreach ($k as $key => $connParams) {
+                        $this->cache[$key] = new pconn\PConnection($connParams);
+                        $this->cache[$key]->setPersistenceHelperImpl('\\amqphp\\persistent\\FilePersistenceHelper');
+                        $this->cache[$key]->connect();
+                        $this->altCache[$key] = $connParams;
+                    }
+                }
+            }
+        }
+    }
+
+
+    /**
+     * Override to save the connection params and set the automatic persistence handler
+     */
+    function addConnection ($key, $params) {
+        parent::addConnection($key, $params);
+        $this->cache[$key]->setPersistenceHelperImpl('\\amqphp\\persistent\\FilePersistenceHelper');
+        $this->altCache[$key] = $params;
+    }
+}
+
+
+
+
+
 class Actions
 {
     private $view;
@@ -380,12 +460,10 @@ class Actions
     function newConnectionAction () {
         $key = $_REQUEST['name'];
         $params = $_REQUEST;
-        $pers = array_key_exists('persistent', $_REQUEST);
         unset($params['name']);
-        unset($params['persistent']);
 
         try {
-            $this->ch->addConnection($key, $params, $pers);
+            $this->ch->addConnection($key, $params);
             $this->view->messages[] = "Connection added OK";
         } catch (\Exception $e) {
             error_log("Exception in newConnectionAction:\n {$e->getMessage()}");
@@ -417,7 +495,6 @@ class Actions
         } catch (\Exception $e) {
             error_log("Exception in newChannelAction:\n {$e->getMessage()}");
             error_log(sprintf("newChannelAction: N undelivered = %d", count($this->ch->getConnection($ckey)->getUndeliveredMessages())));
-            $this->ch->getConnection($ckey)->deleteMeProof();
             $this->view->messages[] = sprintf("Exception in %s [%d]: %s",
                                               __METHOD__, $e->getCode(), $e->getMessage());
         }
@@ -522,6 +599,7 @@ class Actions
 $view = new View;
 $actions = new Actions;
 $chelper = new PConnHelper;
+//$chelper = new PConnHelperAlt;
 
 if (array_key_exists('action', $_REQUEST)) {
     $action = $_REQUEST['action'];

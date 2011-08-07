@@ -109,8 +109,8 @@
     <p>
       Because of the  nature of web servers, the  best (in fact, maybe
       the only sane) way to use  this tool is to tweak your web server
-      so that it only has a single worker thread.  This way, each time
-      you  send a  command to  the  demo (running  inside the  server)
+      so that  it only  has a single  worker process.  This  way, each
+      time you send a command  to the demo (running inside the server)
       you're sending a command  to the same <i>connection</i>.  Recall
       that PConnections are  <i>&quot;Per worker process&quot;</i>, so
       if your  web server has more  than one worker  the commands that
@@ -137,6 +137,19 @@
       5000, the request would have worked OK.
     </p>
 
+    <p>
+      This  demo   has  2  implementation   classes,  PConnHelper  and
+      PConnHelperAlt,  to  demonstrate  the  2  different  persistence
+      methods  in  Amqphp.   PConnHelper  uses  a  custom  persistence
+      mechanism whereby the code  in PConnHelper calls serialize() and
+      unserialize()   on   each    of   the   PConnections   manually.
+      PConnHelperAlt  uses a simpler,  internal mechanism  whereby the
+      PConnHelperAlt  class calls PConnection->sleep()  at the  end of
+      every  request  to  invoke  the persistence  routine.   These  2
+      persistence  mechanisms use the  same basic  implementation; the
+      reason for  having 2 mechanisms  is to allow users  to integrate
+      PConnections in to existing persistence routines.
+    </p>
 
     <?php foreach ($this->messages as $m) { ?>
     <div id="messages">
