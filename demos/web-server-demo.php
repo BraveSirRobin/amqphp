@@ -88,27 +88,29 @@ class DemoPConsumer extends DemoConsumer implements \Serializable
  */
 class PConnHelper
 {
-    private static $Set = false;
+    protected static $Set = false;
 
-    private $cache = array();
+    protected $cache = array();
 
-    private $CK = '__pconn-helper-private';
+    protected $tempFileDir = '/tmp';
 
-    private $pState;
+    protected $CK = '__pconn-helper-private';
 
-    private $EX_NAME = 'most-basic';
-    private $EX_TYPE = 'direct';
-    private $Q = 'most-basic';
+    protected $pState;
+
+    protected $EX_NAME = 'most-basic';
+    protected $EX_TYPE = 'direct';
+    protected $Q = 'most-basic';
 
 
-    private static $ConsMsg = array();
+    protected static $ConsMsg = array();
     static function ConsumerCallback ($msg) {
         self::$ConsMsg[] = $msg;
     }
 
 
 
-    private $publishParams = array(
+    protected $publishParams = array(
         'content-type' => 'text/plain',
         'content-encoding' => 'UTF-8',
         'routing-key' => '',
@@ -125,16 +127,16 @@ class PConnHelper
         if (self::$Set) {
             throw new \Exception("PConnHelper is a singleton", 8539);
         }
-        $this->CK = sprintf("%s:%s", $this->CK, getmypid());
+        $this->CK = sprintf("%s_%s", $this->CK, getmypid());
         $this->wakeup();
     }
 
     /** Grab data from cache */
     protected function wakeup () {
-        $srz = apc_fetch($this->CK, $flg);
-        if ($flg) {
+        $file = $this->tempFileDir . DIRECTORY_SEPARATOR . $this->CK;
+        if (is_file($file)) {
+            $srz = file_get_contents($file);
             // Connections should all wake up here.
-            error_log(sprintf("%d bytes of data:%s\n", strlen($srz), $srz));
             $this->cache = unserialize($srz);
         }
     }
@@ -154,7 +156,8 @@ class PConnHelper
                 throw new \Exception("Bad connection during shutdown", 2789);
             }
         }
-        return apc_store($this->CK, serialize($this->cache));
+        $file = $this->tempFileDir . DIRECTORY_SEPARATOR . $this->CK;
+        return file_put_contents($file, serialize($this->cache));
     }
 
 
