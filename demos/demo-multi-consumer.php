@@ -66,6 +66,46 @@ $conConfigs[] = array(
     'socketImpl' => '\amqphp\StreamSocket',
     'socketParams' => array('url' => 'tcp://rabbit2:5672'));
 
+$xml = '<?xml version="1.0"?>
+<setup>
+  <connection>
+    <impl>\amqphp\Connection</impl>
+    <server>
+      <vhost>robin</vhost>
+      <username>testing</username>
+      <userpass>letmein</userpass>
+      <heartbeat>5</heartbeat>
+      <socketImpl>\amqphp\StreamSocket</socketImpl>
+      <socketParams>
+        <url>tcp://rabbit2:5672</url>
+      </socketParams>
+    </server>
+
+    <channel>
+      <consumer>
+        <impl>DemoConsumer</impl>
+        <queue>most-basic-q</queue>
+      </consumer>
+    </channel>
+
+
+    <exchange>
+      <type>direct</type>
+      <exchange>most-basic-ex</exchange>
+    </exchange>
+
+    <queue>
+      <queue>most-basic-q</queue>
+    </queue>
+
+    <binding>
+      <queue>most-basic</queue>
+      <routing_key></routing_key>
+      <exchange>most-basic-ex</exchange>
+    </binding>
+  </connection>
+</setup>';
+
 
 
 
@@ -83,6 +123,11 @@ class DemoConsumer extends amqp\SimpleConsumer
         return amqp\CONSUMER_ACK;
     }
 }
+
+
+$su = new Setup;
+$su->getSetup($xml);
+
 
 $cons = array();
 foreach ($conConfigs as $i => $conf) {

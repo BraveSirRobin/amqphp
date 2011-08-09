@@ -176,7 +176,7 @@ class PConnection extends \amqphp\Connection implements \Serializable
     /**
      * This channel will load PChannels
      */
-    protected function initNewChannel () {
+    protected function initNewChannel ($impl=null) {
         $impl = __NAMESPACE__ . "\\PChannel";
         return parent::initNewChannel($impl);
     }
