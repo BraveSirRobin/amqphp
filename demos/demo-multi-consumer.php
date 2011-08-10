@@ -99,10 +99,19 @@ $xml = '<?xml version="1.0"?>
     </queue>
 
     <binding>
-      <queue>most-basic</queue>
+      <queue>most-basic-q</queue>
       <routing_key></routing_key>
       <exchange>most-basic-ex</exchange>
     </binding>
+
+    <method>
+      <class k="string">basic</class>
+      <method k="string">qos</method>
+      <args>
+        <prefetch-count k="string">1</prefetch-count>
+        <global k="boolean">false</global>
+      </args>
+    </method>
   </connection>
 </setup>';
 
@@ -133,7 +142,7 @@ $cons = array();
 foreach ($conConfigs as $i => $conf) {
     $conn = new amqp\Connection($conf);
     $conn->connect();
-    $chan = $conn->getChannel();
+    $chan = $conn->openChannel();
     initialiseDemo($chan);
 
     $qosParams = array('prefetch-count' => 1,
