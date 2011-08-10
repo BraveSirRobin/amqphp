@@ -7,63 +7,26 @@ use amqphp as amqp,
 
 /**
  * Reads and  creates a set  of connection configurations from  an XML
- * document.
+ * document.   The  XML document  can  specify connections,  channels,
+ * consumers   and  Amqp   methods,   for  example   exchange.declare,
+ * queue.declare, etc.
  */
 class Setup
 {
 
 
-    /** Scalar fields that are turned in to Amqp parameters.  */
-    // TODO: Add in cast parameters, i.e. (string), (int), etc.
-    protected $rootFields = array('host' => 'string',
-                                  'vhost' => 'string',
-                                  'username' => 'string',
-                                  'userpass' => 'string');
-    protected $exFields = array('type' => 'string',
-                                'durable' => 'boolean',
-                                'exchange' => 'string');
-    protected $qFields = array('queue' => 'string');
-    protected $bindFields = array('queue' => 'string',
-                                  'routing_key' => 'string',
-                                  'exchange' => 'string');
-
-
-    private function kast ($val, $cast) {
-        switch ($cast) {
-        case 'string':
-            return (string) $val;
-        case 'boolean':
-            return (boolean) $val;
-        case 'int':
-            return (int) $val;
-        default:
-            trigger_error("Unknown Kast $cast", E_USER_WARNING);
-            return (string) $val;
-        }
-    }
-
-    private function xmlToArray (SimpleXmlElement $e) {
-        $ret = array();
-        foreach ($e as $c) {
-            $ret[(string) $c->getName()] = (count($c) == 0)
-                ? (string) $c
-                : $this->xmlToArray($c);
-        }
-        return $ret;
-    }
-
-
-    private function params (SimpleXmlElement $e, $field) {
-        $params = array();
-        foreach ($this->$field as $f => $k) {
-            $params[$f] = $this->kast($e->$f, $k);
-        }
-        return $params;
-    }
-
-
+    /**
+     * Factory  method  -  create  and  return a  set  of  Connections
+     * corresponding  to the  given XML.   The given  XML  can contain
+     * xincludes, these are processed.
+     * @arg  string    $xml             Either a string containing XML or the name of an XML file.
+     * @arg  mixed     $documentURI     If specified, $xml is 
+     */
     function getSetup ($xml) {
-        if (! ($simp = simplexml_load_string($xml))) {
+        $d = new DOMDocument;
+        $d->load($xml);
+        $d->xinclude();
+        if (! ($simp = simplexml_import_dom($d))) {
             throw new \Exception("Invalid setup format.", 92656);
         }
 
@@ -79,15 +42,13 @@ class Setup
             $_conn->connect();
 
 
-
-
             // Create channels
             foreach ($conn->channel as $chan) {
                 $_chan = $_conn->openChannel();
                 foreach ($chan->consumer as $cons) {
                     // Add consumers
                     $impl = (string) $cons->impl;
-                    $_chan->addConsumer(new $impl((string) $cons->queue));
+                    $_chan->addConsumer(new $impl($this->xmlToArray($cons->args)));
                 }
                 $_chans[] = $_chan;
             }
@@ -96,46 +57,58 @@ class Setup
             }
             $_chan = reset($_chans);
 
-
-            // Create exchanges
-            foreach ($conn->exchange as $ex) {
-                $m = $_chan->exchange('declare', $this->params($ex, 'exFields'));
-                printf("exchange.declare:\n%s", print_r($this->params($ex, 'exFields'), true));
-                $_chan->invoke($m);
-            }
-
-            // Create Qs
-            foreach ($conn->queue as $q) {
-                $m = $_chan->queue('declare', $this->params($q, 'qFields'));
-                printf("queue.declare:\n%s", print_r($this->params($ex, 'exFields'), true));
-                $_chan->invoke($m);
-            }
-
-            // Create bindings
-            foreach ($conn->binding as $q) {
-                $m = $_chan->queue('bind', $this->params($q, 'bindFields'));
-                printf("queue.bind:\n%s", print_r($this->params($ex, 'bindFields'), true));
-                $_chan->invoke($m);
+            // Execute whatever methods are supplied.
+            foreach ($conn->methods->method as $iMeth) {
+                $a = $this->xmlToArray($iMeth);
+                $c = $a['class'];
+                $m = $a['method'];
+//                printf("Invoke %s.%s:\n%s", $c, $m, print_r($a, true));
+                $meth = $_chan->$c($m, $a['args']);
+                $_chan->invoke($meth);
             }
             $conns[] = $_conn;
-
-            // Execute whatever methods are supplied.
-            foreach ($conn->method as $m) {
-                printf("Test Method %s.%s:\n%s", $m->class, $m->method, print_r($this->xmlToArrayKast($m), true));
-            }
         }
         return $conns;
     }
 
 
+    /**
+     * Perform the given cast on the given value, defaults to a string
+     * cast.
+     */
+    private function kast ($val, $cast) {
+        switch ($cast) {
+        case 'string':
+            return (string) $val;
+        case 'boolean':
+            $val = trim((string) $val);
+            if ($val === '0' || strtolower($val) === 'false') {
+                return false;
+            } else if ($val == '1' || strtolower($val) === 'true') {
+                return true;
+            } else {
+                trigger_error("Bad boolean cast $val - use 0/1 true/false", E_USER_WARNING);
+                return true;
+            }
+        case 'int':
+            return (int) $val;
+        default:
+            trigger_error("Unknown Kast $cast", E_USER_WARNING);
+            return (string) $val;
+        }
+    }
 
-    private function xmlToArrayKast (SimpleXmlElement $e) {
+
+    /**
+     * Recursively convert  an XML  structure to nested  assoc arrays.
+     * For each "leaf", use the "cast" given in the @k attribute.
+     */
+    private function xmlToArray (SimpleXmlElement $e) {
         $ret = array();
         foreach ($e as $c) {
-            printf("Xml Kast %s\n", (string) $c['k']);
             $ret[(string) $c->getName()] = (count($c) == 0)
                 ? $this->kast($c, (string) $c['k'])
-                : $this->xmlToArrayKast($c);
+                : $this->xmlToArray($c);
         }
         return $ret;
     }

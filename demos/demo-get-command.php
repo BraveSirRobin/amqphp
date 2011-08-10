@@ -29,27 +29,23 @@ use amqphp as amqp;
 use amqphp\protocol;
 use amqphp\wire;
 
-require __DIR__ . '/../amqp.php';
-require __DIR__ . '/demo-common.php';
+require __DIR__ . '/demo-loader.php';
+require __DIR__ . '/Setup.php';
 
 
-// Basic RabbitMQ connection settings
-$config = array (
-                 'username' => 'testing',
-                 'userpass' => 'letmein',
-                 'vhost' => 'robin'
-                 );
+$su = new Setup;
+$cons = $su->getSetup(__DIR__ . '/multi-producer.xml');
 
+$conn = reset($cons);
+$chans = $conn->getChannels();
+$chan = reset($chans);
 
-// Connect to the RabbitMQ server, set up an Amqp channel
-$conn = new amqp\Connection($config);
-$conn->connect();
-$chan = $conn->getChannel();
+$Q = 'most-basic-q'; // Must match Q in broker-common-setup.xml
 
-initialiseDemo();
 
 // Now, we're ready to read a message
-$getParams = array('queue' => $Q, 'no-ack' => false);
+$getParams = array('queue' => $Q, // Must match Q in broker-common-setup.xml
+                   'no-ack' => false);
 $getCommand = $chan->basic('get', $getParams);
 
 // Send our command
@@ -72,5 +68,8 @@ if ($response->getClassProto()->getSpecName() == 'basic' &&
 
 
 // Gracefully close the connection
-$chan->shutdown();
-$conn->shutdown();
+foreach ($cons as $conn) {
+    $conn->shutdown();
+}
+
+echo "\nDemo script complete\n";

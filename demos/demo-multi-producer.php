@@ -5,45 +5,7 @@ use amqphp\protocol;
 use amqphp\wire;
 
 require __DIR__ . '/demo-loader.php';
-
-$EX_NAME = 'most-basic';
-$EX_TYPE = 'direct';
-$Q = 'most-basic';
-
-// Basic RabbitMQ connection settings
-$conConfigs = array();
-/*
-$conConfigs[] = array(
-    'username' => 'testing',
-    'userpass' => 'letmein',
-    'vhost' => 'robin',
-    'consumerName' => 'C1',
-    'socketParams' => array('host' => 'rabbit1', 'port' => 5672));
-$conConfigs[] = array(
-    'username' => 'testing',
-    'userpass' => 'letmein',
-    'vhost' => 'robin',
-    'consumerName' => 'C2',
-    'socketParams' => array('host' => 'rabbit2', 'port' => 5672));
-*/
-
-
-$conConfigs[] = array(
-    'username' => 'testing',
-    'userpass' => 'letmein',
-    'vhost' => 'robin',
-    'consumerName' => 'C1',
-    'socketImpl' => '\amqphp\StreamSocket',
-    'socketParams' => array('url' => 'tcp://rabbit1:5672'));
-
-$conConfigs[] = array(
-    'username' => 'testing',
-    'userpass' => 'letmein',
-    'vhost' => 'robin',
-    'consumerName' => 'C2',
-    'socketImpl' => '\amqphp\StreamSocket',
-    'socketParams' => array('url' => 'tcp://rabbit2:5672'));
-
+require __DIR__ . '/Setup.php';
 
 
 
@@ -53,18 +15,17 @@ $publishParams = array(
     'routing-key' => '',
     'mandatory' => false,
     'immediate' => false,
-    'exchange' => $EX_NAME);
+    'exchange' => 'most-basic-ex'); // Must match exchange in multi-producer.xml
 
 
+$su = new Setup;
+$conns = $su->getSetup(__DIR__ . '/multi-producer.xml');
 $cons = array();
-foreach ($conConfigs as $conf) {
-    $conn = new amqp\Connection($conf);
-    $conn->connect();
-    $chan = $conn->getChannel();
-    //initialiseDemo($chan);
-    // Create a Message object
+foreach ($conns as $con) {
+    $chans = $con->getChannels();
+    $chan = array_pop($chans);
     $basicP = $chan->basic('publish', $publishParams);
-    $cons[] = array($conn, $chan, $basicP);
+    $cons[] = array($con, $chan, $basicP);
 }
 
 
@@ -87,8 +48,7 @@ for ($i = 0; $i < $N; $i++) {
 
 foreach ($cons as $stuff) {
     $stuff[1]->shutdown(); // Shut down channel only.
-//    $stuff[0]->sleep();
     $stuff[0]->shutdown();
 }
 
-printf("<pre>Test complete, published %d messages</pre>", $n);
+printf("Test complete, published %d messages\n", $n);

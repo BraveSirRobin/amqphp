@@ -1,0 +1,45 @@
+<?xml version="1.0"?>
+
+<!-- A  set of methods that  define the broker setup  for demos.  This
+data is xincluded in to the connection setups in the demos. -->
+
+<methods>
+  <method>
+    <class k="string">exchange</class>
+    <method k="string">declare</method>
+    <args>
+      <type k="string">direct</type>
+      <durable k="boolean">true</durable>
+      <exchange k="string">most-basic-ex</exchange>
+    </args>
+  </method>
+
+
+  <method>
+    <class k="string">queue</class>
+    <method k="string">declare</method>
+    <args>
+      <queue k="string">most-basic-q</queue>
+    </args>
+  </method>
+
+
+  <method>
+    <class k="string">queue</class>
+    <method k="string">bind</method>
+    <args>
+      <queue k="string">most-basic-q</queue>
+      <routing_key k="string"></routing_key>
+      <exchange  k="string">most-basic-ex</exchange>      
+    </args>
+  </method>
+
+  <method>
+    <class k="string">basic</class>
+    <method k="string">qos</method>
+    <args>
+      <prefetch-count k="string">1</prefetch-count>
+      <global k="boolean">false</global>
+    </args>
+  </method>
+</methods>

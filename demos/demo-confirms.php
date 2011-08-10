@@ -24,21 +24,19 @@ use amqphp as amqp;
 use amqphp\protocol;
 use amqphp\wire;
 
-require __DIR__ . '/demo-common.php';
+require __DIR__ . '/demo-loader.php';
+require __DIR__ . '/Setup.php';
 
-// Basic RabbitMQ connection settings
-$config = array (
-    'username' => 'testing',
-    'userpass' => 'letmein',
-    'vhost' => 'robin',
-    'socketParams' => array('host' => 'rabbit1', 'port' => 5672));
 
-// Connect to the RabbitMQ server, set up an Amqp channel
-$conn = new amqp\Connection($config);
-$conn->connect();
-$chan = $conn->openChannel();
+$su = new Setup;
+$cons = $su->getSetup(__DIR__ . '/multi-producer.xml');
 
-initialiseDemo();
+$conn = reset($cons);
+$chans = $conn->getChannels();
+$chan = reset($chans);
+
+$Q = 'most-basic-q'; // Must match Q in broker-common-setup.xml
+$EX_NAME = 'most-basic-ex'; // Must match Ex. in broker-common-setup.xml
 
 // Prepare the 'header parameters' and message content - these will
 // be sent to RabbitMQ
@@ -56,8 +54,6 @@ $basicP = $chan->basic('publish', $publishParams);
 
 class DemoCEH implements amqp\ChannelEventHandler
 {
-
-
     function publishConfirm (wire\Method $meth) {
         printf("Publish confirmed for message %s\n", $meth->getField('delivery-tag'));
     }
@@ -90,6 +86,10 @@ foreach ($messages as $m) {
 $conn->select();
 
 
-$chan->shutdown();
-$conn->shutdown();
-echo "Test complete!\n";
+
+// Gracefully close the connection
+foreach ($cons as $conn) {
+    $conn->shutdown();
+}
+
+echo "\nDemo script complete\n";

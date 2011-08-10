@@ -13,24 +13,15 @@ use amqphp as amqp,
 
 
 
-/** A simple classloader for the Amqphp CPF distribution */
-class DefaultLoader
-{
-    function load ($class) {
-        $target = implode(DIRECTORY_SEPARATOR, explode('\\', $class)) . '.php';
-        include $target;
-        if (! (class_exists($class, false) || interface_exists($class, false))) {
-            throw new Exception("Failed to load {$class} (2)", 6473);
-        }
-    }
+if (1) {
+    // Use the NSPF distribution
+    define('DEMO_LOAD_NSPF', true);
+    define('DEMO_LOADER_DIR', __DIR__ . DIRECTORY_SEPARATOR . 'nspf' . DIRECTORY_SEPARATOR);
+} else {
+    // Use the CPF distribution and a class loader
+    define('DEMO_LOADER_DIR', __DIR__ . DIRECTORY_SEPARATOR);
 }
-
-
-/** Register the classloader */
-if (false === spl_autoload_register(array(new DefaultLoader(), 'load'), false)) {
-    throw new Exception("Failed to register loader", 8754);
-}
-
+require 'demo-loader.php';
 
 /** Very simple view, just provides a context for a phtml include */
 class View
@@ -49,7 +40,7 @@ class DemoConsumer extends amqp\SimpleConsumer
     protected $name;
 
     function __construct ($name) {
-        parent::__construct(array('queue' => 'most-basic'));
+        parent::__construct(array('queue' => 'most-basic-q'));
         $this->name = $name;
     }
 
@@ -84,7 +75,8 @@ class DemoPConsumer extends DemoConsumer implements \Serializable
 
 /**
  * Uses a global  tracker cache to track open  PConnections, each time
- * it's woken up it re-opens existing connections.
+ * it's  woken up it  re-opens existing  connections.  Note  that this
+ * does not use the Setup class.
  */
 class PConnHelper
 {
@@ -98,9 +90,9 @@ class PConnHelper
 
     protected $pState;
 
-    protected $EX_NAME = 'most-basic';
+    protected $EX_NAME = 'most-basic-ex';
     protected $EX_TYPE = 'direct';
-    protected $Q = 'most-basic';
+    protected $Q = 'most-basic-q';
 
 
     protected static $ConsMsg = array();
@@ -116,7 +108,7 @@ class PConnHelper
         'routing-key' => '',
         'mandatory' => false,
         'immediate' => false,
-        'exchange' => 'most-basic');
+        'exchange' => 'most-basic-ex');
 
 
 
@@ -146,16 +138,6 @@ class PConnHelper
      * cache
      */
     function sleep () {
-        foreach ($this->cache as $conn) {
-            if ($conn instanceof pconn\PConnection) {
-                // TODO: Configurable sleep sequence
-            } else if (false !== ($k = array_search($conn, $this->cache, true))) {
-                $conn->shutdown();
-                unset($this->cache[$k]);
-            } else {
-                throw new \Exception("Bad connection during shutdown", 2789);
-            }
-        }
         $file = $this->tempFileDir . DIRECTORY_SEPARATOR . $this->CK;
         return file_put_contents($file, serialize($this->cache));
     }
@@ -471,6 +453,8 @@ class Actions
                                               __METHOD__, $e->getCode(), $e->getMessage());
         }
     }
+
+
     function removeConnectionAction () {
         $key = $_REQUEST['name'];
 
@@ -598,8 +582,8 @@ class Actions
 
 $view = new View;
 $actions = new Actions;
-$chelper = new PConnHelper;
-//$chelper = new PConnHelperAlt;
+//$chelper = new PConnHelper;
+$chelper = new PConnHelperAlt;
 
 if (array_key_exists('action', $_REQUEST)) {
     $action = $_REQUEST['action'];

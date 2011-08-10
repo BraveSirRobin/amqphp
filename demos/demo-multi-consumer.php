@@ -23,107 +23,15 @@ use amqphp\protocol;
 use amqphp\wire;
 
 require __DIR__ . '/demo-loader.php';
-
-$EX_NAME = 'most-basic';
-$EX_TYPE = 'direct';
-$Q = 'most-basic';
-
-// Basic RabbitMQ connection settings
-$conConfigs = array();
-/*
-$conConfigs[] = array(
-    'username' => 'testing',
-    'userpass' => 'letmein',
-    'vhost' => 'robin',
-    'consumerName' => 'C1',
-    'heartbeat' => 5,
-    'socketParams' => array('host' => 'rabbit1', 'port' => 5672));
-$conConfigs[] = array(
-    'username' => 'testing',
-    'userpass' => 'letmein',
-    'vhost' => 'robin',
-    'consumerName' => 'C2',
-    'heartbeat' => 5,
-    'socketParams' => array('host' => 'rabbit2', 'port' => 5672));
-
-*/
-
-$conConfigs[] = array(
-    'username' => 'testing',
-    'userpass' => 'letmein',
-    'vhost' => 'robin',
-    'consumerName' => 'C1',
-    'heartbeat' => 5,
-    'socketImpl' => '\amqphp\StreamSocket',
-    'socketParams' => array('url' => 'tcp://rabbit1:5672'));
-
-$conConfigs[] = array(
-    'username' => 'testing',
-    'userpass' => 'letmein',
-    'vhost' => 'robin',
-    'consumerName' => 'C2',
-    'heartbeat' => 5,
-    'socketImpl' => '\amqphp\StreamSocket',
-    'socketParams' => array('url' => 'tcp://rabbit2:5672'));
-
-$xml = '<?xml version="1.0"?>
-<setup>
-  <connection>
-    <impl>\amqphp\Connection</impl>
-    <server>
-      <vhost>robin</vhost>
-      <username>testing</username>
-      <userpass>letmein</userpass>
-      <heartbeat>5</heartbeat>
-      <socketImpl>\amqphp\StreamSocket</socketImpl>
-      <socketParams>
-        <url>tcp://rabbit2:5672</url>
-      </socketParams>
-    </server>
-
-    <channel>
-      <consumer>
-        <impl>DemoConsumer</impl>
-        <queue>most-basic-q</queue>
-      </consumer>
-    </channel>
-
-
-    <exchange>
-      <type>direct</type>
-      <exchange>most-basic-ex</exchange>
-    </exchange>
-
-    <queue>
-      <queue>most-basic-q</queue>
-    </queue>
-
-    <binding>
-      <queue>most-basic-q</queue>
-      <routing_key></routing_key>
-      <exchange>most-basic-ex</exchange>
-    </binding>
-
-    <method>
-      <class k="string">basic</class>
-      <method k="string">qos</method>
-      <args>
-        <prefetch-count k="string">1</prefetch-count>
-        <global k="boolean">false</global>
-      </args>
-    </method>
-  </connection>
-</setup>';
-
-
+require __DIR__ . '/Setup.php';
 
 
 // A class to use as the consumer
 class DemoConsumer extends amqp\SimpleConsumer
 {
     private $name;
-    function __construct ($name) {
-        $this->name = $name;
+    function __construct ($consParams) {
+        parent::__construct($consParams);
     }
 
 
@@ -134,31 +42,15 @@ class DemoConsumer extends amqp\SimpleConsumer
 }
 
 
+// Create a connection and set up exchanges / queues / bindings, etc.
 $su = new Setup;
-$su->getSetup($xml);
+$cons = $su->getSetup(__DIR__ . '/multi-consumer.xml');
 
+// Create an event loop to catch incoming messages
+$el = new amqp\EventLoop;
 
-$cons = array();
-foreach ($conConfigs as $i => $conf) {
-    $conn = new amqp\Connection($conf);
-    $conn->connect();
-    $chan = $conn->openChannel();
-    initialiseDemo($chan);
-
-    $qosParams = array('prefetch-count' => 1,
-                       'global' => false);
-    $qOk = $chan->invoke($chan->basic('qos', $qosParams));
-
-
-
-//    $receiver = new DemoConsumer($conf['consumerName']);
-
-    // Attach our consumer receiver object to the channel
-    $chan->addConsumer(new DemoConsumer($conf['consumerName']));
-    $chan->addConsumer(new DemoConsumer($conf['consumerName'] . "_tother"));
-
-
-
+// Set the select mode on the connections and add to the event loop
+foreach ($cons as $conn) {
     if (1) {
     } else if (0) {
         list($uSecs, $secs) = explode(' ', microtime());
@@ -181,15 +73,7 @@ foreach ($conConfigs as $i => $conf) {
     } else {
         $conn->setSelectMode(amqp\SELECT_INFINITE);
     }
-
-    $cons[] = array($conn, $chan);
-}
-
-
-// Create an event loop to catch incoming messages
-$el = new amqp\EventLoop;
-foreach ($cons as $conn) {
-    $el->addConnection($conn[0]);
+    $el->addConnection($conn);
 }
 echo "Enter select loop\n";
 $el->select();
@@ -208,54 +92,3 @@ foreach ($cons as $con) {
 }
 
 echo "Script ends\n";
-die;
-
-//
-// !!Script ends!!
-//
-
-
-
-
-
-/**
- * Sets up the queues and bindings needed for the demo
- */
-function initialiseDemo ($chan) {
-    global $EX_TYPE, $EX_NAME, $Q;
-    $excDecl = $chan->exchange('declare', array(
-                                   'type' => $EX_TYPE,
-                                   'durable' => true,
-                                   'exchange' => $EX_NAME));
-    $eDeclResponse = $chan->invoke($excDecl); // Declare the queue
-
-
-    if (false) {
-        /**
-         * This code demonstrates  how to set a TTL  value on a queue.
-         * You have to  manually specify the table field  type using a
-         * TableField  object  because  RabbitMQ expects  the  integer
-         * x-message-ttl value to be  a long-long int (that's what the
-         * second parameter, 'l', in  the constructore means).  If you
-         * don't use a TableField,  Amqphp guesses the integer type by
-         * choosing the smallest possible storage type.
-         */
-        $args = new \amqphp\wire\Table;
-        $args['x-message-ttl'] = new \amqphp\wire\TableField(5000, 'l');
-
-        $qDecl = $chan->queue('declare', array(
-                                  'queue' => $Q,
-                                  'arguments' => $args)); // Declare the Queue
-    } else {
-        $qDecl = $chan->queue('declare', array('queue' => $Q));
-    }
-
-    $chan->invoke($qDecl);
-
-    $qBind = $chan->queue('bind', array(
-                              'queue' => $Q,
-                              'routing-key' => '',
-                              'exchange' => $EX_NAME));
-    $chan->invoke($qBind);// Bind Q to EX
-
-}
