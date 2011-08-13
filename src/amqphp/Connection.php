@@ -581,7 +581,7 @@ class Connection
         $this->slHelper->init($this);
         // Notify all channels
         foreach ($this->chans as $chan) {
-            $chan->onSelectStart();
+            $chan->startAllConsumers();
         }
     }
 

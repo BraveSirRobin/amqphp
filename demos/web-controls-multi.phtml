@@ -1,0 +1,233 @@
+<html>
+  <head>
+    <title>Test Persistent Amqphp - Many threads</title>
+    <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.6.2/jquery.min.js"></script>
+
+    <script type="text/javascript">
+
+
+$(document).ready(function () {
+    $('#publish-proto').css('display', 'none');
+    $('#consume-proto').css('display', 'none');
+    $('#method-proto').css('display', 'none');
+    $('#submit-commands').css('display', 'none');
+
+    // Clone method for publish command
+    var COMM_ID = 0;
+    $("#publish-btn").click(function (e) {
+        $('#submit-commands').css('display', 'block');
+        if (proto = $('#publish-proto')) {
+            var cln = proto.clone();
+            cln.removeAttr('id');
+            cln.css('display', 'block');
+            var elems = $('input,textarea', cln);
+            for (var i = 0, c = elems.length; i < c; i++) {
+                $(elems[i]).attr('name', $(elems[i]).attr('name').toString().replace("[_REPL1_]", "[" + COMM_ID + "]"));
+            }
+            $('#container').append(cln);
+            COMM_ID++;
+        }
+    });
+
+    $("#consume-btn").click(function (e) {
+        $('#submit-commands').css('display', 'block');
+        if (proto = $('#consume-proto')) {
+            var cln = proto.clone();
+            cln.removeAttr('id');
+            cln.css('display', 'block');
+            if (cInput = $("._hack_consume_connection", cln)) {
+                cInput.prop("value", $('#consume-chan').val());
+            }
+            var elems = $('input,textarea,select', cln);
+            for (var i = 0, c = elems.length; i < c; i++) {
+                $(elems[i]).attr('name', $(elems[i]).attr('name').toString().replace("[_REPL1_]", "[" + COMM_ID + "]"));
+            }
+            $('#container').append(cln);
+            COMM_ID++;
+        }
+    })
+});
+
+    </script>
+
+
+    <style type="text/css">
+      label.pparam {
+        display: block;
+      }
+    </style>
+
+
+
+  </head>
+  <body>
+
+    <h1>Test Persistent Amqphp - Many threads</h1>
+    <strong>(This page was rendered by process <?php echo getmypid() ?>)</strong>
+    <?php foreach ($this->messages as $m) { ?>
+    <div id="messages">
+      <span><?php echo $m; ?></span>
+    </div>
+    <?php } ?>
+
+
+    <p>
+      This  demo  can  be run  against  a  web  server that  has  many
+      processes.  The PConnections and  their configuration is held in
+      an XML  file (web-multi.xml), this  is set up  up automatically.
+      When you  send commands via.  the web  interface (send messages,
+      receive messages,  etc) these could be handled  by any receiving
+      process.  The reason this works is that every process in the web
+      server has the same connection setup, so it doesn't matter which
+      process handles any one particular request.
+    </p>
+
+
+    <div id="current-processes">
+      <h3>Current Processes</h3>
+      <p>
+        At the  time when this page  was rendered, the  web server has
+        the following threads running PConnections:
+        <ol>
+          <?php foreach ($this->helper->allProcs as $procId => $ts) { ?>
+          <li><?php echo $procId ?>, connections started <?php echo date('Y-m-d H:i:s', $ts) ?></li>
+          <?php } ?>
+        </ol>
+      </p>
+    </div>
+
+
+    <div id="connection-config">
+      <h3>Connection configurations</h3>
+      <p>
+        Each of  the live web server processes  contains the following
+        Connection / Channel setup.
+        <ol>
+          <?php foreach ($this->helper->connConfig as $conn) { ?>
+          <li>Connection of type <strong><?php echo $conn->impl ?></strong> to <strong><?php echo $conn->server->socketParams->url ?></strong>
+            <?php if ($chans = $conn->channel) {
+            $nChans = $nCons = 0;
+            $cqs = array();
+            foreach ($chans as $chan) {
+              $nChans++;
+              $nCons += count($chan->consumer);
+              foreach ($chan->consumer as $cons) {
+                $cqs[] = (string) $cons->args->queue;
+              }
+            }
+            ?>
+            There are <strong><?php echo count($chans) ?></strong> channel(s), <strong><?php echo $nCons; ?></strong> consumer(s) in this connection.  The consumers are attached to the following queues: <?php echo implode(', ', array_unique($cqs)) ?>
+            <?php } else { ?>
+            There are no channels in this connection
+            <?php } ?>
+          </li>
+          <?php } ?>
+        </ol>
+      </p>
+    </div>
+
+
+    <div>
+      <h3>Commands</h3>
+      <p>
+        You can create as many commands as you like, there are 3 kinds
+        of command:  Consume, Publish  and Method.  Each  command type
+        has it's  own parameters,  to start, click  below to  add some
+        commands.
+      </p>
+      <input type="submit" value="Publish" id="publish-btn"/><br/>
+      <input type="submit" value="Consume" id="consume-btn"/>
+      <select id="consume-chan">
+        <?php $i = 0; foreach ($this->helper->connConfig as $conn) { ?>
+        <option value="<?php echo $i ?>">Connection <?php echo $i ?></option>
+        <?php $i ++; } ?>
+      </select><br/>
+      <input type="submit" value="Method" id="method-btn"/>
+    </div>
+
+
+    <form method="POST">
+      <div id="container">
+      </div>
+      <div id="submit-commands">
+        <hr/>
+        <label>
+          Submit commands <input type="submit" value="Go"/>
+        </label>
+      </div>
+    </form>
+
+
+    <div id="publish-proto">
+      <h4>Publish</h4>
+      <input type="hidden" name="cmds[_REPL1_][cmd_type]" value="publish"/>
+      <label>
+        Content
+        <textarea name="cmds[_REPL1_][content]">Publish this!!</textarea>
+      </label>
+      <label>
+        Repeat <input type="text" name="cmds[_REPL1_][repeat]" value="1"/>
+      </label>
+      <div>
+        <h4>Params</h4>
+        <label class="pparam">
+          content-type
+          <input type="text" name="cmds[_REPL1_][params][content-type]" value="text/plain"/>
+        </label>
+        <label class="pparam">
+          content-encoding
+          <input type="text" name="cmds[_REPL1_][params][content-encoding]" value="UTF-8"/>
+        </label>
+        <label class="pparam">
+          routing-key
+          <input type="text" name="cmds[_REPL1_][params][routing-key]" value=""/>
+        </label>
+        <label class="pparam">
+          mandetory
+          <input type="checkbox" name="cmds[_REPL1_][params][mandatory]" value="1"/>
+        </label>
+        <label class="pparam">
+          immediate
+          <input type="checkbox" name="cmds[_REPL1_][params][immediate]" value="1"/>
+        </label>
+        <label class="pparam">
+          exchange
+          <input type="text" name="cmds[_REPL1_][params][exchange]" value="most-basic-ex"/>
+        </label>
+      </div>
+      <div>
+        Channels
+        <?php $i = $j = 0; foreach ($this->helper->connConfig as $coi => $conn) { $j = 1; foreach ($conn->channel as $chi => $chan) { ?>
+        <label>
+          Channel <?php echo $i . '.' . $j ?>
+          <input type="checkbox" name="cmds[_REPL1_][chans][<?php echo $i . '.' . $j ?>]" value="1" checked/>
+        </label>
+        <?php $j++; } $i++; } ?>
+      </div>
+    </div>
+
+    <div id="consume-proto">
+      <h4>Consume</h4>
+      <input type="hidden" name="cmds[_REPL1_][cmd_type]" value="consume"/>
+      <input type="hidden" name="cmds[_REPL1_][connection]" value="" class="_hack_consume_connection"/>
+      <label>
+        Consume Style
+        <select name="cmds[_REPL1_][type]">
+          <option value="timeout">Timeout</option>
+          <option value="maxloops">Max Loops</option>
+        </select>
+      </label>
+      <label>
+        Param 1 <input type="text" name="cmds[_REPL1_][param1]" value="1"/>
+      </label>
+      <label>
+        Param 2 <input type="text" name="cmds[_REPL1_][param2]" value="500000"/>
+      </label>
+    </div>
+
+    <div id="method-proto">
+      **method command**
+    </div>
+
+  </body>
+</html>

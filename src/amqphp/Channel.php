@@ -457,12 +457,19 @@ class Channel
     }
 
 
+    function onSelectStart () {
+        trigger_error("Channel->onSelectStart is deprecated - use startAllConsumers instead", E_USER_DEPRECATED);
+        return $this->startAllConsumers();
+    }
+
+
     /**
-     * Channel  callback from  Connection->select()  - prepare  signal
-     * raised just before entering the select loop.
+     * Invoke  the   basic.consume  amqp  command   for  all  attached
+     * consumers which are in the READY_WAIT state.
+     *
      * @return  boolean         Return true if any consumers were started
      */
-    function onSelectStart () {
+    function startAllConsumers () {
         if (! $this->consumers) {
             return false;
         }
@@ -504,11 +511,3 @@ class Channel
         $this->consuming = false;
     }
 }
-
-    /**
-     * Consumers for this channel, format array(array(<Consumer>, <consumer-tag OR false>, <#FLAG#>)+)
-     * #FLAG# is the consumer status, this is:
-     *  'READY_WAIT' - not yet started, i.e. before basic.consume/basic.consume-ok
-     *  'READY' - started and ready to recieve messages
-     *  'CLOSED' - previously live but now closed, receiving a basic.cancel-ok triggers this.
-     */

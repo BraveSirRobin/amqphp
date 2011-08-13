@@ -1,10 +1,9 @@
 <?php
 /**
- * This  demo  is intended  to  run inside  a  webserver  to show  how
- * persistent connections  work.  The CPF distribution needs  to be in
- * 'pwd' in order for the classloader to work.
- **/
-
+ * This demo is intended to  test the lifecycle of persistent objects,
+ * i.e.  creating  and  destroying persistent  connections,  channels,
+ * consumers.  You can send and receive messages.
+ */
 use amqphp as amqp,
     amqphp\persistent as pconn,
     amqphp\protocol,
@@ -12,65 +11,36 @@ use amqphp as amqp,
 
 
 
+// Must match webdepl.libdir property
+const LIBDIR = 'amqphp-libs';
 
-if (1) {
+// Must match webdepl.viewdir property
+const VIEWDIR = 'amqphp-view';
+
+
+
+if (0) {
     // Use the NSPF distribution
     define('DEMO_LOAD_NSPF', true);
-    define('DEMO_LOADER_DIR', __DIR__ . DIRECTORY_SEPARATOR . 'nspf' . DIRECTORY_SEPARATOR);
+    define('DEMO_LOADER_DIR', sprintf("%s%s%s%s%s%s",
+                                      __DIR__,
+                                      DIRECTORY_SEPARATOR,
+                                      LIBDIR,
+                                      DIRECTORY_SEPARATOR,
+                                      'nspf',
+                                      DIRECTORY_SEPARATOR));
 } else {
     // Use the CPF distribution and a class loader
-    define('DEMO_LOADER_DIR', __DIR__ . DIRECTORY_SEPARATOR);
+    define('DEMO_LOADER_DIR', sprintf("%s%s%s%s%s%s",
+                                      __DIR__,
+                                      DIRECTORY_SEPARATOR,
+                                      LIBDIR,
+                                      DIRECTORY_SEPARATOR,
+                                      'cpf',
+                                      DIRECTORY_SEPARATOR));
 }
-require 'demo-loader.php';
-
-/** Very simple view, just provides a context for a phtml include */
-class View
-{
-    public $messages = array();
-
-    function render ($file='web-controls.phtml') {
-        include $file;
-    }
-}
-
-
-/** Trivial consumer implementation */
-class DemoConsumer extends amqp\SimpleConsumer
-{
-    protected $name;
-
-    function __construct ($name) {
-        parent::__construct(array('queue' => 'most-basic-q'));
-        $this->name = $name;
-    }
-
-
-    function handleDelivery (wire\Method $meth, amqp\Channel $chan) {
-        PConnHelper::ConsumerCallback(sprintf("[recv:%s]\n%s\n", $this->name, substr($meth->getContent(), 0, 10)));
-        return amqp\CONSUMER_ACK;
-    }
-}
-
-
-class DemoPConsumer extends DemoConsumer implements \Serializable
-{
-    function serialize () {
-        return serialize($this->name);
-    }
-
-    function unserialize ($serialised) {
-        $this->name = unserialize($serialised);
-    }
-
-
-    function getConsumeMethod (amqp\Channel $chan) {
-        $r = $chan->basic('consume', $this->consumeParams);
-        return $r;
-    }
-
-}
-
-
+require LIBDIR . DIRECTORY_SEPARATOR . 'demo-loader.php';
+require LIBDIR . DIRECTORY_SEPARATOR . 'web-common.php';
 
 
 /**
@@ -96,8 +66,8 @@ class PConnHelper
 
 
     protected static $ConsMsg = array();
-    static function ConsumerCallback ($msg) {
-        self::$ConsMsg[] = $msg;
+    static function ConsumerCallback (wire\Method $meth, amqp\Channel $chan, $cons) {
+        self::$ConsMsg[] = sprintf("[recv:%s]\n%s\n", $cons->name, substr($meth->getContent(), 0, 10));
     }
 
 
@@ -238,7 +208,7 @@ class PConnHelper
         if (array_key_exists($ckey, $this->cache)) {
             foreach ($this->cache[$ckey]->getChannels() as $chan) {
                 if ($chan->getChanId() == $chanId) {
-                    $cons = new $impl($tmp = rand());
+                    $cons = new $impl($this->Q);
                     $chan->addConsumer($cons);
                     return true;
                 }
@@ -291,6 +261,11 @@ class PConnHelper
         foreach ($cons as $k) {
             if (array_key_exists($k, $this->cache)) {
                 $this->cache[$k]->setSelectMode(amqp\SELECT_TIMEOUT_REL, 1, 500000);
+                foreach ($this->cache[$k]->getChannels() as $chan) {
+                    foreach ($chan->getConsumerTags() as $ctag) {
+                        $chan->getConsumerByTag()->nf = array('PConnHelper', 'ConsumerCallback');
+                    }
+                }
                 $evl->addConnection($this->cache[$k]);
                 $wd = true;
             }
@@ -418,26 +393,8 @@ class PConnHelperAlt extends PConnHelper
 
 
 
-class Actions
+class Actions extends Router
 {
-    private $view;
-    private $ch;
-
-    /**
-     * Routes   actions  to   handler  methods   as  per   foo-bar  to
-     * fooBarAction
-     */
-    function _route (PConnHelper $ch, View $v, $action) {
-        $this->view = $v;
-        $this->ch = $ch;
-
-        $meth = preg_replace('/(-(.{1}))/e', 'strtoupper(\'$2\')', $action) . 'Action';
-        if (! method_exists($this, $meth)) {
-            throw new \Exception("Failed to route action $action", 964);
-        }
-        return $this->$meth();
-    }
-
 
     function newConnectionAction () {
         $key = $_REQUEST['name'];
@@ -595,7 +552,7 @@ if (array_key_exists('action', $_REQUEST)) {
 
 
 $view->conns = $chelper;
-$view->render();
+$view->render(VIEWDIR . DIRECTORY_SEPARATOR . 'web-controls-single.phtml');
 
 
 

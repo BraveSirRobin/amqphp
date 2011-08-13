@@ -32,6 +32,7 @@ class DemoConsumer extends amqp\SimpleConsumer
     private $name;
     function __construct ($consParams) {
         parent::__construct($consParams);
+        $this->name = "demo-consumer-" . rand(0, 1000);
     }
 
 

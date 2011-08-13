@@ -169,21 +169,32 @@ Prepare the NSPF and CPF source trees.
 
 
 
-<!--
-
   <target name="deploy-web-demo">
-    <exec command="scp demos/main-view.html phpvm:/var/www" dir="${project.basedir}"/>
-    <exec command="scp demos/demo-pconnect.php phpvm:/var/www" dir="${project.basedir}"/>
-  </target>
--->
 
-  <target name="deploy-web-demo">
-    <exec command="scp demos/web-controls.phtml demos/web-single-process-test.php demos/demo-loader.php phpvm:/var/www" dir="${project.basedir}"/>
+    <!-- Create folders. -->
+    <exec command="ssh phpvm mkdir -p ${webdepl.basedir}/${webdepl.viewdir} ${webdepl.basedir}/${webdepl.libdir} ${webdepl.basedir}/${webdepl.confdir}" />
+
+    <!-- controllers -->
+    <exec command="scp demos/web-single-process-test.php demos/web-multi-process-test.php phpvm:/var/www" dir="${project.basedir}"/>
+
+    <!-- views -->
+    <exec command="scp demos/web-controls-multi.phtml demos/web-controls-single.phtml phpvm:${webdepl.basedir}/${webdepl.viewdir}" dir="${project.basedir}"/>
+
+    <!-- libs -->
+    <exec command="scp demos/Setup.php demos/web-common.php demos/demo-loader.php phpvm:${webdepl.basedir}/${webdepl.libdir}" dir="${project.basedir}"/>
+
+    <!-- configs -->
+    <exec command="scp demos/web-multi.xml demos/broker-common-setup.xml phpvm:${webdepl.basedir}/${webdepl.confdir}" dir="${project.basedir}"/>
+  </target>
+
+  <target name="deploy-web-libs-only">
+    <exec command="ssh phpvm rm -rf ${webdepl.basedir}/${webdepl.libdir}/amqphp ${webdepl.basedir}/${webdepl.libdir}/nspf" />
+    <exec command="scp -r build/cpf build/nspf phpvm:${webdepl.basedir}/${webdepl.libdir}" dir="${project.basedir}"/>
   </target>
 
 
-  <target name="deploy-web-libs">
-    <exec command="ssh phpvm rm -rf /var/www/amqphp /var/www/nspf" />
-    <exec command="scp -r build/cpf/amqphp build/nspf phpvm:/var/www" dir="${project.basedir}"/>
+  <target name="deploy-web-libs" depends="deploy-web-demo,deploy-web-libs-only">
+    <echo>Note: target deploy-web-libs depends on deploy-web-demo - use deploy-web-libs to deploy libs only.</echo>
   </target>
+
 </project>

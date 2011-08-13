@@ -43,8 +43,14 @@ class EventLoop
         }
     }
 
+
+    /**
+     * Go in  to a listen  loop until no  more of the  currently added
+     * connections is listening.
+     */
     function select () {
         $sockImpl = false;
+
         foreach ($this->cons as $c) {
             if ($c->isBlocking()) {
                 throw new \Exception("Event loop cannot start - connection is already blocking", 3267);
@@ -66,6 +72,7 @@ class EventLoop
         }
 
         // The loop
+        $started = false;
         while (true) {
             $tv = array();
             foreach ($this->cons as $cid => $c) {
@@ -76,14 +83,18 @@ class EventLoop
             if (is_array($psr)) {
                 list($tvSecs, $tvUsecs) = $psr;
             } else if (is_null($psr) && empty($this->cons)) {
-                // All connections have finished litening.
-                return;
+                // All connections have finished listening.
+                if (! $started) {
+                    trigger_error("Select loop not entered - no connections are listening", E_USER_WARNING);
+                }
+                break;
             } else {
                 throw new \Exception("Unexpected PSR response", 2758);
             }
 
             $this->signal();
 
+            $started = true;
             if (is_null($tvSecs)) {
                 list($ret, $read, $ex) = call_user_func(array($sockImpl, 'Zelekt'),
                                                         array_keys($this->cons), null, 0);
@@ -91,6 +102,7 @@ class EventLoop
                 list($ret, $read, $ex) = call_user_func(array($sockImpl, 'Zelekt'),
                                                         array_keys($this->cons), $tvSecs, $tvUsecs);
             }
+
             if ($ret === false) {
                 $this->signal();
                 $errNo = $errStr = array('??');

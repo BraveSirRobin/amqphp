@@ -18,7 +18,10 @@ class Setup
     /**
      * Factory  method  -  create  and  return a  set  of  Connections
      * corresponding  to the  given XML.   The given  XML  can contain
-     * xincludes, these are processed.
+     * xincludes,  these  are  processed.   If  a  re-used  persistent
+     * connection is encountered, channel and other methods invocation
+     * is skipped.
+     *
      * @arg  string    $xml             Either a string containing XML or the name of an XML file.
      * @arg  mixed     $documentURI     If specified, $xml is 
      */
@@ -39,16 +42,24 @@ class Setup
             // Create connection and connect
             $impl = (string) $conn->impl;
             $_conn = new $impl($this->xmlToArray($conn->server->children()));
+            if (isset($conn->persistence)) {
+                $_conn->setPersistenceHelperImpl((string) $conn->persistence);
+            }
             $_conn->connect();
 
+            if ($_conn instanceof pconn\PConnection && $_conn->getPersistenceStatus() == pconn\PConnection::SOCK_REUSED) {
+                // Assume that the setup is complete for existing PConnection
+                $conns[] = $_conn;
+                continue;
+            }
 
-            // Create channels
+
+            // Create channels and channel event handlers.
             foreach ($conn->channel as $chan) {
                 $_chan = $_conn->openChannel();
-                foreach ($chan->consumer as $cons) {
-                    // Add consumers
-                    $impl = (string) $cons->impl;
-                    $_chan->addConsumer(new $impl($this->xmlToArray($cons->args)));
+                if (isset($chan->event_handler)) {
+                    $impl = (string) $chan->event_handler->impl;
+                    $_chan->setEventHandler(new $impl);
                 }
                 $_chans[] = $_chan;
             }
@@ -57,15 +68,31 @@ class Setup
             }
             $_chan = reset($_chans);
 
+
             // Execute whatever methods are supplied.
             foreach ($conn->methods->method as $iMeth) {
                 $a = $this->xmlToArray($iMeth);
                 $c = $a['class'];
                 $m = $a['method'];
-//                printf("Invoke %s.%s:\n%s", $c, $m, print_r($a, true));
                 $meth = $_chan->$c($m, $a['args']);
                 $_chan->invoke($meth);
             }
+
+
+            // Finally, set up consumers.  This is done last in case queues / exchanges etc. need to be set up before the consumers.
+            $i = 0;
+            foreach ($conn->channel as $chan) {
+                $_chan = $_chans[$i++];
+                foreach ($chan->consumer as $cons) {
+                    $impl = (string) $cons->impl;
+                    $_chan->addConsumer($_cons = new $impl($this->xmlToArray($cons->args->children())));
+                    if (isset($cons->autostart) && $this->kast($cons->autostart, 'boolean')) {
+                        $_chan->startConsumer($_cons);
+                    }
+                }
+            }
+
+
             $conns[] = $_conn;
         }
         return $conns;
@@ -84,7 +111,7 @@ class Setup
             $val = trim((string) $val);
             if ($val === '0' || strtolower($val) === 'false') {
                 return false;
-            } else if ($val == '1' || strtolower($val) === 'true') {
+            } else if ($val === '1' || strtolower($val) === 'true') {
                 return true;
             } else {
                 trigger_error("Bad boolean cast $val - use 0/1 true/false", E_USER_WARNING);
