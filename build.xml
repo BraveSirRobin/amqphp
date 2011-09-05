@@ -80,8 +80,8 @@ namespace ${namespace};</echo>
               <regexp pattern="^[\s]*namespace.*$" replace="" modifiers="m"/>
             </replaceregexp>
 
-            <!--<stripphpcomments />
-            <stripwhitespace />-->
+            <stripphpcomments />
+            <stripwhitespace />
 
             <replaceregexp>
               <regexp pattern="&lt;\?php" replace=""/>
