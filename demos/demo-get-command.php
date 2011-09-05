@@ -18,23 +18,23 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 /**
- * This file demonstrated the use of basic.get, a much simpler way to read messages
- * from a Broker then writing a full consumer.  Note that the exchange.declare, queue.declare,
- * queue.bind Amqp commands are needed only to create those broker object so as to prevent
- * this script from generating errors.  Declaring these broker objects when they already
- * exist is fine, provided *this* declaration doesn't clash with the object that already
- * exists on the broker.
+ * This file demonstrates the use  of basic.get, a much simpler way to
+ * read messages from a Broker then writing a full consumer
  */
 use amqphp as amqp;
 use amqphp\protocol;
 use amqphp\wire;
 
 require __DIR__ . '/demo-loader.php';
-require __DIR__ . '/Setup.php';
 
 
-$su = new Setup;
-$cons = $su->getSetup(__DIR__ . '/multi-producer.xml');
+$su = new amqp\Factory(__DIR__ . '/multi-producer.xml');
+$cons = array();
+foreach ($su->run() as $res) {
+    if ($res instanceof amqp\Connection) {
+        $cons[] = $res;
+    }
+}
 
 $conn = reset($cons);
 $chans = $conn->getChannels();

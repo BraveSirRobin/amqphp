@@ -656,8 +656,6 @@ class Connection
     }
 
 
-
-
     /**
      * Convert  the  given raw  wire  content  in  to Method  objects.
      * Connection and  channel messages are  delivered immediately and

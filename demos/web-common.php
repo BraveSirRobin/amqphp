@@ -79,6 +79,8 @@ class DemoPConsumer extends DemoConsumer implements \Serializable
     function handleDelivery (wire\Method $meth, amqp\Channel $chan) {
         if ($this->nf) {
             call_user_func($this->nf, $meth, $chan, $this);
+        } else {
+            error_log("!!No handler for message delivery:\n%s", $meth->getContent());
         }
         return amqp\CONSUMER_ACK;
     }

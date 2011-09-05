@@ -69,7 +69,10 @@ class PConnection extends \amqphp\Connection implements \Serializable
     /**
      * List of Connection (super class) properties to be persisted.
      */
-    private static $BasicProps = array('capabilities', 'socketImpl', 'protoImpl', 'socketParams', 'vhost', 'frameMax', 'chanMax', 'signalDispatch', 'nextChan', 'unDelivered', 'unDeliverable', 'incompleteMethods', 'readSrc');
+    private static $BasicProps = array('capabilities', 'socketImpl', 'protoImpl', 'socketParams',
+                                       'vhost', 'frameMax', 'chanMax', 'signalDispatch', 
+                                       'nextChan', 'unDelivered', 'unDeliverable', 'incompleteMethods',
+                                       'readSrc');
 
     private $sleepMode = self::PERSIST_CHANNELS;
 
@@ -253,21 +256,32 @@ class PConnection extends \amqphp\Connection implements \Serializable
      */
     function serialize () {
         $data = array();
-        foreach (self::$BasicProps as $k) {
-            $data[$k] = $this->$k;
-        }
-
 
         $z = array();
         $z[0] = $this->sleepMode;
-        $z[1] = $data;
         if ($this->sleepMode == self::PERSIST_CHANNELS) {
             $z[2] = $this->chans;
+            foreach ($this->chans as $chan) {
+                if ($chan->suspendFlow && ! $chan->isSuspended()) {
+                    $chan->toggleFlow();
+                }
+            }
         }
-        $this->stateFlag |= self::ST_SER;
-        return serialize($z);
-    }
 
+        foreach (self::$BasicProps as $k) {
+            if (in_array($k,  array('readSrc', 'incompleteMethods', 'unDelivered', 'unDeliverable')) 
+                && $this->$k) {
+                trigger_error("PConnection will persist application data ({$k})", E_USER_WARNING);
+            }
+            $data[$k] = $this->$k;
+        }
+        $z[1] = $data;
+
+
+        $this->stateFlag |= self::ST_SER;
+        $r = serialize($z);
+        return $r;
+    }
 
 
     /**
@@ -294,10 +308,11 @@ class PConnection extends \amqphp\Connection implements \Serializable
             $this->$k = $data[1][$k];
         }
 
-        // Reconnect only if we're being unserialised
+        // Reconnect only if we're being unserialised manually
         if ($rewake) {
             $this->initSocket();
             $this->sock->connect();
+
             if (! $this->sock->isReusedPSock()) {
                 throw new \Exception("Persisted connection woken up with a fresh socket connection", 9249);
             }
@@ -318,10 +333,16 @@ class PConnection extends \amqphp\Connection implements \Serializable
                 $chan->setConnection($this);
             }
         }
+
         $this->stateFlag |= self::ST_UNSER;
+
+        // Restart flow, if required.
+        foreach ($this->chans as $chan) {
+            if ($chan->suspendFlow && $chan->isSuspended()) {
+                $chan->toggleFlow();
+            }
+        }
     }
-
-
 
 
     /**

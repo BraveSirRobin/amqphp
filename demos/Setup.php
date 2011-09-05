@@ -13,8 +13,6 @@ use amqphp as amqp,
  */
 class Setup
 {
-
-
     /**
      * Factory  method  -  create  and  return a  set  of  Connections
      * corresponding  to the  given XML.   The given  XML  can contain
@@ -70,14 +68,9 @@ class Setup
 
 
             // Execute whatever methods are supplied.
-            foreach ($conn->methods->method as $iMeth) {
-                $a = $this->xmlToArray($iMeth);
-                $c = $a['class'];
-                $m = $a['method'];
-                $meth = $_chan->$c($m, $a['args']);
-                $_chan->invoke($meth);
+            if (count($conn->methods) > 0) {
+                $this->methods($_chan, $conn->methods->method);
             }
-
 
             // Finally, set up consumers.  This is done last in case queues / exchanges etc. need to be set up before the consumers.
             $i = 0;
@@ -96,6 +89,21 @@ class Setup
             $conns[] = $_conn;
         }
         return $conns;
+    }
+
+
+
+    /**
+     * Execute the methods defined in $meths against channel $chan
+     */
+    function methods (amqp\Channel $chan, SimpleXmlElement $meths) {
+        // Execute whatever methods are supplied.
+        foreach ($meths as $iMeth) {
+            $a = $this->xmlToArray($iMeth);
+            $c = $a['class'];
+            $m = $a['method'];
+            $r = $chan->invoke($chan->$c($m, $a['args']));
+        }
     }
 
 
