@@ -5,7 +5,6 @@ use amqphp\protocol;
 use amqphp\wire;
 
 require __DIR__ . '/demo-loader.php';
-require __DIR__ . '/Setup.php';
 
 
 
@@ -18,8 +17,12 @@ $publishParams = array(
     'exchange' => 'most-basic-ex'); // Must match exchange in multi-producer.xml
 
 
-$su = new Setup;
-$conns = $su->getSetup(__DIR__ . '/multi-producer.xml');
+$su = new amqp\Factory(__DIR__ . '/multi-producer.xml');
+$conns = array();
+foreach ($su->run() as $res) {
+
+}
+
 $cons = array();
 foreach ($conns as $con) {
     $chans = $con->getChannels();

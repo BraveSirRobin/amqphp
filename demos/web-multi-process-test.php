@@ -42,7 +42,6 @@ if (0) {
 }
 require LIBDIR . DIRECTORY_SEPARATOR . 'demo-loader.php';
 require LIBDIR . DIRECTORY_SEPARATOR . 'web-common.php';
-require LIBDIR . DIRECTORY_SEPARATOR . 'Setup.php';
 
 
 
@@ -57,14 +56,15 @@ class MultiProcessPCTest
     // WARNING - If you restart your web server you must delete this file!!
     // Persistence format: array(<procid> => <created timestamp>);
     public $connStore = '/tmp/MultiProcessPCTest-runtime.txt';
-    public $connections;
+    public $connections = array();
     public $allProcs = array();
     public $connConfig;
     public $view;
 
     function start ($config) {
-        $s = new Setup;
-        $this->connections = $s->getSetup($config);
+        $fact = new amqp\Factory($config);
+        $this->connections = $fact->getConnections();
+
         // Read in the server process tracker data and make sure this process is in it.
         if ($buff = @file_get_contents($this->connStore)) {
             $this->allProcs = unserialize($buff);

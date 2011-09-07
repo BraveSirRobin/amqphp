@@ -181,7 +181,6 @@ class Channel
 
         switch ($sid) {
         case 'channel.flow':
-            error_log("Channel->handleChannelMessage");
             $this->flow = ! $this->flow;
             if ($r = $meth->getMethodProto()->getResponses()) {
                 $meth = new wire\Method($r[0], $this->chanId);
@@ -526,6 +525,5 @@ class Channel
             trigger_error(sprintf("Flow Unexpected channel flow response, expected %d, got %d", ! $this->flow, $this->flow), E_USER_WARNING);
         }
         $this->flow = $newFlow;
-        error_log(sprintf("Toggled flow to %d (%s)", $this->flow, gettype($this->flow)));
     }
 }
