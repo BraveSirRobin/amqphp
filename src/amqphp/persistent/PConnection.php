@@ -69,7 +69,10 @@ class PConnection extends \amqphp\Connection implements \Serializable
     /**
      * List of Connection (super class) properties to be persisted.
      */
-    private static $BasicProps = array('capabilities', 'socketImpl', 'protoImpl', 'socketParams', 'vhost', 'frameMax', 'chanMax', 'signalDispatch', 'nextChan', 'unDelivered', 'unDeliverable', 'incompleteMethods', 'readSrc');
+    private static $BasicProps = array('capabilities', 'socketImpl', 'protoImpl', 'socketParams',
+                                       'vhost', 'frameMax', 'chanMax', 'signalDispatch', 
+                                       'nextChan', 'unDelivered', 'unDeliverable', 'incompleteMethods',
+                                       'readSrc');
 
     private $sleepMode = self::PERSIST_CHANNELS;
 
@@ -263,6 +266,11 @@ class PConnection extends \amqphp\Connection implements \Serializable
         $z[1] = $data;
         if ($this->sleepMode == self::PERSIST_CHANNELS) {
             $z[2] = $this->chans;
+            foreach ($this->chans as $chan) {
+                if ($chan->suspendFlow && ! $chan->isSuspended()) {
+                    $chan->toggleFlow();
+                }
+            }
         }
         $this->stateFlag |= self::ST_SER;
         return serialize($z);
@@ -316,6 +324,9 @@ class PConnection extends \amqphp\Connection implements \Serializable
             foreach ($this->chans as $chan) {
                 // Can't persistent cyclical relationships!
                 $chan->setConnection($this);
+                if ($chan->suspendFlow && $chan->isSuspended()) {
+                    $chan->toggleFlow();
+                }
             }
         }
         $this->stateFlag |= self::ST_UNSER;

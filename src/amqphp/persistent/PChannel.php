@@ -23,12 +23,24 @@ namespace amqphp\persistent;
 
 /**
  * Simple persistence  extension for the  standard Channel.  Serialise
- * is invoked by the containing Channel
+ * is invoked by the containing Channel.
+ *
+ * TODO  :  Implement  a  channel suspend  feature  (optional?)  using
+ * channel.flow.  Must be called in both serialise methods.
  */
 class PChannel extends \amqphp\Channel implements \Serializable
 {
 
-    private static $PersProps = array('chanId', 'flow', 'frameMax', 'confirmSeqs', 'confirmSeq', 'confirmMode', 'isOpen', 'callbackHandler');
+    /**
+     * Flag  - when  set,  the  serialize methods  will  use the  amqp
+     * channel.flow to suspend and resume message delivery.
+     * TODO : Set default back to false!!!!
+     */
+    public $suspendFlow = true;
+
+    private static $PersProps = array('chanId', 'flow', 'frameMax', 'confirmSeqs',
+                                      'confirmSeq', 'confirmMode', 'isOpen', 
+                                      'callbackHandler', 'suspendFlow');
 
     function serialize () {
         $data = array();

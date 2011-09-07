@@ -181,6 +181,7 @@ class Channel
 
         switch ($sid) {
         case 'channel.flow':
+            error_log("Channel->handleChannelMessage");
             $this->flow = ! $this->flow;
             if ($r = $meth->getMethodProto()->getResponses()) {
                 $meth = new wire\Method($r[0], $this->chanId);
@@ -189,7 +190,6 @@ class Channel
             return false;
         case 'channel.close':
             $pl = $this->myConn->getProtocolLoader();
-            //if ($culprit = protocol\ClassFactory::GetMethod($meth->getField('class-id'), $meth->getField('method-id'))) {
             if ($culprit = $pl('ClassFactory', 'GetMethod', array($meth->getField('class-id'), $meth->getField('method-id')))) {
                 $culprit = "{$culprit->getSpecClass()}.{$culprit->getSpecName()}";
             } else {
@@ -216,6 +216,7 @@ class Channel
             throw new \Exception($em, $n);
         case 'channel.close-ok':
         case 'channel.open-ok':
+        case 'channel.flow-ok':
             return true;
         default:
             throw new \Exception("Received unexpected channel message: $sid", 8795);
@@ -509,5 +510,22 @@ class Channel
 
     function onSelectEnd () {
         $this->consuming = false;
+    }
+
+    function isSuspended () {
+        return ! $this->flow;
+    }
+
+    function toggleFlow () {
+        $flow = ! $this->flow;
+        $this->flow = true; // otherwise the message won't send
+        $meth = $this->channel('flow', array('active' => $flow));
+        $fr = $this->invoke($meth);
+        $newFlow = $fr->getField('active');
+        if ($newFlow != $flow) {
+            trigger_error(sprintf("Flow Unexpected channel flow response, expected %d, got %d", ! $this->flow, $this->flow), E_USER_WARNING);
+        }
+        $this->flow = $newFlow;
+        error_log(sprintf("Toggled flow to %d (%s)", $this->flow, gettype($this->flow)));
     }
 }
