@@ -47,8 +47,8 @@ class StreamSocket
     private $connected;
     private $interrupt = false;
     private $flags;
-    private $isReusedPSock = false;
     private $vhost;
+    private $stfp;
 
     function __construct ($params, $flags, $vhost) {
         $this->url = $params['url'];
@@ -91,10 +91,11 @@ class StreamSocket
                                            ini_get("default_socket_timeout"), 
                                            $flags, $context);
 
+        $this->stfp = ftell($this->sock);
+
         if (! $this->sock) {
             throw new \Exception("Failed to connect stream socket {$this->url}, ($errno, $errstr): flags $flags", 7568);
-        } else if (($flags & STREAM_CLIENT_PERSISTENT) && ftell($this->sock) > 0) {
-            $this->isReusedPSock = true;
+        } else if (($flags & STREAM_CLIENT_PERSISTENT) && $this->stfp > 0) {
             foreach (self::$All as $sock) {
                 if ($sock !== $this && $sock->getCK() == $this->getCK()) {
                     /* TODO: Investigate whether mixing persistent and
@@ -115,7 +116,38 @@ class StreamSocket
      * if it's a persistent socket which has been re-used.
      */
     function isReusedPSock () {
-        return $this->isReusedPSock;
+        return ($this->stfp > 0);
+    }
+
+    /**
+     * Return the  ftell() value  that was recorded  immediately after
+     * the underlying connection was opened.
+     */
+    function getConnectionStartFP () {
+        return $this->stfp;
+    }
+
+
+    /**
+     * Call ftell on the underlying stream and return the result
+     */
+    function tell () {
+        return ftell($this->sock);
+    }
+
+
+    /** Testing (for now) */
+    function nbReadAll () {
+        if (stream_set_blocking($this->sock, 0)) {
+            try {
+                $r = $this->readAll();
+                stream_set_blocking($this->sock, 1);
+                return $r;
+            } catch (\Exception $e) {
+                stream_set_blocking($this->sock, 1);
+            }
+        }
+        return false;
     }
 
 

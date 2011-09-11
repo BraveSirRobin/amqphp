@@ -261,6 +261,15 @@ class PConnection extends \amqphp\Connection implements \Serializable
         }
 
 
+        $unrb = $this->sock->getUnreadBytes();
+        $test = $this->sock->nbReadAll();
+        error_log(sprintf("(serialize[1]) : NB Read len %d, unread bytes %d, EOF %d", strlen($test), $unrb, $this->sock->eof()));
+        if (strlen($test)) {
+            // BINGOROONIE
+            error_log(sprintf("(serialize[1]) NB Read All:\n%s", wire\Hexdump::hexdump($test)));
+        }
+
+
         $z = array();
         $z[0] = $this->sleepMode;
         $z[1] = $data;
@@ -272,6 +281,14 @@ class PConnection extends \amqphp\Connection implements \Serializable
                 }
             }
         }
+        $z[3] = $this->sock->tell();
+
+        $test = $this->sock->nbReadAll();
+        error_log(sprintf("(serialize[2]) : NB Read len %d", strlen($test)));
+        if (strlen($test)) {
+            error_log(sprintf("(serialize[2]) NB Read All:\n%s", wire\Hexdump::hexdump($test)));
+        }
+
         $this->stateFlag |= self::ST_SER;
         return serialize($z);
     }
@@ -302,10 +319,11 @@ class PConnection extends \amqphp\Connection implements \Serializable
             $this->$k = $data[1][$k];
         }
 
-        // Reconnect only if we're being unserialised
+        // Reconnect only if we're being unserialised manually
         if ($rewake) {
             $this->initSocket();
             $this->sock->connect();
+
             if (! $this->sock->isReusedPSock()) {
                 throw new \Exception("Persisted connection woken up with a fresh socket connection", 9249);
             }
@@ -318,6 +336,17 @@ class PConnection extends \amqphp\Connection implements \Serializable
             $this->connected = true;
         }
 
+        // TESTING: Check for ftell discrepancy!
+        error_log(sprintf("Run ftell discrepancy check: (%d, %d)", $data[3], $this->sock->getConnectionStartFP()));
+        if ($data[3] != $this->sock->getConnectionStartFP()) {
+            error_log("ftell differs on wakeup - need some kind of select / zelect exception flag!");
+        }
+
+        $test = $this->sock->nbReadAll();
+        error_log(sprintf("(unserialize) : NB Read len %d", strlen($test)));
+        if (strlen($test)) {
+            error_log(sprintf("(unserialize) NB Read All:\n%s", wire\Hexdump::hexdump($test)));
+        }
         // Reawake channels if required
         if ($this->sleepMode == self::PERSIST_CHANNELS && isset($data[2])) {
             $this->chans = $data[2];
