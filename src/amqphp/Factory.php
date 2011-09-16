@@ -141,6 +141,7 @@ class Factory
             if ($_conn instanceof pers\PConnection && $_conn->getPersistenceStatus() == pers\PConnection::SOCK_REUSED) {
                 // Assume that the setup is complete for existing PConnection
                 // ??TODO??  Run method sequence here too?
+                $_conn->testDeleteMeWTFIsHappeningToReadSrc('Factory');
                 $ret[] = $_conn;
                 continue;
             }

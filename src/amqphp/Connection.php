@@ -621,9 +621,11 @@ class Connection
      *                                  an Amqp no-wait domain field set to true
      */
     function invoke (wire\Method $inMeth, $noWait=false) {
+        $this->testDeleteMeWTFIsHappeningToReadSrc('connection->invoke() (1)');
         if (! ($this->write($inMeth->toBin($this->getProtocolLoader())))) {
             throw new \Exception("Send message failed (1)", 5623);
         }
+        $this->testDeleteMeWTFIsHappeningToReadSrc('connection->invoke() (2)');
         if (! $noWait && $inMeth->getMethodProto()->getSpecResponseMethods()) {
             if ($inMeth->getMethodProto()->hasNoWaitField()) {
                 foreach ($inMeth->getMethodProto()->getFields() as $f) {
@@ -632,6 +634,7 @@ class Connection
                     }
                 }
             }
+            $this->testDeleteMeWTFIsHappeningToReadSrc('connection->invoke() (3)');
             while (true) {
                 if (! ($buff = $this->read())) {
                     throw new \Exception(sprintf("(2) Send message failed for %s.%s:\n",
@@ -639,15 +642,18 @@ class Connection
                                                  $inMeth->getMethodProto()->getSpecName()), 5624);
                 }
                 $meths = $this->readMessages($buff);
+                $this->testDeleteMeWTFIsHappeningToReadSrc('connection->invoke() (4) [' . count($meths) . ']');
                 foreach (array_keys($meths) as $k) {
                     $meth = $meths[$k];
                     unset($meths[$k]);
                     if ($inMeth->isResponse($meth)) {
                         if ($meths) {
+                            $this->testDeleteMeWTFIsHappeningToReadSrc('connection->invoke() (5)');
                             $this->unDelivered = array_merge($this->unDelivered, $meths);
                         }
                         return $meth;
                     } else {
+                        $this->testDeleteMeWTFIsHappeningToReadSrc('connection->invoke() (6)');
                         $this->unDelivered[] = $meth;
                     }
                 }
@@ -656,7 +662,7 @@ class Connection
     }
 
 
-
+//    function testDeleteMeWTFIsHappeningToReadSrc ($foo) {}
 
     /**
      * Convert  the  given raw  wire  content  in  to Method  objects.
@@ -665,8 +671,10 @@ class Connection
      */
     private function readMessages ($buff) {
         if (is_null($this->readSrc)) {
+            $this->testDeleteMeWTFIsHappeningToReadSrc('connection->readMessages() (1)');
             $src = new wire\Reader($buff);
         } else {
+            $this->testDeleteMeWTFIsHappeningToReadSrc('connection->readMessages() (2)');
             $src = $this->readSrc;
             $src->append($buff);
             $this->readSrc = null;

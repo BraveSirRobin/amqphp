@@ -256,23 +256,24 @@ class PConnection extends \amqphp\Connection implements \Serializable
      */
     function serialize () {
         $data = array();
-        foreach (self::$BasicProps as $k) {
-            $data[$k] = $this->$k;
-        }
 
-
-        $unrb = $this->sock->getUnreadBytes();
+        /* Completely drain the  connection, otherwise any unread data
+           will be lost (note that any data which gets read will go in
+           to the persistence data) */
         $test = $this->sock->nbReadAll();
-        error_log(sprintf("(serialize[1]) : NB Read len %d, unread bytes %d, EOF %d", strlen($test), $unrb, $this->sock->eof()));
         if (strlen($test)) {
-            // BINGOROONIE
-            error_log(sprintf("(serialize[1]) NB Read All:\n%s", wire\Hexdump::hexdump($test)));
+            if ($this->readSrc) {
+                $DBG = $this->readSrc->append($test);
+            } else {
+                $DBG = $this->readSrc = new wire\Reader($test);
+            }
+            error_log(sprintf("(serialize) save %d bytes from being lost", strlen($test)));
+            $this->ohIsItThisDeleteme($DBG, '1');
         }
 
 
         $z = array();
         $z[0] = $this->sleepMode;
-        $z[1] = $data;
         if ($this->sleepMode == self::PERSIST_CHANNELS) {
             $z[2] = $this->chans;
             foreach ($this->chans as $chan) {
@@ -281,18 +282,27 @@ class PConnection extends \amqphp\Connection implements \Serializable
                 }
             }
         }
-        $z[3] = $this->sock->tell();
 
-        $test = $this->sock->nbReadAll();
-        error_log(sprintf("(serialize[2]) : NB Read len %d", strlen($test)));
-        if (strlen($test)) {
-            error_log(sprintf("(serialize[2]) NB Read All:\n%s", wire\Hexdump::hexdump($test)));
+        foreach (self::$BasicProps as $k) {
+            if (in_array($k,  array('readSrc', 'incompleteMethods', 'unDelivered', 'unDeliverable')) 
+                && $this->$k) {
+                trigger_error("PConnection will persist application data ({$k})", E_USER_WARNING);
+            }
+            $data[$k] = $this->$k;
         }
+        $z[1] = $data;
+
 
         $this->stateFlag |= self::ST_SER;
-        return serialize($z);
+        if (isset($DBG)) $this->ohIsItThisDeleteme($DBG, '2');
+        $r = serialize($z);
+        if (isset($DBG)) $this->ohIsItThisDeleteme($DBG, '3');
+        return $r;
     }
 
+    function ohIsItThisDeleteme ($DBG, $tag) {
+        error_log(sprintf("~~other thing (%s)~~ : (p, binPackOffset, binLen) = (%d, %d, %d)", $tag, $DBG->p, $DBG->binPackOffset, $DBG->binLen));
+    }
 
 
     /**
@@ -317,8 +327,14 @@ class PConnection extends \amqphp\Connection implements \Serializable
         // Restore Connection state
         foreach (self::$BasicProps as $k) {
             $this->$k = $data[1][$k];
-        }
 
+            if (in_array($k,  array('readSrc', 'incompleteMethods', 'unDelivered', 'unDeliverable')) 
+                && $data[1][$k]) {
+                error_log(sprintf("(unserialize) PConnection wakes up with a {$k} (%s)", get_class($data[1][$k])));
+                $this->testDeleteMeWTFIsHappeningToReadSrc('unserialize-1');
+            }
+        }
+        $this->testDeleteMeWTFIsHappeningToReadSrc('unserialize-2');
         // Reconnect only if we're being unserialised manually
         if ($rewake) {
             $this->initSocket();
@@ -335,33 +351,45 @@ class PConnection extends \amqphp\Connection implements \Serializable
             }
             $this->connected = true;
         }
-
-        // TESTING: Check for ftell discrepancy!
-        error_log(sprintf("Run ftell discrepancy check: (%d, %d)", $data[3], $this->sock->getConnectionStartFP()));
-        if ($data[3] != $this->sock->getConnectionStartFP()) {
-            error_log("ftell differs on wakeup - need some kind of select / zelect exception flag!");
-        }
-
-        $test = $this->sock->nbReadAll();
-        error_log(sprintf("(unserialize) : NB Read len %d", strlen($test)));
-        if (strlen($test)) {
-            error_log(sprintf("(unserialize) NB Read All:\n%s", wire\Hexdump::hexdump($test)));
-        }
+        $this->testDeleteMeWTFIsHappeningToReadSrc('unserialize-3');
         // Reawake channels if required
         if ($this->sleepMode == self::PERSIST_CHANNELS && isset($data[2])) {
             $this->chans = $data[2];
             foreach ($this->chans as $chan) {
                 // Can't persistent cyclical relationships!
                 $chan->setConnection($this);
-                if ($chan->suspendFlow && $chan->isSuspended()) {
-                    $chan->toggleFlow();
-                }
             }
         }
+
+        $this->testDeleteMeWTFIsHappeningToReadSrc('unserialize-4');
+
         $this->stateFlag |= self::ST_UNSER;
+
+        // Restart flow, if required.
+        foreach ($this->chans as $chan) {
+            if ($chan->suspendFlow && $chan->isSuspended()) {
+                $chan->toggleFlow();
+            }
+        }
+
+
+        $this->testDeleteMeWTFIsHappeningToReadSrc('unserialize-5');
     }
 
 
+    function testDeleteMeWTFIsHappeningToReadSrc ($marker) {
+        if (is_null($this->readSrc)) {
+            $m = sprintf("readSrc is NULL");
+        } else if (is_object($this->readSrc)) {
+            $m = sprintf("readSrc is an object of type %s", get_class($this->readSrc));
+            if ($this->readSrc instanceof wire\Reader) {
+                $m .= sprintf(", (p, binPackOffset, binLen) = (%d, %d, %s)", $this->readSrc->p, $this->readSrc->binPackOffset, $this->readSrc->binLen);
+            }
+        } else {
+            $m = sprintf("readSrc is a %s, and as a string it's %s", gettype($this->readSrc), $this->readSrc);
+        }
+        error_log(sprintf("At point %s: %s", $marker, $m));
+    }
 
 
     /**

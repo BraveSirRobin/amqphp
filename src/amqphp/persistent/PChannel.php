@@ -35,6 +35,7 @@ class PChannel extends \amqphp\Channel implements \Serializable
      * Flag  - when  set,  the  serialize methods  will  use the  amqp
      * channel.flow to suspend and resume message delivery.
      * TODO : Set default back to false!!!!
+     * TODO : Replace with 2 flags: suspendDuringSleep and unsuspendDuringWakeup
      */
     public $suspendFlow = true;
 
