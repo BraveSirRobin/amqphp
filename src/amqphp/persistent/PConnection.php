@@ -263,12 +263,10 @@ class PConnection extends \amqphp\Connection implements \Serializable
         $test = $this->sock->nbReadAll();
         if (strlen($test)) {
             if ($this->readSrc) {
-                $DBG = $this->readSrc->append($test);
+                 $this->readSrc->append($test);
             } else {
-                $DBG = $this->readSrc = new wire\Reader($test);
+                $this->readSrc = new wire\Reader($test);
             }
-            error_log(sprintf("(serialize) save %d bytes from being lost", strlen($test)));
-            $this->ohIsItThisDeleteme($DBG, '1');
         }
 
 
@@ -294,14 +292,8 @@ class PConnection extends \amqphp\Connection implements \Serializable
 
 
         $this->stateFlag |= self::ST_SER;
-        if (isset($DBG)) $this->ohIsItThisDeleteme($DBG, '2');
         $r = serialize($z);
-        if (isset($DBG)) $this->ohIsItThisDeleteme($DBG, '3');
         return $r;
-    }
-
-    function ohIsItThisDeleteme ($DBG, $tag) {
-        error_log(sprintf("~~other thing (%s)~~ : (p, binPackOffset, binLen) = (%d, %d, %d)", $tag, $DBG->p, $DBG->binPackOffset, $DBG->binLen));
     }
 
 
@@ -327,14 +319,8 @@ class PConnection extends \amqphp\Connection implements \Serializable
         // Restore Connection state
         foreach (self::$BasicProps as $k) {
             $this->$k = $data[1][$k];
-
-            if (in_array($k,  array('readSrc', 'incompleteMethods', 'unDelivered', 'unDeliverable')) 
-                && $data[1][$k]) {
-                error_log(sprintf("(unserialize) PConnection wakes up with a {$k} (%s)", get_class($data[1][$k])));
-                $this->testDeleteMeWTFIsHappeningToReadSrc('unserialize-1');
-            }
         }
-        $this->testDeleteMeWTFIsHappeningToReadSrc('unserialize-2');
+
         // Reconnect only if we're being unserialised manually
         if ($rewake) {
             $this->initSocket();
@@ -351,7 +337,7 @@ class PConnection extends \amqphp\Connection implements \Serializable
             }
             $this->connected = true;
         }
-        $this->testDeleteMeWTFIsHappeningToReadSrc('unserialize-3');
+
         // Reawake channels if required
         if ($this->sleepMode == self::PERSIST_CHANNELS && isset($data[2])) {
             $this->chans = $data[2];
@@ -361,8 +347,6 @@ class PConnection extends \amqphp\Connection implements \Serializable
             }
         }
 
-        $this->testDeleteMeWTFIsHappeningToReadSrc('unserialize-4');
-
         $this->stateFlag |= self::ST_UNSER;
 
         // Restart flow, if required.
@@ -371,24 +355,6 @@ class PConnection extends \amqphp\Connection implements \Serializable
                 $chan->toggleFlow();
             }
         }
-
-
-        $this->testDeleteMeWTFIsHappeningToReadSrc('unserialize-5');
-    }
-
-
-    function testDeleteMeWTFIsHappeningToReadSrc ($marker) {
-        if (is_null($this->readSrc)) {
-            $m = sprintf("readSrc is NULL");
-        } else if (is_object($this->readSrc)) {
-            $m = sprintf("readSrc is an object of type %s", get_class($this->readSrc));
-            if ($this->readSrc instanceof wire\Reader) {
-                $m .= sprintf(", (p, binPackOffset, binLen) = (%d, %d, %s)", $this->readSrc->p, $this->readSrc->binPackOffset, $this->readSrc->binLen);
-            }
-        } else {
-            $m = sprintf("readSrc is a %s, and as a string it's %s", gettype($this->readSrc), $this->readSrc);
-        }
-        error_log(sprintf("At point %s: %s", $marker, $m));
     }
 
 
