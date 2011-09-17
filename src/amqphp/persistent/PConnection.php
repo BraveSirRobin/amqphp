@@ -70,7 +70,7 @@ class PConnection extends \amqphp\Connection implements \Serializable
      * List of Connection (super class) properties to be persisted.
      */
     private static $BasicProps = array('capabilities', 'socketImpl', 'protoImpl', 'socketParams',
-                                       'vhost', 'frameMax', 'chanMax', 'signalDispatch', 
+                                       'vhost', 'frameMax', 'chanMax', 'signalDispatch',
                                        'nextChan', 'unDelivered', 'unDeliverable', 'incompleteMethods',
                                        'readSrc');
 
@@ -269,7 +269,7 @@ class PConnection extends \amqphp\Connection implements \Serializable
         }
 
         foreach (self::$BasicProps as $k) {
-            if (in_array($k,  array('readSrc', 'incompleteMethods', 'unDelivered', 'unDeliverable')) 
+            if (in_array($k,  array('readSrc', 'incompleteMethods', 'unDelivered', 'unDeliverable'))
                 && $this->$k) {
                 trigger_error("PConnection will persist application data ({$k})", E_USER_WARNING);
             }
@@ -279,8 +279,7 @@ class PConnection extends \amqphp\Connection implements \Serializable
 
 
         $this->stateFlag |= self::ST_SER;
-        $r = serialize($z);
-        return $r;
+        return serialize($z);
     }
 
 
