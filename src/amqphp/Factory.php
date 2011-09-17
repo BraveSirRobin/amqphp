@@ -98,7 +98,7 @@ class Factory
             return $this->runSetupSequence();
         case 'methods':
             if (is_null($chan)) {
-                throw new \Exception("", 15758);
+                throw new \Exception("Invalid factory configuration - expected a target channel", 15758);
             }
             return $this->runMethodSequence($chan, $this->simp);
         }
@@ -145,7 +145,6 @@ class Factory
                 continue;
             }
 
-
             // Create channels and channel event handlers.
             foreach ($conn->channel as $chan) {
                 $_chan = $_conn->openChannel();
@@ -154,17 +153,23 @@ class Factory
                     $_chan->setEventHandler(new $impl);
                 }
                 $_chans[] = $_chan;
+                if (count($chan->methods) > 0) {
+                    $ret[] = $this->runMethodSequence($_chan, $_chan->methods->method);
+                }
             }
-            if (! $_chans) {
-                throw new \Exception("You must define at least one channel", 92416);
-            }
-            $_chan = reset($_chans);
 
 
             // Execute whatever methods are supplied.
             if (count($conn->methods) > 0) {
+                $_chan = reset($_chans);
+                if (! $_chan) {
+                    throw new \Exception("Factory config error: cannot run methods without a channel", 2682);
+                }
                 $ret[] = $this->runMethodSequence($_chan, $conn->methods->method);
             }
+
+
+
 
             // Finally, set up consumers.  This is done last in case queues / exchanges etc. need to be set up before the consumers.
             $i = 0;
@@ -201,6 +206,7 @@ class Factory
         }
         return $r;
     }
+
 
 
     /**

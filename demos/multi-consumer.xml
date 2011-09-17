@@ -20,6 +20,14 @@
           <queue k="string">most-basic-q</queue>
         </args>
       </consumer>
+      <method>
+        <class k="string">basic</class>
+        <method k="string">qos</method>
+        <args>
+          <prefetch-count k="string">1</prefetch-count>
+          <global k="boolean">false</global>
+        </args>
+      </method>
     </channel>
 
     <xi:include href="broker-common-setup.xml"/>
@@ -45,6 +53,14 @@
           <queue k="string">most-basic-q</queue>
         </args>
       </consumer>
+      <method>
+        <class k="string">basic</class>
+        <method k="string">qos</method>
+        <args>
+          <prefetch-count k="string">1</prefetch-count>
+          <global k="boolean">false</global>
+        </args>
+      </method>
     </channel>
 
 

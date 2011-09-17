@@ -33,13 +33,4 @@ data is xincluded in to the connection setups in the demos. -->
       <exchange  k="string">most-basic-ex</exchange>      
     </args>
   </method>
-
-  <method>
-    <class k="string">basic</class>
-    <method k="string">qos</method>
-    <args>
-      <prefetch-count k="string">1</prefetch-count>
-      <global k="boolean">false</global>
-    </args>
-  </method>
 </methods>

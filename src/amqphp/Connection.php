@@ -773,7 +773,7 @@ class Connection
      * @arg  string   $class       Amqp class
      * @arg  array    $_args       Format: array (<Amqp method name>,
      *                                            <Assoc method/class mixed field array>,
-     *                                            <method content>)
+     * @return                     A corresponding \amqphp\wire\Method
      */
     function constructMethod ($class, $_args) {
         $method = (isset($_args[0])) ? $_args[0] : null;
