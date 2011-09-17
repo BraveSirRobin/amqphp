@@ -257,19 +257,6 @@ class PConnection extends \amqphp\Connection implements \Serializable
     function serialize () {
         $data = array();
 
-        /* Completely drain the  connection, otherwise any unread data
-           will be lost (note that any data which gets read will go in
-           to the persistence data) */
-        $test = $this->sock->nbReadAll();
-        if (strlen($test)) {
-            if ($this->readSrc) {
-                 $this->readSrc->append($test);
-            } else {
-                $this->readSrc = new wire\Reader($test);
-            }
-        }
-
-
         $z = array();
         $z[0] = $this->sleepMode;
         if ($this->sleepMode == self::PERSIST_CHANNELS) {

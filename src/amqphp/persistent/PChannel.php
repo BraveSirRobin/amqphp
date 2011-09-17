@@ -37,7 +37,7 @@ class PChannel extends \amqphp\Channel implements \Serializable
      * TODO : Set default back to false!!!!
      * TODO : Replace with 2 flags: suspendDuringSleep and unsuspendDuringWakeup
      */
-    public $suspendFlow = true;
+    public $suspendFlow = false;
 
     private static $PersProps = array('chanId', 'flow', 'frameMax', 'confirmSeqs',
                                       'confirmSeq', 'confirmMode', 'isOpen', 

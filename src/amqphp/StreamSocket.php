@@ -136,21 +136,6 @@ class StreamSocket
     }
 
 
-    /** Testing (for now) */
-    function nbReadAll () {
-        if (stream_set_blocking($this->sock, 0)) {
-            try {
-                $r = $this->readAll();
-                stream_set_blocking($this->sock, 1);
-                return $r;
-            } catch (\Exception $e) {
-                stream_set_blocking($this->sock, 1);
-            }
-        }
-        return false;
-    }
-
-
     /**
      * A wrapper for the stream_socket function.
      */
