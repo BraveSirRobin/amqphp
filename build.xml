@@ -184,7 +184,7 @@ Prepare the NSPF and CPF source trees.
     <exec command="scp demos/Setup.php demos/web-common.php demos/demo-loader.php phpvm:${webdepl.basedir}/${webdepl.libdir}" dir="${project.basedir}"/>
 
     <!-- configs -->
-    <exec command="scp demos/web-multi.xml demos/broker-common-setup.xml phpvm:${webdepl.basedir}/${webdepl.confdir}" dir="${project.basedir}"/>
+    <exec command="scp demos/configs/web-multi.xml demos/configs/broker-common-setup.xml phpvm:${webdepl.basedir}/${webdepl.confdir}" dir="${project.basedir}"/>
   </target>
 
   <target name="deploy-web-libs-only">

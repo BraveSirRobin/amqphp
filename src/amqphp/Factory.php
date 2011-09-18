@@ -154,12 +154,16 @@ class Factory
                 }
                 $_chans[] = $_chan;
                 if (count($chan->methods) > 0) {
+                    error_log("!!Run Channel level method!!");
                     $ret[] = $this->runMethodSequence($_chan, $_chan->methods->method);
                 }
             }
 
 
-            // Execute whatever methods are supplied.
+            /* TODO: Remove  this!!  It doesn't make  sense to execute
+             * connection  level methods  here, amqp  connection class
+             * should  be considered  private  to the  implementation.
+             * Force all method execution to go via. channels.  */
             if (count($conn->methods) > 0) {
                 $_chan = reset($_chans);
                 if (! $_chan) {

@@ -29,7 +29,7 @@ require __DIR__ . '/Setup.php';
 
 
 $su = new Setup;
-$cons = $su->getSetup(__DIR__ . '/multi-producer.xml');
+$cons = $su->getSetup(__DIR__ . '/configs/multi-producer.xml');
 
 $conn = reset($cons);
 $chans = $conn->getChannels();
