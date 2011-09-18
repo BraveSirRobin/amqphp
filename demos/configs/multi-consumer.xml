@@ -20,6 +20,7 @@
           <queue k="string">most-basic-q</queue>
         </args>
       </consumer>
+      <xi:include href="broker-common-setup.xml" xpointer="xpointer(/methods/method)"/>
       <method>
         <class k="string">basic</class>
         <method k="string">qos</method>
@@ -29,8 +30,6 @@
         </args>
       </method>
     </channel>
-
-    <xi:include href="broker-common-setup.xml"/>
   </connection>
 
   <connection>
@@ -53,6 +52,7 @@
           <queue k="string">most-basic-q</queue>
         </args>
       </consumer>
+      <xi:include href="broker-common-setup.xml" xpointer="xpointer(/methods/method)"/>
       <method>
         <class k="string">basic</class>
         <method k="string">qos</method>
@@ -62,8 +62,5 @@
         </args>
       </method>
     </channel>
-
-
-    <xi:include href="broker-common-setup.xml"/>
   </connection>
 </setup>

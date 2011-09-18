@@ -29,12 +29,7 @@ require __DIR__ . '/demo-loader.php';
 
 
 $su = new amqp\Factory(__DIR__ . '/configs/multi-producer.xml');
-$cons = array();
-foreach ($su->run() as $res) {
-    if ($res instanceof amqp\Connection) {
-        $cons[] = $res;
-    }
-}
+$cons = $su->getConnections();
 
 $conn = reset($cons);
 $chans = $conn->getChannels();

@@ -5,32 +5,32 @@ data is xincluded in to the connection setups in the demos. -->
 
 <methods>
   <method>
-    <class k="string">exchange</class>
-    <method k="string">declare</method>
-    <args>
+    <a_class k="string">exchange</a_class>
+    <a_method k="string">declare</a_method>
+    <a_args>
       <type k="string">direct</type>
       <durable k="boolean">true</durable>
       <exchange k="string">most-basic-ex</exchange>
-    </args>
+    </a_args>
   </method>
 
 
   <method>
-    <class k="string">queue</class>
-    <method k="string">declare</method>
-    <args>
+    <a_class k="string">queue</a_class>
+    <a_method k="string">declare</a_method>
+    <a_args>
       <queue k="string">most-basic-q</queue>
-    </args>
+    </a_args>
   </method>
 
 
   <method>
-    <class k="string">queue</class>
-    <method k="string">bind</method>
-    <args>
+    <a_class k="string">queue</a_class>
+    <a_method k="string">bind</a_method>
+    <a_args>
       <queue k="string">most-basic-q</queue>
       <routing_key k="string"></routing_key>
       <exchange k="string">most-basic-ex</exchange>      
-    </args>
+    </a_args>
   </method>
 </methods>

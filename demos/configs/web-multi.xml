@@ -25,10 +25,18 @@
       <event_handler>
         <impl>\LoggingCEH</impl>
       </event_handler>
+      <xi:include href="broker-common-setup.xml" xpointer="xpointer(/methods/method)"/>
+      <method>
+        <a_class k="string">basic</a_class>
+        <a_method k="string">qos</a_method>
+        <a_args>
+          <prefetch-count k="string">1</prefetch-count>
+          <global k="boolean">false</global>
+        </a_args>
+      </method>
     </channel>
-
-    <xi:include href="broker-common-setup.xml"/>
   </connection>
+
 
   <connection>
     <impl>\amqphp\persistent\PConnection</impl>
@@ -55,8 +63,16 @@
       <event_handler>
         <impl>\LoggingCEH</impl>
       </event_handler>
+      <xi:include href="broker-common-setup.xml" xpointer="xpointer(/methods/method)"/>
+      <method>
+        <a_class k="string">basic</a_class>
+        <a_method k="string">qos</a_method>
+        <a_args>
+          <prefetch-count k="string">1</prefetch-count>
+          <global k="boolean">false</global>
+        </a_args>
+      </method>
     </channel>
-
-    <xi:include href="broker-common-setup.xml"/>
   </connection>
+
 </setup>

@@ -18,10 +18,7 @@ $publishParams = array(
 
 
 $su = new amqp\Factory(__DIR__ . '/configs/multi-producer.xml');
-$conns = array();
-foreach ($su->run() as $res) {
-
-}
+$conns = $su->getConnections();
 
 $cons = array();
 foreach ($conns as $con) {

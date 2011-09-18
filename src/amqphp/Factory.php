@@ -100,7 +100,7 @@ class Factory
             if (is_null($chan)) {
                 throw new \Exception("Invalid factory configuration - expected a target channel", 15758);
             }
-            return $this->runMethodSequence($chan, $this->simp);
+            return $this->runMethodSequence($chan, $this->simp->xpath('/methods/method'));
         }
     }
 
@@ -153,29 +153,15 @@ class Factory
                     $_chan->setEventHandler(new $impl);
                 }
                 $_chans[] = $_chan;
-                if (count($chan->methods) > 0) {
-                    error_log("!!Run Channel level method!!");
-                    $ret[] = $this->runMethodSequence($_chan, $_chan->methods->method);
+                if (count($chan->method) > 0) {
+                    $ret[] = $this->runMethodSequence($_chan, $chan->xpath('./method'));
                 }
             }
 
 
-            /* TODO: Remove  this!!  It doesn't make  sense to execute
-             * connection  level methods  here, amqp  connection class
-             * should  be considered  private  to the  implementation.
-             * Force all method execution to go via. channels.  */
-            if (count($conn->methods) > 0) {
-                $_chan = reset($_chans);
-                if (! $_chan) {
-                    throw new \Exception("Factory config error: cannot run methods without a channel", 2682);
-                }
-                $ret[] = $this->runMethodSequence($_chan, $conn->methods->method);
-            }
-
-
-
-
-            // Finally, set up consumers.  This is done last in case queues / exchanges etc. need to be set up before the consumers.
+            /* Finally, set  up consumers.  This is done  last in case
+               queues /  exchanges etc. need  to be set up  before the
+               consumers. */
             $i = 0;
             foreach ($conn->channel as $chan) {
                 $_chan = $_chans[$i++];
@@ -200,13 +186,14 @@ class Factory
      * Execute the  methods defined  in $meths against  channel $chan,
      * return the results.
      */
-    private function runMethodSequence (Channel $chan, \SimpleXmlElement $meths) {
+    private function runMethodSequence (Channel $chan, array $meths) {
         $r = array();
         // Execute whatever methods are supplied.
         foreach ($meths as $iMeth) {
             $a = $this->xmlToArray($iMeth);
-            $c = $a['class'];
-            $r[] = $chan->invoke($chan->$c($a['method'], $a['args']));
+            $c = $a['a_class'];
+            error_log(sprintf("Invoke method %s", $a['a_method']));
+            $r[] = $chan->invoke($chan->$c($a['a_method'], $a['a_args']));
         }
         return $r;
     }
