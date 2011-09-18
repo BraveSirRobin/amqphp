@@ -15,6 +15,9 @@
     </server>
 
     <channel>
+      <set_properties>
+        <suspendFlow k="boolean">true</suspendFlow>
+      </set_properties>
       <consumer>
         <impl k="string">DemoPConsumer</impl>
         <autostart>true</autostart>
@@ -53,6 +56,9 @@
     </server>
 
     <channel>
+      <set_properties>
+        <suspendFlow k="boolean">true</suspendFlow>
+      </set_properties>
       <consumer>
         <impl k="string">DemoPConsumer</impl>
         <autostart>true</autostart>

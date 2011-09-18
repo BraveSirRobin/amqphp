@@ -120,6 +120,22 @@ class Factory
     }
 
 
+    /**
+     * Helper: loop the children of a set_properties element of $conf,
+     * an set these as scalar key value pairs as properties of $subj
+     */
+    private function callProperties ($subj, $conf) {
+        foreach ($conf->xpath('./set_properties/*') as $prop) {
+            $pname = (string) $prop->getName();
+            $pval = $this->kast($prop, $prop['k']);
+
+            error_log(sprintf("Set property %s (type %s) to %s on a %s:",
+                              $pname, gettype($pval), $pval, get_class($subj)));
+
+            $subj->$pname = $pval;
+        }
+    }
+
 
     /**
      * Run the connection setup sequence
@@ -136,6 +152,7 @@ class Factory
             if (isset($conn->persistence)) {
                 $_conn->setPersistenceHelperImpl((string) $conn->persistence);
             }
+            $this->callProperties($_conn, $conn);
             $_conn->connect();
 
             if ($_conn instanceof pers\PConnection && $_conn->getPersistenceStatus() == pers\PConnection::SOCK_REUSED) {
@@ -148,6 +165,7 @@ class Factory
             // Create channels and channel event handlers.
             foreach ($conn->channel as $chan) {
                 $_chan = $_conn->openChannel();
+                $this->callProperties($_chan, $chan);
                 if (isset($chan->event_handler)) {
                     $impl = (string) $chan->event_handler->impl;
                     $_chan->setEventHandler(new $impl);
@@ -167,7 +185,9 @@ class Factory
                 $_chan = $_chans[$i++];
                 foreach ($chan->consumer as $cons) {
                     $impl = (string) $cons->impl;
-                    $_chan->addConsumer($_cons = new $impl($this->xmlToArray($cons->args->children())));
+                    $_cons = new $impl($this->xmlToArray($cons->args->children()));
+                    $this->callProperties($_cons, $cons);
+                    $_chan->addConsumer($_cons);
                     if (isset($cons->autostart) && $this->kast($cons->autostart, 'boolean')) {
                         $_chan->startConsumer($_cons);
                     }
