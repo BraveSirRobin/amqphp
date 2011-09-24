@@ -29,26 +29,23 @@ namespace amqphp\persistent;
 class PChannel extends \amqphp\Channel implements \Serializable
 {
 
-    /* BW flag  for for  flow control -  unsuspend the  channel during
-       wakeup  */
-    const FLOW_UNSUSP_ON_WAKE = 1;
-
-    /* BW  flag  for  flow   control  -  suspend  the  channel  during
-       serialisation */
-    const FLOW_SUSP_ON_SLEEP = 2;
-
-
 
     /**
-     * Flag  - when  set,  the  serialize methods  will  use the  amqp
-     * channel.flow to suspend and resume message delivery.
-     * Idea : Replace with 2 flags: suspendDuringSleep and unsuspendDuringWakeup
+     * Flag,  when  set  the  serialize  routine  will  use  the  amqp
+     * channel.flow method to suspend the channel
      */
-    public $suspendFlow = false;
+    public $suspendOnSerialize = false;
+
+    /**
+     * Flag,  when  set  the  serialize  routine  will  use  the  amqp
+     * channel.flow method to resume a suspended channel
+     */
+    public $resumeOnHydrate = false;
 
     private static $PersProps = array('chanId', 'flow', 'frameMax', 'confirmSeqs',
                                       'confirmSeq', 'confirmMode', 'isOpen',
-                                      'callbackHandler', 'suspendFlow');
+                                      'callbackHandler', 'suspendOnSerialize',
+                                      'resumeOnHydrate');
 
     function serialize () {
         $data = array();

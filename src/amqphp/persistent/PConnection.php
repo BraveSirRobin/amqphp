@@ -226,7 +226,7 @@ class PConnection extends \amqphp\Connection implements \Serializable
         $z = $data = array();
 
         foreach ($this->chans as $chan) {
-            if ($chan->suspendFlow && ! $chan->isSuspended()) {
+            if ($chan->suspendOnSerialize && ! $chan->isSuspended()) {
                 $chan->toggleFlow();
             }
         }
@@ -297,7 +297,7 @@ class PConnection extends \amqphp\Connection implements \Serializable
 
         // Restart flow, if required.
         foreach ($this->chans as $chan) {
-            if ($chan->suspendFlow && $chan->isSuspended()) {
+            if ($chan->resumeOnHydrate && $chan->isSuspended()) {
                 $chan->toggleFlow();
             }
         }

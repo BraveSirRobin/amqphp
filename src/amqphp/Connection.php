@@ -81,7 +81,6 @@ class Connection
     private static $CProps = array(
         'socketImpl', 'socketParams', 'username', 'userpass', 'vhost',
         'frameMax', 'chanMax', 'signalDispatch', 'heartbeat', 'socketFlags');
-    //'blockTmSecs', 'blockTmMillis');
 
     /** Connection params */
     protected $sock; // Socket wrapper object

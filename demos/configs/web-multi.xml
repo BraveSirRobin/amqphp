@@ -3,7 +3,7 @@
   <connection>
     <impl>\amqphp\persistent\PConnection</impl>
     <set_properties>
-      <pHelperImpl k="string">\amqphp\persistent\FilePersistenceHelper</pHelperImpl>
+      <pHelperImpl k="string">\amqphp\persistent\APCPersistenceHelper</pHelperImpl>
     </set_properties>
     <constr_args>
       <vhost k="string">robin</vhost>
@@ -18,7 +18,8 @@
 
     <channel>
       <set_properties>
-        <suspendFlow k="boolean">true</suspendFlow>
+        <suspendOnSerialize k="boolean">true</suspendOnSerialize>
+        <resumeOnHydrate k="boolean">true</resumeOnHydrate>
       </set_properties>
       <consumer>
         <impl k="string">DemoPConsumer</impl>
@@ -46,7 +47,7 @@
   <connection>
     <impl>\amqphp\persistent\PConnection</impl>
     <set_properties>
-      <pHelperImpl k="string">\amqphp\persistent\FilePersistenceHelper</pHelperImpl>
+      <pHelperImpl k="string">\amqphp\persistent\APCPersistenceHelper</pHelperImpl>
     </set_properties>
     <constr_args>
       <vhost k="string">robin</vhost>
@@ -61,7 +62,8 @@
 
     <channel>
       <set_properties>
-        <suspendFlow k="boolean">true</suspendFlow>
+        <suspendOnSerialize k="boolean">true</suspendOnSerialize>
+        <resumeOnHydrate k="boolean">true</resumeOnHydrate>
       </set_properties>
       <consumer>
         <impl k="string">DemoPConsumer</impl>
