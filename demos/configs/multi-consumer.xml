@@ -1,0 +1,68 @@
+<?xml version="1.0"?>
+<setup xmlns:xi="http://www.w3.org/2001/XInclude">
+  <connection>
+    <impl>\amqphp\Connection</impl>
+    <constr_args>
+      <vhost k="string">robin</vhost>
+      <username k="string">testing</username>
+      <userpass k="string">letmein</userpass>
+      <heartbeat k="int">5</heartbeat>
+      <socketImpl k="string">\amqphp\Socket</socketImpl>
+      <socketParams>
+        <host k="string">rabbit1</host>
+        <port k="integer">5672</port>
+      </socketParams>
+    </constr_args>
+
+    <channel>
+      <consumer>
+        <impl k="string">DemoConsumer</impl>
+        <constr_args>
+          <queue k="string">most-basic-q</queue>
+        </constr_args>
+      </consumer>
+      <xi:include href="broker-common-setup.xml" xpointer="xpointer(/methods/method)"/>
+      <method>
+        <a_class k="string">basic</a_class>
+        <a_method k="string">qos</a_method>
+        <a_args>
+          <prefetch-count k="string">1</prefetch-count>
+          <global k="boolean">false</global>
+        </a_args>
+      </method>
+    </channel>
+  </connection>
+
+  <connection>
+    <impl>\amqphp\Connection</impl>
+    <constr_args>
+      <vhost k="string">robin</vhost>
+      <username k="string">testing</username>
+      <userpass k="string">letmein</userpass>
+      <heartbeat k="int">5</heartbeat>
+      <socketImpl k="string">\amqphp\Socket</socketImpl>
+      <socketParams>
+        <host k="string">rabbit2</host>
+        <port k="integer">5672</port>
+      </socketParams>
+    </constr_args>
+
+    <channel>
+      <consumer>
+        <impl k="string">DemoConsumer</impl>
+        <constr_args>
+          <queue k="string">most-basic-q</queue>
+        </constr_args>
+      </consumer>
+      <xi:include href="broker-common-setup.xml" xpointer="xpointer(/methods/method)"/>
+      <method>
+        <a_class k="string">basic</a_class>
+        <a_method k="string">qos</a_method>
+        <a_args>
+          <prefetch-count k="string">1</prefetch-count>
+          <global k="boolean">false</global>
+        </a_args>
+      </method>
+    </channel>
+  </connection>
+</setup>

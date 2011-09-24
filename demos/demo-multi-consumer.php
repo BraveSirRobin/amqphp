@@ -23,7 +23,6 @@ use amqphp\protocol;
 use amqphp\wire;
 
 require __DIR__ . '/demo-loader.php';
-require __DIR__ . '/Setup.php';
 
 
 // A class to use as the consumer
@@ -44,8 +43,8 @@ class DemoConsumer extends amqp\SimpleConsumer
 
 
 // Create a connection and set up exchanges / queues / bindings, etc.
-$su = new Setup;
-$cons = $su->getSetup(__DIR__ . '/multi-consumer.xml');
+$su = new amqp\Factory(__DIR__ . '/configs/multi-consumer.xml');
+$cons = $su->getConnections();
 
 // Create an event loop to catch incoming messages
 $el = new amqp\EventLoop;

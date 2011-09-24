@@ -3,19 +3,20 @@
  *
  * Copyright (C) 2010, 2011  Robin Harvey (harvey.robin@gmail.com)
  *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * This  library is  free  software; you  can  redistribute it  and/or
+ * modify it under the terms  of the GNU Lesser General Public License
+ * as published by the Free Software Foundation; either version 2.1 of
+ * the License, or (at your option) any later version.
 
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * This library is distributed in the hope that it will be useful, but
+ * WITHOUT  ANY  WARRANTY;  without   even  the  implied  warranty  of
+ * MERCHANTABILITY or  FITNESS FOR A PARTICULAR PURPOSE.   See the GNU
  * Lesser General Public License for more details.
 
- * You should have received a copy of the GNU Lesser General Public
+ * You should  have received a copy  of the GNU  Lesser General Public
  * License along with this library; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ * Foundation,  Inc.,  51 Franklin  Street,  Fifth  Floor, Boston,  MA
+ * 02110-1301 USA
  */
 
 namespace amqphp\persistent;
@@ -28,16 +29,23 @@ namespace amqphp\persistent;
 class PChannel extends \amqphp\Channel implements \Serializable
 {
 
+
     /**
-     * Flag  - when  set,  the  serialize methods  will  use the  amqp
-     * channel.flow to suspend and resume message delivery.
-     * Idea : Replace with 2 flags: suspendDuringSleep and unsuspendDuringWakeup
+     * Flag,  when  set  the  serialize  routine  will  use  the  amqp
+     * channel.flow method to suspend the channel
      */
-    public $suspendFlow = false;
+    public $suspendOnSerialize = false;
+
+    /**
+     * Flag,  when  set  the  serialize  routine  will  use  the  amqp
+     * channel.flow method to resume a suspended channel
+     */
+    public $resumeOnHydrate = false;
 
     private static $PersProps = array('chanId', 'flow', 'frameMax', 'confirmSeqs',
                                       'confirmSeq', 'confirmMode', 'isOpen',
-                                      'callbackHandler', 'suspendFlow');
+                                      'callbackHandler', 'suspendOnSerialize',
+                                      'resumeOnHydrate');
 
     function serialize () {
         $data = array();

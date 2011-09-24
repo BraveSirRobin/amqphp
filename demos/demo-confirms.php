@@ -25,11 +25,10 @@ use amqphp\protocol;
 use amqphp\wire;
 
 require __DIR__ . '/demo-loader.php';
-require __DIR__ . '/Setup.php';
 
 
-$su = new Setup;
-$cons = $su->getSetup(__DIR__ . '/multi-producer.xml');
+$su = new amqp\Factory(__DIR__ . '/configs/multi-producer.xml');
+$cons = $su->getConnections();
 
 $conn = reset($cons);
 $chans = $conn->getChannels();

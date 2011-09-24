@@ -104,7 +104,7 @@ $(document).ready(function () {
         Connection / Channel setup.
         <ol>
           <?php foreach ($this->helper->connConfig as $conn) { ?>
-          <li>Connection of type <strong><?php echo $conn->impl ?></strong> to <strong><?php echo $conn->server->socketParams->url ?></strong>
+          <li>Connection of type <strong><?php echo $conn->impl ?></strong> to <strong><?php echo $conn->constr_args->socketParams->url ?></strong>
             <?php if ($chans = $conn->channel) {
             $nChans = $nCons = 0;
             $cqs = array();

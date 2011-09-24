@@ -5,7 +5,7 @@
 <setup xmlns:xi="http://www.w3.org/2001/XInclude">
   <connection>
     <impl>\amqphp\Connection</impl>
-    <server>
+    <constr_args>
       <vhost k="string">robin</vhost>
       <username k="string">testing</username>
       <userpass k="string">letmein</userpass>
@@ -14,7 +14,7 @@
       <socketParams>
         <url k="string">tcp://rabbit2:5672</url>
       </socketParams>
-    </server>
+    </constr_args>
 
     <channel/>
 
@@ -25,7 +25,7 @@
 
   <connection>
     <impl>\amqphp\Connection</impl>
-    <server>
+    <constr_args>
       <vhost k="string">robin</vhost>
       <username k="string">testing</username>
       <userpass k="string">letmein</userpass>
@@ -34,7 +34,7 @@
       <socketParams>
         <url k="string">tcp://rabbit1:5672</url>
       </socketParams>
-    </server>
+    </constr_args>
 
     <channel/>
 

@@ -37,21 +37,6 @@ use amqphp\wire;
 class PConnection extends \amqphp\Connection implements \Serializable
 {
 
-    /**
-     * At sleep time the connection will only persist connection-level
-     * properties, channels will not be touched.
-     */
-    const PERSIST_CONNECTION = 1;
-
-   /**
-     * At sleep time, the connection will set the connection will call
-     * channel.flow on  all open  channels, meaning that  the channels
-     * remain  open  between  requests.   At wakeup  time,  previously
-     * opened  channels  will  be  re-created as  Channel  connections
-     * automatically.
-     */
-    const PERSIST_CHANNELS = 2;
-
 
     /**
      * Connection has been started during connect() sequence
@@ -74,7 +59,6 @@ class PConnection extends \amqphp\Connection implements \Serializable
                                        'nextChan', 'unDelivered', 'unDeliverable', 'incompleteMethods',
                                        'readSrc');
 
-    private $sleepMode = self::PERSIST_CHANNELS;
 
     /**
      * An instance of PersistenceHelper.
@@ -84,12 +68,11 @@ class PConnection extends \amqphp\Connection implements \Serializable
     /**
      * The PersistenceHelper implementation class.
      */
-    private $pHelperImpl;
+    public $pHelperImpl;
 
     /**
      * Flag to track whether the wakeup process has been triggered
      */
-    private $wakeupFlag = false; // TODO : Remove, use $stateFlag instead
     private $stateFlag = 0;
 
     const ST_CONSTR = 1;
@@ -185,13 +168,6 @@ class PConnection extends \amqphp\Connection implements \Serializable
     }
 
 
-    /**
-     * Sets the local data persistence helper implementation class.
-     */
-    function setPersistenceHelperImpl ($clazz) {
-        $this->pHelperImpl = $clazz;
-    }
-
 
     /**
      * Must be called after connection
@@ -222,21 +198,13 @@ class PConnection extends \amqphp\Connection implements \Serializable
     function getPersistenceStatus () {
         if (! $this->connected) {
             return 0;
-        } else if ($this->wakeupFlag) {
+        } else if ($this->sock->isReusedPSock()) {
             return self::SOCK_REUSED;
         } else {
             return self::SOCK_NEW;
         }
     }
 
-
-    function setSleepMode ($m) {
-        if (! ($m == self::PERSIST_CHANNELS || $m == self::PERSIST_CONNECTION)) {
-            trigger_error("Invalid sleep mode - ignored.", E_USER_WARNING);
-            return;
-        }
-        $this->sleepMode = $m;
-    }
 
     /**
      * Run the  sleep process.  This  must be called  at the end  of a
@@ -255,18 +223,14 @@ class PConnection extends \amqphp\Connection implements \Serializable
      * @override \Serializable
      */
     function serialize () {
-        $data = array();
+        $z = $data = array();
 
-        $z = array();
-        $z[0] = $this->sleepMode;
-        if ($this->sleepMode == self::PERSIST_CHANNELS) {
-            $z[2] = $this->chans;
-            foreach ($this->chans as $chan) {
-                if ($chan->suspendFlow && ! $chan->isSuspended()) {
-                    $chan->toggleFlow();
-                }
+        foreach ($this->chans as $chan) {
+            if ($chan->suspendOnSerialize && ! $chan->isSuspended()) {
+                $chan->toggleFlow();
             }
         }
+        $z[0] = $this->chans;
 
         foreach (self::$BasicProps as $k) {
             if (in_array($k,  array('readSrc', 'incompleteMethods', 'unDelivered', 'unDeliverable'))
@@ -276,7 +240,6 @@ class PConnection extends \amqphp\Connection implements \Serializable
             $data[$k] = $this->$k;
         }
         $z[1] = $data;
-
 
         $this->stateFlag |= self::ST_SER;
         return serialize($z);
@@ -297,10 +260,7 @@ class PConnection extends \amqphp\Connection implements \Serializable
         } else if (! ($this->stateFlag & self::ST_CONSTR)) {
             $this->__construct();
             $rewake = true;
-        } else if ($data[0] != $this->sleepMode) {
-            trigger_error("PConnection constructed in different state", E_USER_WARNING);
         }
-        $this->sleepMode = $data[0];
 
         // Restore Connection state
         foreach (self::$BasicProps as $k) {
@@ -325,8 +285,8 @@ class PConnection extends \amqphp\Connection implements \Serializable
         }
 
         // Reawake channels if required
-        if ($this->sleepMode == self::PERSIST_CHANNELS && isset($data[2])) {
-            $this->chans = $data[2];
+        if (isset($data[0])) {
+            $this->chans = $data[0];
             foreach ($this->chans as $chan) {
                 // Can't persistent cyclical relationships!
                 $chan->setConnection($this);
@@ -337,7 +297,7 @@ class PConnection extends \amqphp\Connection implements \Serializable
 
         // Restart flow, if required.
         foreach ($this->chans as $chan) {
-            if ($chan->suspendFlow && $chan->isSuspended()) {
+            if ($chan->resumeOnHydrate && $chan->isSuspended()) {
                 $chan->toggleFlow();
             }
         }
@@ -349,7 +309,6 @@ class PConnection extends \amqphp\Connection implements \Serializable
      */
     private function wakeup () {
         $this->connected = true;
-        $this->wakeupFlag = true;
 
         // Load data from persistence store.
         if (! ($ph = $this->getPersistenceHelper())) {

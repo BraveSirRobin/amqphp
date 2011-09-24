@@ -98,9 +98,9 @@ class Factory
             return $this->runSetupSequence();
         case 'methods':
             if (is_null($chan)) {
-                throw new \Exception("", 15758);
+                throw new \Exception("Invalid factory configuration - expected a target channel", 15758);
             }
-            return $this->runMethodSequence($chan, $this->simp);
+            return $this->runMethodSequence($chan, $this->simp->xpath('/methods/method'));
         }
     }
 
@@ -120,6 +120,18 @@ class Factory
     }
 
 
+    /**
+     * Helper: loop the children of a set_properties element of $conf,
+     * an set these as scalar key value pairs as properties of $subj
+     */
+    private function callProperties ($subj, $conf) {
+        foreach ($conf->xpath('./set_properties/*') as $prop) {
+            $pname = (string) $prop->getName();
+            $pval = $this->kast($prop, $prop['k']);
+            $subj->$pname = $pval;
+        }
+    }
+
 
     /**
      * Run the connection setup sequence
@@ -132,10 +144,8 @@ class Factory
 
             // Create connection and connect
             $impl = (string) $conn->impl;
-            $_conn = new $impl($this->xmlToArray($conn->server->children()));
-            if (isset($conn->persistence)) {
-                $_conn->setPersistenceHelperImpl((string) $conn->persistence);
-            }
+            $_conn = new $impl($this->xmlToArray($conn->constr_args->children()));
+            $this->callProperties($_conn, $conn);
             $_conn->connect();
 
             if ($_conn instanceof pers\PConnection && $_conn->getPersistenceStatus() == pers\PConnection::SOCK_REUSED) {
@@ -145,34 +155,36 @@ class Factory
                 continue;
             }
 
-
             // Create channels and channel event handlers.
             foreach ($conn->channel as $chan) {
                 $_chan = $_conn->openChannel();
+                $this->callProperties($_chan, $chan);
                 if (isset($chan->event_handler)) {
                     $impl = (string) $chan->event_handler->impl;
                     $_chan->setEventHandler(new $impl);
                 }
                 $_chans[] = $_chan;
-            }
-            if (! $_chans) {
-                throw new \Exception("You must define at least one channel", 92416);
-            }
-            $_chan = reset($_chans);
-
-
-            // Execute whatever methods are supplied.
-            if (count($conn->methods) > 0) {
-                $ret[] = $this->runMethodSequence($_chan, $conn->methods->method);
+                if (count($chan->method) > 0) {
+                    $ret[] = $this->runMethodSequence($_chan, $chan->xpath('./method'));
+                }
             }
 
-            // Finally, set up consumers.  This is done last in case queues / exchanges etc. need to be set up before the consumers.
+
+            /* Finally, set  up consumers.  This is done  last in case
+               queues /  exchanges etc. need  to be set up  before the
+               consumers. */
             $i = 0;
             foreach ($conn->channel as $chan) {
                 $_chan = $_chans[$i++];
                 foreach ($chan->consumer as $cons) {
                     $impl = (string) $cons->impl;
-                    $_chan->addConsumer($_cons = new $impl($this->xmlToArray($cons->args->children())));
+                    if (count($cons->constr_args)) {
+                        $_cons = new $impl($this->xmlToArray($cons->constr_args->children()));
+                    } else {
+                        $_cons = new $impl;
+                    }
+                    $this->callProperties($_cons, $cons);
+                    $_chan->addConsumer($_cons);
                     if (isset($cons->autostart) && $this->kast($cons->autostart, 'boolean')) {
                         $_chan->startConsumer($_cons);
                     }
@@ -191,16 +203,17 @@ class Factory
      * Execute the  methods defined  in $meths against  channel $chan,
      * return the results.
      */
-    private function runMethodSequence (Channel $chan, \SimpleXmlElement $meths) {
+    private function runMethodSequence (Channel $chan, array $meths) {
         $r = array();
         // Execute whatever methods are supplied.
         foreach ($meths as $iMeth) {
             $a = $this->xmlToArray($iMeth);
-            $c = $a['class'];
-            $r[] = $chan->invoke($chan->$c($a['method'], $a['args']));
+            $c = $a['a_class'];
+            $r[] = $chan->invoke($chan->$c($a['a_method'], $a['a_args']));
         }
         return $r;
     }
+
 
 
     /**
@@ -211,6 +224,7 @@ class Factory
         switch ($cast) {
         case 'string':
             return (string) $val;
+        case 'bool':
         case 'boolean':
             $val = trim((string) $val);
             if ($val === '0' || strtolower($val) === 'false') {
@@ -222,6 +236,7 @@ class Factory
                 return true;
             }
         case 'int':
+        case 'integer':
             return (int) $val;
         default:
             trigger_error("Unknown Kast $cast", E_USER_WARNING);

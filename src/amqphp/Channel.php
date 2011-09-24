@@ -128,15 +128,15 @@ class Channel
      * and parameters.
      *
      * @arg  string   $class       Amqp class
-     * @arg  array    $_args       Format: array (<Amqp method name>,
-     *                                            <Assoc method/class mixed field array>,
-     *                                            <method content>)
+     * @arg  array    $args       Format: array (<Amqp method name>,
+     *                                           <Assoc method/class mixed field array>,
+     *                                           <method content>)
      */
-    function __call ($class, $_args) {
+    function __call ($class, $args) {
         if ($this->destroyed) {
             throw new \Exception("Attempting to use a destroyed channel", 8766);
         }
-        $m = $this->myConn->constructMethod($class, $_args);
+        $m = $this->myConn->constructMethod($class, $args);
         $m->setWireChannel($this->chanId);
         $m->setMaxFrameSize($this->frameMax);
         return $m;
