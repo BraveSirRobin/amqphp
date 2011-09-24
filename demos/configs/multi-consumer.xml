@@ -7,9 +7,10 @@
       <username k="string">testing</username>
       <userpass k="string">letmein</userpass>
       <heartbeat k="int">5</heartbeat>
-      <socketImpl k="string">\amqphp\StreamSocket</socketImpl>
+      <socketImpl k="string">\amqphp\Socket</socketImpl>
       <socketParams>
-        <url k="string">tcp://rabbit2:5672</url>
+        <host k="string">rabbit1</host>
+        <port k="integer">5672</port>
       </socketParams>
     </server>
 
@@ -22,12 +23,12 @@
       </consumer>
       <xi:include href="broker-common-setup.xml" xpointer="xpointer(/methods/method)"/>
       <method>
-        <class k="string">basic</class>
-        <method k="string">qos</method>
-        <args>
+        <a_class k="string">basic</a_class>
+        <a_method k="string">qos</a_method>
+        <a_args>
           <prefetch-count k="string">1</prefetch-count>
           <global k="boolean">false</global>
-        </args>
+        </a_args>
       </method>
     </channel>
   </connection>
@@ -39,9 +40,10 @@
       <username k="string">testing</username>
       <userpass k="string">letmein</userpass>
       <heartbeat k="int">5</heartbeat>
-      <socketImpl k="string">\amqphp\StreamSocket</socketImpl>
+      <socketImpl k="string">\amqphp\Socket</socketImpl>
       <socketParams>
-        <url k="string">tcp://rabbit1:5672</url>
+        <host k="string">rabbit2</host>
+        <port k="integer">5672</port>
       </socketParams>
     </server>
 
@@ -54,12 +56,12 @@
       </consumer>
       <xi:include href="broker-common-setup.xml" xpointer="xpointer(/methods/method)"/>
       <method>
-        <class k="string">basic</class>
-        <method k="string">qos</method>
-        <args>
+        <a_class k="string">basic</a_class>
+        <a_method k="string">qos</a_method>
+        <a_args>
           <prefetch-count k="string">1</prefetch-count>
           <global k="boolean">false</global>
-        </args>
+        </a_args>
       </method>
     </channel>
   </connection>

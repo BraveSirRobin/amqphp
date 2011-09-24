@@ -220,6 +220,7 @@ class Factory
         switch ($cast) {
         case 'string':
             return (string) $val;
+        case 'bool':
         case 'boolean':
             $val = trim((string) $val);
             if ($val === '0' || strtolower($val) === 'false') {
@@ -231,6 +232,7 @@ class Factory
                 return true;
             }
         case 'int':
+        case 'integer':
             return (int) $val;
         default:
             trigger_error("Unknown Kast $cast", E_USER_WARNING);
