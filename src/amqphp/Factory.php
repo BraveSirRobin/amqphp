@@ -144,7 +144,7 @@ class Factory
 
             // Create connection and connect
             $impl = (string) $conn->impl;
-            $_conn = new $impl($this->xmlToArray($conn->server->children()));
+            $_conn = new $impl($this->xmlToArray($conn->constr_args->children()));
             $this->callProperties($_conn, $conn);
             $_conn->connect();
 
@@ -178,7 +178,11 @@ class Factory
                 $_chan = $_chans[$i++];
                 foreach ($chan->consumer as $cons) {
                     $impl = (string) $cons->impl;
-                    $_cons = new $impl($this->xmlToArray($cons->args->children()));
+                    if (count($cons->constr_args)) {
+                        $_cons = new $impl($this->xmlToArray($cons->constr_args->children()));
+                    } else {
+                        $_cons = new $impl;
+                    }
                     $this->callProperties($_cons, $cons);
                     $_chan->addConsumer($_cons);
                     if (isset($cons->autostart) && $this->kast($cons->autostart, 'boolean')) {

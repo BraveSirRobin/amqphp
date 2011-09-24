@@ -2,7 +2,7 @@
 <setup xmlns:xi="http://www.w3.org/2001/XInclude">
   <connection>
     <impl>\amqphp\Connection</impl>
-    <server>
+    <constr_args>
       <vhost k="string">robin</vhost>
       <username k="string">testing</username>
       <userpass k="string">letmein</userpass>
@@ -12,14 +12,14 @@
         <host k="string">rabbit1</host>
         <port k="integer">5672</port>
       </socketParams>
-    </server>
+    </constr_args>
 
     <channel>
       <consumer>
         <impl k="string">DemoConsumer</impl>
-        <args>
+        <constr_args>
           <queue k="string">most-basic-q</queue>
-        </args>
+        </constr_args>
       </consumer>
       <xi:include href="broker-common-setup.xml" xpointer="xpointer(/methods/method)"/>
       <method>
@@ -35,7 +35,7 @@
 
   <connection>
     <impl>\amqphp\Connection</impl>
-    <server>
+    <constr_args>
       <vhost k="string">robin</vhost>
       <username k="string">testing</username>
       <userpass k="string">letmein</userpass>
@@ -45,14 +45,14 @@
         <host k="string">rabbit2</host>
         <port k="integer">5672</port>
       </socketParams>
-    </server>
+    </constr_args>
 
     <channel>
       <consumer>
         <impl k="string">DemoConsumer</impl>
-        <args>
+        <constr_args>
           <queue k="string">most-basic-q</queue>
-        </args>
+        </constr_args>
       </consumer>
       <xi:include href="broker-common-setup.xml" xpointer="xpointer(/methods/method)"/>
       <method>

@@ -5,7 +5,7 @@
     <set_properties>
       <pHelperImpl k="string">\amqphp\persistent\FilePersistenceHelper</pHelperImpl>
     </set_properties>
-    <server>
+    <constr_args>
       <vhost k="string">robin</vhost>
       <username k="string">testing</username>
       <userpass k="string">letmein</userpass>
@@ -14,7 +14,7 @@
         <url k="string">tcp://rabbit1:5672</url>
       </socketParams>
       <signalDispatch k="boolean">false</signalDispatch>
-    </server>
+    </constr_args>
 
     <channel>
       <set_properties>
@@ -23,9 +23,9 @@
       <consumer>
         <impl k="string">DemoPConsumer</impl>
         <autostart>true</autostart>
-        <args>
+        <constr_args>
           <queue k="string">most-basic-q</queue>
-        </args>
+        </constr_args>
       </consumer>
       <event_handler>
         <impl>\LoggingCEH</impl>
@@ -48,7 +48,7 @@
     <set_properties>
       <pHelperImpl k="string">\amqphp\persistent\FilePersistenceHelper</pHelperImpl>
     </set_properties>
-    <server>
+    <constr_args>
       <vhost k="string">robin</vhost>
       <username k="string">testing</username>
       <userpass k="string">letmein</userpass>
@@ -57,7 +57,7 @@
         <url k="string">tcp://rabbit2:5672</url>
       </socketParams>
       <signalDispatch k="boolean">false</signalDispatch>
-    </server>
+    </constr_args>
 
     <channel>
       <set_properties>
@@ -66,9 +66,9 @@
       <consumer>
         <impl k="string">DemoPConsumer</impl>
         <autostart>true</autostart>
-        <args>
+        <constr_args>
           <queue k="string">most-basic-q</queue>
-        </args>
+        </constr_args>
       </consumer>
       <event_handler>
         <impl>\LoggingCEH</impl>
