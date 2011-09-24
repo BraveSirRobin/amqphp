@@ -128,10 +128,6 @@ class Factory
         foreach ($conf->xpath('./set_properties/*') as $prop) {
             $pname = (string) $prop->getName();
             $pval = $this->kast($prop, $prop['k']);
-
-            error_log(sprintf("Set property %s (type %s) to %s on a %s:",
-                              $pname, gettype($pval), $pval, get_class($subj)));
-
             $subj->$pname = $pval;
         }
     }
@@ -212,7 +208,6 @@ class Factory
         foreach ($meths as $iMeth) {
             $a = $this->xmlToArray($iMeth);
             $c = $a['a_class'];
-            error_log(sprintf("Invoke method %s", $a['a_method']));
             $r[] = $chan->invoke($chan->$c($a['a_method'], $a['a_args']));
         }
         return $r;
