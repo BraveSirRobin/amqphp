@@ -2,7 +2,9 @@
 <setup xmlns:xi="http://www.w3.org/2001/XInclude">
   <connection>
     <impl>\amqphp\persistent\PConnection</impl>
-    <persistence>\amqphp\persistent\FilePersistenceHelper</persistence>
+    <set_properties>
+      <pHelperImpl k="string">\amqphp\persistent\FilePersistenceHelper</pHelperImpl>
+    </set_properties>
     <server>
       <vhost k="string">robin</vhost>
       <username k="string">testing</username>
@@ -43,7 +45,9 @@
 
   <connection>
     <impl>\amqphp\persistent\PConnection</impl>
-    <persistence>\amqphp\persistent\FilePersistenceHelper</persistence>
+    <set_properties>
+      <pHelperImpl k="string">\amqphp\persistent\FilePersistenceHelper</pHelperImpl>
+    </set_properties>
     <server>
       <vhost k="string">robin</vhost>
       <username k="string">testing</username>

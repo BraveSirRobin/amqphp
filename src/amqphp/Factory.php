@@ -145,9 +145,6 @@ class Factory
             // Create connection and connect
             $impl = (string) $conn->impl;
             $_conn = new $impl($this->xmlToArray($conn->server->children()));
-            if (isset($conn->persistence)) {
-                $_conn->setPersistenceHelperImpl((string) $conn->persistence);
-            }
             $this->callProperties($_conn, $conn);
             $_conn->connect();
 

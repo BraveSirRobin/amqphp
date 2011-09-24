@@ -68,12 +68,11 @@ class PConnection extends \amqphp\Connection implements \Serializable
     /**
      * The PersistenceHelper implementation class.
      */
-    private $pHelperImpl;
+    public $pHelperImpl;
 
     /**
      * Flag to track whether the wakeup process has been triggered
      */
-    private $wakeupFlag = false; // TODO : Remove, use $stateFlag instead
     private $stateFlag = 0;
 
     const ST_CONSTR = 1;
@@ -169,13 +168,6 @@ class PConnection extends \amqphp\Connection implements \Serializable
     }
 
 
-    /**
-     * Sets the local data persistence helper implementation class.
-     */
-    function setPersistenceHelperImpl ($clazz) {
-        $this->pHelperImpl = $clazz;
-    }
-
 
     /**
      * Must be called after connection
@@ -206,7 +198,7 @@ class PConnection extends \amqphp\Connection implements \Serializable
     function getPersistenceStatus () {
         if (! $this->connected) {
             return 0;
-        } else if ($this->wakeupFlag) {
+        } else if ($this->sock->isReusedPSock()) {
             return self::SOCK_REUSED;
         } else {
             return self::SOCK_NEW;
@@ -317,7 +309,6 @@ class PConnection extends \amqphp\Connection implements \Serializable
      */
     private function wakeup () {
         $this->connected = true;
-        $this->wakeupFlag = true;
 
         // Load data from persistence store.
         if (! ($ph = $this->getPersistenceHelper())) {
