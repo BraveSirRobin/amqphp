@@ -16,9 +16,9 @@
       </socketParams>
     </constr_args>
 
-    <channel/>
-
-    <xi:include href="broker-common-setup.xml"/>
+    <channel>
+      <xi:include href="broker-common-setup.xml"/>
+    </channel>
   </connection>
 
 
@@ -36,9 +36,8 @@
       </socketParams>
     </constr_args>
 
-    <channel/>
-
-    <xi:include href="broker-common-setup.xml"/>
-
+    <channel>
+      <xi:include href="broker-common-setup.xml"/>
+    </channel>
   </connection>
 </setup>
