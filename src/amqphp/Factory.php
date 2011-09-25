@@ -147,13 +147,16 @@ class Factory
             $_conn = new $impl($this->xmlToArray($conn->constr_args->children()));
             $this->callProperties($_conn, $conn);
             $_conn->connect();
+            $ret[] = $_conn;
+
 
             if ($_conn instanceof pers\PConnection && $_conn->getPersistenceStatus() == pers\PConnection::SOCK_REUSED) {
                 // Assume that the setup is complete for existing PConnection
                 // ??TODO??  Run method sequence here too?
-                $ret[] = $_conn;
                 continue;
             }
+
+
 
             // Create channels and channel event handlers.
             foreach ($conn->channel as $chan) {
@@ -190,9 +193,6 @@ class Factory
                     }
                 }
             }
-
-
-            $ret[] = $_conn;
         }
         return $ret;
     }
