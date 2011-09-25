@@ -109,7 +109,7 @@ class Factory
      * Helper  method -  run the  config and  return  only connections
      * (throw away method responses)
      */
-    function getConnections (Channel $chan=null) {
+    function getConnections () {
         $r = array();
         foreach ($this->run() as $res) {
             if ($res instanceof Connection) {
