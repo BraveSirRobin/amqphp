@@ -6,14 +6,16 @@
   <connection>
     <impl>\amqphp\Connection</impl>
     <constr_args>
-      <vhost k="string">robin</vhost>
-      <username k="string">testing</username>
-      <userpass k="string">letmein</userpass>
-      <heartbeat k="int">5</heartbeat>
-      <socketImpl k="string">\amqphp\StreamSocket</socketImpl>
-      <socketParams>
-        <url k="string">tcp://rabbit2:5672</url>
-      </socketParams>
+      <conn_params>
+        <vhost k="string">robin</vhost>
+        <username k="string">testing</username>
+        <userpass k="string">letmein</userpass>
+        <heartbeat k="int">5</heartbeat>
+        <socketImpl k="string">\amqphp\StreamSocket</socketImpl>
+        <socketParams>
+          <url k="string">tcp://rabbit2:5672</url>
+        </socketParams>
+      </conn_params>
     </constr_args>
 
     <channel>
@@ -26,14 +28,16 @@
   <connection>
     <impl>\amqphp\Connection</impl>
     <constr_args>
-      <vhost k="string">robin</vhost>
-      <username k="string">testing</username>
-      <userpass k="string">letmein</userpass>
-      <heartbeat k="int">5</heartbeat>
-      <socketImpl k="string">\amqphp\StreamSocket</socketImpl>
-      <socketParams>
-        <url k="string">tcp://rabbit1:5672</url>
-      </socketParams>
+      <conn_params>
+        <vhost k="string">robin</vhost>
+        <username k="string">testing</username>
+        <userpass k="string">letmein</userpass>
+        <heartbeat k="int">5</heartbeat>
+        <socketImpl k="string">\amqphp\StreamSocket</socketImpl>
+        <socketParams>
+          <url k="string">tcp://rabbit1:5672</url>
+        </socketParams>
+      </conn_params>
     </constr_args>
 
     <channel>

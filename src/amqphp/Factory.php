@@ -44,6 +44,10 @@ class Factory
     /* Constructor flag - load XML from the given string */
     const XML_STRING = 2;
 
+    /** Cache ReflectionClass instances, key is class name */
+    private static $RC_CACHE = array();
+
+
     /* SimpleXML object, with content x-included */
     private $simp;
 
@@ -143,8 +147,8 @@ class Factory
             $_chans = array();
 
             // Create connection and connect
-            $impl = (string) $conn->impl;
-            $_conn = new $impl($this->xmlToArray($conn->constr_args->children()));
+            $refl = $this->getRc((string) $conn->impl);
+            $_conn = $refl->newInstanceArgs($this->xmlToArray($conn->constr_args->children()));
             $this->callProperties($_conn, $conn);
             $_conn->connect();
             $ret[] = $_conn;
@@ -182,7 +186,8 @@ class Factory
                 foreach ($chan->consumer as $cons) {
                     $impl = (string) $cons->impl;
                     if (count($cons->constr_args)) {
-                        $_cons = new $impl($this->xmlToArray($cons->constr_args->children()));
+                        $refl = $this->getRc($impl);
+                        $_cons = $refl->newInstanceArgs($this->xmlToArray($cons->constr_args->children()));
                     } else {
                         $_cons = new $impl;
                     }
@@ -260,6 +265,10 @@ class Factory
     }
 
 
-
-
+    /** Accessor for the local ReflectionClass cache */
+    private function getRc ($class) {
+        return array_key_exists($class, self::$RC_CACHE)
+            ? self::$RC_CACHE[$class]
+            : (self::$RC_CACHE[$class] = new \ReflectionClass($class));
+    }
 }

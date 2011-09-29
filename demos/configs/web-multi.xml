@@ -6,14 +6,16 @@
       <pHelperImpl k="string">\amqphp\persistent\APCPersistenceHelper</pHelperImpl>
     </set_properties>
     <constr_args>
-      <vhost k="string">robin</vhost>
-      <username k="string">testing</username>
-      <userpass k="string">letmein</userpass>
-      <socketImpl k="string">\amqphp\StreamSocket</socketImpl>
-      <socketParams>
-        <url k="string">tcp://rabbit1:5672</url>
-      </socketParams>
-      <signalDispatch k="boolean">false</signalDispatch>
+      <conn_params>
+        <vhost k="string">robin</vhost>
+        <username k="string">testing</username>
+        <userpass k="string">letmein</userpass>
+        <socketImpl k="string">\amqphp\StreamSocket</socketImpl>
+        <socketParams>
+          <url k="string">tcp://rabbit1:5672</url>
+        </socketParams>
+        <signalDispatch k="boolean">false</signalDispatch>
+      </conn_params>
     </constr_args>
 
     <channel>
@@ -25,7 +27,9 @@
         <impl k="string">DemoPConsumer</impl>
         <autostart>true</autostart>
         <constr_args>
-          <queue k="string">most-basic-q</queue>
+          <consume_params>
+            <queue k="string">most-basic-q</queue>
+          </consume_params>
         </constr_args>
       </consumer>
       <event_handler>
@@ -50,14 +54,16 @@
       <pHelperImpl k="string">\amqphp\persistent\APCPersistenceHelper</pHelperImpl>
     </set_properties>
     <constr_args>
-      <vhost k="string">robin</vhost>
-      <username k="string">testing</username>
-      <userpass k="string">letmein</userpass>
-      <socketImpl k="string">\amqphp\StreamSocket</socketImpl>
-      <socketParams>
-        <url k="string">tcp://rabbit2:5672</url>
-      </socketParams>
-      <signalDispatch k="boolean">false</signalDispatch>
+      <conn_params>
+        <vhost k="string">robin</vhost>
+        <username k="string">testing</username>
+        <userpass k="string">letmein</userpass>
+        <socketImpl k="string">\amqphp\StreamSocket</socketImpl>
+        <socketParams>
+          <url k="string">tcp://rabbit2:5672</url>
+        </socketParams>
+        <signalDispatch k="boolean">false</signalDispatch>
+      </conn_params>
     </constr_args>
 
     <channel>
@@ -69,7 +75,9 @@
         <impl k="string">DemoPConsumer</impl>
         <autostart>true</autostart>
         <constr_args>
-          <queue k="string">most-basic-q</queue>
+          <consume_params>
+            <queue k="string">most-basic-q</queue>
+          </consume_params>
         </constr_args>
       </consumer>
       <event_handler>
