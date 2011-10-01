@@ -4,10 +4,13 @@
 Robin Harvey, 2011
 
 
-This is  a pure PHP implementation  of the amqp  0.9.1 protocol.  This
-version has been tested against RabbitMQ 2+.  Please note that PHP5.3+
-is  required, and some  of the  test scripts  use pcntl  functions and
-forking.
+Amqphp  is  a complete  Amqp  protocol  implementation  and a  set  of
+libraries  for writing Amqp  producers and  consumers.  Amqphp  uses a
+high  performance asynchronous  processing model  to  receive messages
+using  an event loop,  and supports  SSL broker  connections.  Another
+notable feature  is support for  persistent connetions, this  can help
+make connections  between Amqp brokers and web  servers more efficient
+by avoiding the TCP / Amqp connection setup for each web request.
 
 For more in-depth documentation and news, check the Wiki:
 

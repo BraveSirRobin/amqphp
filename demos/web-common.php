@@ -70,7 +70,6 @@ class DemoPConsumer extends DemoConsumer implements \Serializable
 
 
     function getConsumeMethod (amqp\Channel $chan) {
-        error_log("DemoPConsumer ..consumer start..");
         $r = $chan->basic('consume', $this->consumeParams);
         return $r;
     }

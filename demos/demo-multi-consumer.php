@@ -51,44 +51,22 @@ $el = new amqp\EventLoop;
 
 // Set the select mode on the connections and add to the event loop
 foreach ($cons as $conn) {
-    if (1) {
-    } else if (0) {
-        list($uSecs, $secs) = explode(' ', microtime());
-        $uSecs = bcmul($uSecs, '1000000');
-        $conn->setSelectMode(amqp\SELECT_TIMEOUT_ABS,
-                             bcadd($secs, '1'),
-                             bcadd($uSecs, '500000'));
-    } else if (0) {
-        $conn->setSelectMode(amqp\SELECT_TIMEOUT_REL, 1, 500000);
-    } else if (0) {
-        echo "Second connection has callback exit function\n";
-        $conn->setSelectMode(amqp\SELECT_CALLBACK,
-                             function () {
-                                 static $i = 0;
-                                 $ret = ($i < 1500);
-                                 $i++;
-                                 echo $ret ? "Going to loop more\n" : "Going to exit\n";
-                                 return $ret;
-                             });
-    } else {
-        $conn->setSelectMode(amqp\SELECT_INFINITE);
-    }
     $el->addConnection($conn);
 }
+
+
 echo "Enter select loop\n";
 $el->select();
 
 
-
 foreach ($cons as $con) {
-    if ($unDel = $conn->getUndeliveredMessages()) {
+    if ($unDel = $con->getUndeliveredMessages()) {
         printf("You have undelivered messages!\n");
         foreach ($unDel as $d) {
             printf(" Undelivered %s.%s\n", $d->getClassProto()->getSpecName(), $d->getMethodProto()->getSpecName());
         }
     }
-    $chan->shutdown();
-    $conn->shutdown();
+    $con->shutdown();
 }
 
 echo "Script ends\n";

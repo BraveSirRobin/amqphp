@@ -44,6 +44,10 @@ class Factory
     /* Constructor flag - load XML from the given string */
     const XML_STRING = 2;
 
+    /** Cache ReflectionClass instances, key is class name */
+    private static $RC_CACHE = array();
+
+
     /* SimpleXML object, with content x-included */
     private $simp;
 
@@ -143,12 +147,16 @@ class Factory
             $_chans = array();
 
             // Create connection and connect
-            $impl = (string) $conn->impl;
-            $_conn = new $impl($this->xmlToArray($conn->constr_args->children()));
+            $refl = $this->getRc((string) $conn->impl);
+            $_conn = $refl->newInstanceArgs($this->xmlToArray($conn->constr_args->children()));
             $this->callProperties($_conn, $conn);
             $_conn->connect();
             $ret[] = $_conn;
 
+            // Set select mode, if required.
+            if (count($conn->select_mode) > 0) {
+                call_user_func_array(array($_conn, 'setSelectMode'), $this->xmlToArray($conn->select_mode->children()));
+            }
 
             if ($_conn instanceof pers\PConnection && $_conn->getPersistenceStatus() == pers\PConnection::SOCK_REUSED) {
                 // Assume that the setup is complete for existing PConnection
@@ -164,7 +172,13 @@ class Factory
                 $this->callProperties($_chan, $chan);
                 if (isset($chan->event_handler)) {
                     $impl = (string) $chan->event_handler->impl;
-                    $_chan->setEventHandler(new $impl);
+                    if (count($chan->event_handler->constr_args)) {
+                        $refl = $this->getRc($impl);
+                        $_evh = $refl->newInstanceArgs($this->xmlToArray($chan->event_handler->constr_args->children()));
+                    } else {
+                        $_evh = new $impl;
+                    }
+                    $_chan->setEventHandler($_evh);
                 }
                 $_chans[] = $_chan;
                 if (count($chan->method) > 0) {
@@ -182,7 +196,8 @@ class Factory
                 foreach ($chan->consumer as $cons) {
                     $impl = (string) $cons->impl;
                     if (count($cons->constr_args)) {
-                        $_cons = new $impl($this->xmlToArray($cons->constr_args->children()));
+                        $refl = $this->getRc($impl);
+                        $_cons = $refl->newInstanceArgs($this->xmlToArray($cons->constr_args->children()));
                     } else {
                         $_cons = new $impl;
                     }
@@ -238,6 +253,10 @@ class Factory
         case 'int':
         case 'integer':
             return (int) $val;
+        case 'const':
+            return constant((string) $val);
+        case 'eval':
+            return eval((string) $val);
         default:
             trigger_error("Unknown Kast $cast", E_USER_WARNING);
             return (string) $val;
@@ -260,6 +279,10 @@ class Factory
     }
 
 
-
-
+    /** Accessor for the local ReflectionClass cache */
+    private function getRc ($class) {
+        return array_key_exists($class, self::$RC_CACHE)
+            ? self::$RC_CACHE[$class]
+            : (self::$RC_CACHE[$class] = new \ReflectionClass($class));
+    }
 }
