@@ -17,7 +17,6 @@
         <signalDispatch k="boolean">false</signalDispatch>
       </conn_params>
     </constr_args>
-
     <channel>
       <set_properties>
         <suspendOnSerialize k="boolean">true</suspendOnSerialize>

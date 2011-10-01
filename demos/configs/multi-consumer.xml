@@ -16,6 +16,13 @@
       </conn_params>
     </constr_args>
 
+    <select_mode>
+      <mode k="const">\amqphp\SELECT_TIMEOUT_REL</mode>
+      <secs k="integer">5</secs>
+      <usecs k="integer">125000</usecs>
+    </select_mode>
+
+
     <channel>
       <consumer>
         <impl k="string">DemoConsumer</impl>
@@ -52,6 +59,13 @@
         </socketParams>
       </conn_params>
     </constr_args>
+
+    <select_mode>
+      <mode k="const">\amqphp\SELECT_TIMEOUT_REL</mode>
+      <secs k="integer">5</secs>
+      <usecs k="integer">125000</usecs>
+    </select_mode>
+
 
     <channel>
       <consumer>

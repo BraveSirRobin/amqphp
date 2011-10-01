@@ -153,6 +153,10 @@ class Factory
             $_conn->connect();
             $ret[] = $_conn;
 
+            // Set select mode, if required.
+            if (count($conn->select_mode) > 0) {
+                call_user_func_array(array($_conn, 'setSelectMode'), $this->xmlToArray($conn->select_mode->children()));
+            }
 
             if ($_conn instanceof pers\PConnection && $_conn->getPersistenceStatus() == pers\PConnection::SOCK_REUSED) {
                 // Assume that the setup is complete for existing PConnection
@@ -168,7 +172,13 @@ class Factory
                 $this->callProperties($_chan, $chan);
                 if (isset($chan->event_handler)) {
                     $impl = (string) $chan->event_handler->impl;
-                    $_chan->setEventHandler(new $impl);
+                    if (count($chan->event_handler->constr_args)) {
+                        $refl = $this->getRc($impl);
+                        $_evh = $refl->newInstanceArgs($this->xmlToArray($chan->event_handler->constr_args->children()));
+                    } else {
+                        $_evh = new $impl;
+                    }
+                    $_chan->setEventHandler($_evh);
                 }
                 $_chans[] = $_chan;
                 if (count($chan->method) > 0) {
@@ -243,6 +253,10 @@ class Factory
         case 'int':
         case 'integer':
             return (int) $val;
+        case 'const':
+            return constant((string) $val);
+        case 'eval':
+            return eval((string) $val);
         default:
             trigger_error("Unknown Kast $cast", E_USER_WARNING);
             return (string) $val;
