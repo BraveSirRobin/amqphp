@@ -184,6 +184,9 @@ class Factory
                 if (count($chan->method) > 0) {
                     $ret[] = $this->runMethodSequence($_chan, $chan->xpath('./method'));
                 }
+                if (count($chan->confirm_mode) > 0 && $this->kast($chan->confirm_mode, 'boolean')) {
+                    $_chan->setConfirmMode();
+                }
             }
 
 

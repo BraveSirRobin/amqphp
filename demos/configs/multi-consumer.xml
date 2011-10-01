@@ -32,6 +32,7 @@
           </consume_params>
         </constr_args>
       </consumer>
+      <confirm_mode>true</confirm_mode>
       <xi:include href="broker-common-setup.xml" xpointer="xpointer(/methods/method)"/>
       <method>
         <a_class k="string">basic</a_class>
@@ -76,6 +77,7 @@
           </consume_params>
         </constr_args>
       </consumer>
+      <confirm_mode>true</confirm_mode>
       <xi:include href="broker-common-setup.xml" xpointer="xpointer(/methods/method)"/>
       <method>
         <a_class k="string">basic</a_class>
