@@ -23,7 +23,7 @@
         <resumeOnHydrate k="boolean">true</resumeOnHydrate>
       </set_properties>
       <consumer>
-        <impl k="string">DemoPConsumer</impl>
+        <impl>DemoPConsumer</impl>
         <autostart>true</autostart>
         <constr_args>
           <consume_params>
@@ -71,7 +71,7 @@
         <resumeOnHydrate k="boolean">true</resumeOnHydrate>
       </set_properties>
       <consumer>
-        <impl k="string">DemoPConsumer</impl>
+        <impl>DemoPConsumer</impl>
         <autostart>true</autostart>
         <constr_args>
           <consume_params>
