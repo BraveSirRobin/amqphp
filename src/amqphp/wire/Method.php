@@ -446,7 +446,7 @@ class Method implements \Serializable
                 return '';
             } else if (! $f->validate($this->fields[$name])) {
                 trigger_error("Field {$name} of method {$this->methProto->getSpecName()} is not valid", E_USER_WARNING);
-                return '';
+                //return '';
             }
             $src->write($this->fields[$name], $type);
         }
