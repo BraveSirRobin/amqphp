@@ -11,7 +11,7 @@ $randomInt = function($data)
 };
 
 $server = new RpcServer(__DIR__ . '/../config/rpc-client.xml');
-$server->initServer('random-int-queue');
+$server->initServer('random-int');
 $server->setCallback($randomInt);
 $server->start();
 

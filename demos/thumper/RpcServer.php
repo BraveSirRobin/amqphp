@@ -13,7 +13,7 @@ class RpcServer implements amqp\Consumer, amqp\ChannelEventHandler
 
     private $setupQs = array();
 
-    public $queue;
+    public $token;
 
     public $callback;
 
@@ -46,11 +46,8 @@ class RpcServer implements amqp\Consumer, amqp\ChannelEventHandler
     }
 
     /** Sets the queue to listen on */
-    public function initServer($queue) {
-        if (! in_array($queue, $this->setupQs)) {
-            trigger_error(" (RpcServer) - listen Q $queue was not created by config!", E_USER_WARNING);
-        }
-        $this->queue = $queue;
+    public function initServer($token) {
+        $this->token = $token;
     }
 
 
@@ -82,13 +79,13 @@ class RpcServer implements amqp\Consumer, amqp\ChannelEventHandler
 
         // Publish the response message
         $bpa = array('content-type' => 'text/plain',
-                     'correlation-id' => $m->getField('correlation-id'),
                      'routing-key' => $m->getClassField('reply-to'),
                      'mandatory' => true,
-                     'immediate' => true);
+                     'immediate' => true,
+                     'correlation-id' => $this->token);
         $bp = $chan->basic('publish', $bpa, $result);
         printf("(RpcServer) : Send response messages:\n%s\n", $result);
-        var_dump(array_merge($bp->getFields(), $bp->getClassFields()));
+        var_dump(array_filter(array_merge($bp->getFields(), $bp->getClassFields())));
         $chan->invoke($bp);
     }
 
@@ -97,9 +94,15 @@ class RpcServer implements amqp\Consumer, amqp\ChannelEventHandler
 
     /** @override \amqphp\Consumer */
     function getConsumeMethod (amqp\Channel $chan) {
-        $cps = array('queue' => $this->queue,
+        $queue = $this->token . '-queue';
+        if (! in_array($queue, $this->setupQs)) {
+            trigger_error(" (RpcServer) - listen Q $queue was not created by config!", E_USER_WARNING);
+        }
+
+
+        $cps = array('queue' => $queue,
                      'consumer-tag' => 'PHPPROCESS_' . getmypid());
-        printf("(RpcServer): returns consume method for %s\n", $this->queue);
+        printf("(RpcServer): returns consume method for %s\n", $queue);
         return $chan->basic('consume', $cps);
     }
 

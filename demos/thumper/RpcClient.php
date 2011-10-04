@@ -51,8 +51,9 @@ class RpcClient implements amqp\Consumer, amqp\ChannelEventHandler
                         'mandatory' => true,
                         'immediate' => true);
         $bp = $this->channel->basic('publish', $params, $msgBody);
-        $this->channel->invoke($bp);
+        $tmpRet = $this->channel->invoke($bp);
         printf("(RpcClient): Invoke params:\n%s\n", print_r($params, true));
+        var_dump($tmpRet);
         $this->requests++;
     }
 

@@ -10,7 +10,7 @@ $charCount = function($word)
 
 $server = new RpcServer(__DIR__ . '/../config/rpc-client.xml');
 $server->setCallback($charCount);
-$server->initServer('charcount-queue');
+$server->initServer('charcount');
 $server->start();
 
 ?>
