@@ -12,7 +12,7 @@ $randomInt = function($data)
   return rand($data['min'], $data['max']);
 };
 
-$server = new RpcServer(__DIR__ . '/../config/rpc-client.xml');
+$server = new RpcServer(__DIR__ . '/../config/connection.xml');
 $server->initServer('random-int');
 $server->setCallback($randomInt);
 $server->start();
