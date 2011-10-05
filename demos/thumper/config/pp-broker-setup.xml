@@ -32,7 +32,7 @@
     <a_method k="string">bind</a_method>
     <a_args>
       <queue k="string">charcount-queue</queue>
-      <routing_key k="string"></routing_key>
+      <routing-key k="string"></routing-key>
       <exchange k="string">charcount-exchange</exchange>
     </a_args>
   </method>
@@ -66,7 +66,7 @@
     <a_method k="string">bind</a_method>
     <a_args>
       <queue k="string">random-int-queue</queue>
-      <routing_key k="string"></routing_key>
+      <routing-key k="string"></routing-key>
       <exchange k="string">random-int-exchange</exchange>
     </a_args>
   </method>

@@ -26,6 +26,7 @@ class RpcClient implements amqp\Consumer, amqp\ChannelEventHandler
         $this->connection = reset($built);
         $chans = $this->connection->getChannels();
         $this->channel = reset($chans);
+        $this->channel->setEventHandler($this);
     }
 
     /** Create broker-named response queue */
@@ -34,7 +35,10 @@ class RpcClient implements amqp\Consumer, amqp\ChannelEventHandler
                                                      'exclusive' => true));
         $qdr = $this->channel->invoke($qd);
         $this->queueName = $qdr->getField('queue');
-        printf("(RpcClient) : initClient with reply queue %s\n", $this->queueName);
+
+        // Manually start the consume session for the response queue.
+        $this->channel->addConsumer($this);
+        $this->channel->startAllConsumers();
     }
 
     /** Send RPC message and return immediately */
@@ -46,21 +50,18 @@ class RpcClient implements amqp\Consumer, amqp\ChannelEventHandler
         $params = array('content-type' => 'text/plain',
                         'reply-to' => $this->queueName,
                         'correlation-id' => $requestId,
-                        'exchange-name' => $server . '-exchange',
+                        'exchange' => $server . '-exchange',
                         'routing-key' => $routingKey,
                         'mandatory' => true,
                         'immediate' => true);
         $bp = $this->channel->basic('publish', $params, $msgBody);
         $tmpRet = $this->channel->invoke($bp);
-        printf("(RpcClient): Invoke params:\n%s\n", print_r($params, true));
-        var_dump($tmpRet);
         $this->requests++;
     }
 
     /** Add the current object as  a consumer and enter a consume loop
      * to wait for RPC replies. */
     public function getReplies() {
-        $this->channel->addConsumer($this);
         $evh = new amqp\EventLoop;
         $this->connection->setSelectMode(amqp\SELECT_CALLBACK, array($this, 'loopCallbackHandler'));
         $evh->addConnection($this->connection);
@@ -93,13 +94,11 @@ class RpcClient implements amqp\Consumer, amqp\ChannelEventHandler
                      'no-ack' => true,
                      'exclusive' => false,
                      'no-wait' => false);
-        printf("(RpcServer) Start response queue consume with queue %s", $this->queueName);
         return $chan->basic('consume', $cps);
     }
 
     /** Event loop callback, used to trigger event loop exit */
     public function loopCallbackHandler () {
-        printf("(RpcClient) : loopCallbackHandler says %d for %d", ($this->requests <= 0), $this->requests);
         return ($this->requests > 0);
     }
 
@@ -109,8 +108,8 @@ class RpcClient implements amqp\Consumer, amqp\ChannelEventHandler
 
     /** @override \amqphp\ChannelEventHandler */
     public function publishReturn (wire\Method $m) {
-        printf("Your message was rejected!:\n");
-        var_dump($m->getFields());
+        printf("Your message was rejected: %s [%d]\n", $m->getField('reply-text'), $m->getField('reply-code'));
+        $this->requests--;
     }
 
     /** @override \amqphp\ChannelEventHandler */
