@@ -22,11 +22,20 @@ class Consumer implements amqp\Consumer
         $this->connection = reset($built);
         $chans = $this->connection->getChannels();
         $this->channel = reset($chans);
+        $this->channel->addConsumer($this);
 
         if (defined('BROKER_CONFIG')) {
             $f = new amqp\Factory(BROKER_CONFIG);
             $meths = $f->run($this->channel);
-            printf("Ran %d brokers methods\n", count($meths));
+            foreach ($meths as $m) {
+                if ($m instanceof wire\Method &&
+                    $m->getClassProto()->getSpecName() == 'queue' &&
+                    $m->getMethodProto()->getSpecName() == 'declare-ok')
+                {
+                    $this->queueName = $m->getField('queue');
+                }
+            }
+            printf("Ran %d brokers methods, got queue %s\n", count($meths), $this->queueName);
         }
     }
 
@@ -54,10 +63,9 @@ class Consumer implements amqp\Consumer
     function handleDelivery (wire\Method $m, amqp\Channel $chan) {
         $this->n--;
         try {
-            call_user_func($this->cb, $m->getBody());
-            return amqp\CONSUMER_ACK;
+            call_user_func($this->cb, $m->getContent());
         } catch (\Exception $e) {
-            return amqp\CONSUMER_REJECT;
+            printf("Your handler failed:\n%s\n", $e->getMessage());
         }
     }
 
@@ -72,11 +80,14 @@ class Consumer implements amqp\Consumer
                      'no-ack' => true,
                      'exclusive' => false,
                      'no-wait' => false);
+        printf("(Consumer) basic.consume params\n");
+        var_dump($cps);
         return $chan->basic('consume', $cps);
     }
 
     /** Event loop callback, used to trigger event loop exit */
     public function loopCallbackHandler () {
+        echo "(Consumer) Loop handler!\n";
         return ($this->n > 0);
     }
 }
