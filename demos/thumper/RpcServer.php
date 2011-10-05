@@ -11,8 +11,6 @@ require_once __DIR__ . '/../demo-loader.php';
 class RpcServer implements amqp\Consumer, amqp\ChannelEventHandler
 {
 
-    private $setupQs = array();
-
     public $token;
 
     public $callback;
@@ -23,26 +21,18 @@ class RpcServer implements amqp\Consumer, amqp\ChannelEventHandler
 
     /** Creates connection, channel, configures broker  */
     public function __construct ($config) {
-        /* Call  run()  on  the  factory,  this  will  pass  back  all
-           responses from setup methods as well as the connection */
         $f = new amqp\Factory($config);
-        foreach ($f->run() as $resp) {
-            if ($resp instanceof amqp\Connection) {
-                $this->connection = $resp;
-                $chans = $this->connection->getChannels();
-                $this->channel = reset($chans);
-            } else if (is_array($resp)) {
-                foreach ($resp as $rmeth) {
-                    if ($rmeth instanceof wire\Method &&
-                        $rmeth->getClassProto()->getSpecName() == 'queue' &&
-                        $rmeth->getMethodProto()->getSpecName() == 'declare-ok') {
-                        $this->setupQs[] = $rmeth->getField('queue');
-                    }
-                }
-            }
+        $built = $f->getConnections();
+        $this->connection = reset($built);
+        $chans = $this->connection->getChannels();
+        $this->channel = reset($chans);
+        $this->channel->setEventHandler($this);
+
+        if (defined('BROKER_CONFIG')) {
+            $f = new amqp\Factory(BROKER_CONFIG);
+            $meths = $f->run($this->channel);
+            printf("Ran %d brokers methods\n", count($meths));
         }
-        printf(" (RpcServer Setup): (conn, chan, queue(,s)) = (%d, %d, %s)\n",
-               is_null($this->connection), is_null($this->channel), implode(', ', $this->setupQs));
     }
 
     /** Sets the queue to listen on */
@@ -95,11 +85,6 @@ class RpcServer implements amqp\Consumer, amqp\ChannelEventHandler
     /** @override \amqphp\Consumer */
     function getConsumeMethod (amqp\Channel $chan) {
         $queue = $this->token . '-queue';
-        if (! in_array($queue, $this->setupQs)) {
-            trigger_error(" (RpcServer) - listen Q $queue was not created by config!", E_USER_WARNING);
-        }
-
-
         $cps = array('queue' => $queue,
                      'consumer-tag' => 'PHPPROCESS_' . getmypid());
         printf("(RpcServer): returns consume method for %s\n", $queue);

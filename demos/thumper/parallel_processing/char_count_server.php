@@ -2,6 +2,8 @@
 
 require __DIR__ . '/../RpcServer.php';
 
+define('BROKER_CONFIG', realpath(__DIR__ . '/../config/pp-broker-setup.xml'));
+
 $charCount = function($word)
 {
   sleep(2);

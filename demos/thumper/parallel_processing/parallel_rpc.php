@@ -1,7 +1,6 @@
 <?php
 
 require __DIR__ . '/../RpcClient.php';
-
 $start = time();
 
 $client = new RpcClient(__DIR__ . '/../config/rpc-client.xml');

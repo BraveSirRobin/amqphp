@@ -11,6 +11,7 @@ require_once __DIR__ . '/../demo-loader.php';
 
 class RpcClient implements amqp\Consumer, amqp\ChannelEventHandler
 {
+
     public $queueName;
     public $requests = 0;
     public $replies = array();
@@ -20,7 +21,7 @@ class RpcClient implements amqp\Consumer, amqp\ChannelEventHandler
 
 
     /** Create connection and config from xml config */
-    function __construct ($config) {
+    public function __construct ($config) {
         $f = new amqp\Factory($config);
         $built = $f->getConnections();
         $this->connection = reset($built);

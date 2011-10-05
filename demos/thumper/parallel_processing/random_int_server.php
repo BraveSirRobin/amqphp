@@ -3,6 +3,8 @@
 require __DIR__ . '/../RpcServer.php';
 
 
+define('BROKER_CONFIG', realpath(__DIR__ . '/../config/pp-broker-setup.xml'));
+
 $randomInt = function($data)
 {
   sleep(5);

@@ -21,10 +21,8 @@
       </conn_params>
     </constr_args>
 
-    <!-- Creates a vanilla channel, imports and executes broker setup -->
-    <channel>
-      <xi:include href="pp-broker-setup.xml" xpointer="xpointer(/methods/method)"/>
-    </channel>
+    <!-- Creates a vanilla channel -->
+    <channel/>
 
   </connection>
 </setup>
