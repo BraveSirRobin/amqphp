@@ -11,7 +11,7 @@
     <a_method k="string">declare</a_method>
     <a_args>
       <type k="string">direct</type>
-      <durable k="boolean">false</durable>
+      <durable k="boolean">true</durable>
       <exchange k="string">hello-exchange</exchange>
     </a_args>
   </method>
@@ -22,7 +22,7 @@
     <a_method k="string">declare</a_method>
     <a_args>
       <queue k="string">hello-queue</queue>
-      <durable k="boolean">false</durable>
+      <durable k="boolean">true</durable>
     </a_args>
   </method>
 

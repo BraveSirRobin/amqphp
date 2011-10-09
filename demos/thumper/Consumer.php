@@ -80,14 +80,11 @@ class Consumer implements amqp\Consumer
                      'no-ack' => true,
                      'exclusive' => false,
                      'no-wait' => false);
-        printf("(Consumer) basic.consume params\n");
-        var_dump($cps);
         return $chan->basic('consume', $cps);
     }
 
     /** Event loop callback, used to trigger event loop exit */
     public function loopCallbackHandler () {
-        echo "(Consumer) Loop handler!\n";
         return ($this->n > 0);
     }
 }
