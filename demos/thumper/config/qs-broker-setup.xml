@@ -1,0 +1,40 @@
+<?xml version="1.0"?>
+<!--
+  Used to  create broker config for  all parallel_processing examples.
+  Missing Amqp fields default to NULL, i.e. false, "", 0.
+-->
+<methods>
+
+  <!-- Creates an exchange -->
+  <method>
+    <a_class k="string">exchange</a_class>
+    <a_method k="string">declare</a_method>
+    <a_args>
+      <type k="string">direct</type>
+      <durable k="boolean">true</durable>
+      <exchange k="string">hello-exchange</exchange>
+    </a_args>
+  </method>
+
+  <!-- Creates a queue -->
+  <method>
+    <a_class k="string">queue</a_class>
+    <a_method k="string">declare</a_method>
+    <a_args>
+      <queue k="string">hello-queue</queue>
+      <durable k="boolean">true</durable>
+    </a_args>
+  </method>
+
+  <!-- Creates an exchange to queue binding -->
+  <method>
+    <a_class k="string">queue</a_class>
+    <a_method k="string">bind</a_method>
+    <a_args>
+      <queue k="string">hello-queue</queue>
+      <routing-key k="string"></routing-key>
+      <exchange k="string">hello-exchange</exchange>
+    </a_args>
+  </method>
+
+</methods>

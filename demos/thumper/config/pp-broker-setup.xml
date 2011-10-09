@@ -1,0 +1,74 @@
+<?xml version="1.0"?>
+<!--
+  Used to  create broker config for  all parallel_processing examples.
+  Missing Amqp fields default to NULL, i.e. false, "", 0.
+-->
+<methods>
+
+  <!-- Creates the charcount exchange -->
+  <method>
+    <a_class k="string">exchange</a_class>
+    <a_method k="string">declare</a_method>
+    <a_args>
+      <type k="string">direct</type>
+      <durable k="boolean">true</durable>
+      <exchange k="string">charcount-exchange</exchange>
+    </a_args>
+  </method>
+
+  <!-- Creates the charcount queue -->
+  <method>
+    <a_class k="string">queue</a_class>
+    <a_method k="string">declare</a_method>
+    <a_args>
+      <queue k="string">charcount-queue</queue>
+      <durable k="boolean">true</durable>
+    </a_args>
+  </method>
+
+  <!-- Creates the charcount exchange to queue binding -->
+  <method>
+    <a_class k="string">queue</a_class>
+    <a_method k="string">bind</a_method>
+    <a_args>
+      <queue k="string">charcount-queue</queue>
+      <routing-key k="string"></routing-key>
+      <exchange k="string">charcount-exchange</exchange>
+    </a_args>
+  </method>
+
+
+
+  <!-- Creates the random-int exchange -->
+  <method>
+    <a_class k="string">exchange</a_class>
+    <a_method k="string">declare</a_method>
+    <a_args>
+      <type k="string">direct</type>
+      <durable k="boolean">true</durable>
+      <exchange k="string">random-int-exchange</exchange>
+    </a_args>
+  </method>
+
+  <!-- Creates the random-int queue -->
+  <method>
+    <a_class k="string">queue</a_class>
+    <a_method k="string">declare</a_method>
+    <a_args>
+      <queue k="string">random-int-queue</queue>
+      <durable k="boolean">true</durable>
+    </a_args>
+  </method>
+
+  <!-- Creates the random-int exchange to queue binding -->
+  <method>
+    <a_class k="string">queue</a_class>
+    <a_method k="string">bind</a_method>
+    <a_args>
+      <queue k="string">random-int-queue</queue>
+      <routing-key k="string"></routing-key>
+      <exchange k="string">random-int-exchange</exchange>
+    </a_args>
+  </method>
+
+</methods>

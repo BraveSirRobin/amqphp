@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+
+<!--
+  Amqp client configuration, shared by RpcClient, RpcServer
+-->
+
+<setup xmlns:xi="http://www.w3.org/2001/XInclude">
+  <connection>
+    <!-- Use a standard Socket connection type. -->
+    <impl>\amqphp\Connection</impl>
+    <constr_args>
+      <conn_params>
+        <vhost k="string">/</vhost>
+        <username k="string">guest</username>
+        <userpass k="string">guest</userpass>
+        <socketImpl k="string">\amqphp\Socket</socketImpl>
+        <socketParams>
+          <host k="string">rabbit1</host>
+          <port k="integer">5672</port>
+        </socketParams>
+      </conn_params>
+    </constr_args>
+
+    <!-- Creates a vanilla channel -->
+    <channel/>
+
+  </connection>
+</setup>
