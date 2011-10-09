@@ -11,7 +11,7 @@ and   these  boil  down   to  differences   in  the   underlying  Amqp
 implementations:
 
  1.  There are no Thumper base classes, BaseAmqp, BaseConsumer - these
- are  mostly to deal  with setting  up the  broker environment  amd in
+ are  mostly to deal  with setting  up the  broker environment  and in
  Amqphp you've got  the Factory component which takes  care of most of
  this.
  2.  php-amqplib has  no way of receiving rejected  messages (at least
