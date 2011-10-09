@@ -69,13 +69,13 @@ class RpcServer implements amqp\Consumer, amqp\ChannelEventHandler
 
         // Publish the response message
         $bpa = array('content-type' => 'text/plain',
-                     'routing-key' => $m->getClassField('reply-to'),
+                     'routing-key' => $m->getField('reply-to'),
                      'mandatory' => true,
                      'immediate' => true,
                      'correlation-id' => $this->token);
         $bp = $chan->basic('publish', $bpa, $result);
         printf("(RpcServer) : Send response messages:\n%s\n", $result);
-        var_dump(array_filter(array_merge($bp->getFields(), $bp->getClassFields())));
+        var_dump(array_filter($bp->getFields()));
         $chan->invoke($bp);
     }
 

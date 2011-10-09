@@ -1,0 +1,16 @@
+ * Do a "manual persistence" version of the multi-process web demo
+
+ * Refactor the demos  to a final state - rename  files to be simpler,
+   remove old crap code, move XML / HTML files in to sub-directories.
+
+ * Review and add API support for Amqp transactions.
+
+ * Add support for  sending multiple Amqp messages in  a single "write
+   session".  May be best to use a "send stack"
+
+ * Sort out the  hacky mess of discovering the amqp  type of a Method,
+   put in a helper method to return, say, exchange.declare-ok
+
+ * Alter the build sequence to refuse  to build in cases where a class
+   and  method  field  name   clashes.   This  should  mean  that  the
+   simplified field handling in the wire\Method class is safe.

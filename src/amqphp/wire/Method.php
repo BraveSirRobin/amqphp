@@ -316,7 +316,8 @@ class Method implements \Serializable
         $this->rcState = $this->rcState | self::ST_BODY_READ;
     }
 
-    /* This for content messages, has the full message been read from the wire yet?  */
+    /* This for content messages, has  the full message been read from
+     * the wire yet?  */
     function readConstructComplete () {
         if ($this->isHb) {
             return true;
@@ -329,47 +330,64 @@ class Method implements \Serializable
         }
     }
 
-
+    /* Sets  a  message  field,  this  could  be  a  method  or  class
+     * property. */
     function setField ($name, $val) {
         if ($this->mode == 'read') {
             trigger_error('Setting field value for read constructed method', E_USER_WARNING);
-        } else {
-            if (! in_array($name, array_merge($this->classProto->getSpecFields(), $this->methProto->getSpecFields()))) {
-                $warns = sprintf("Field %s is invalid for Amqp message type %s.%s",
-                                 $name, $this->classProto->getSpecName(), $this->methProto->getSpecName());
-                trigger_error($warns, E_USER_WARNING);
-            }
+        } else if (in_array($name, $this->methProto->getSpecFields())) {
             $this->fields[$name] = $val;
+        } else if (in_array($name, $this->classProto->getSpecFields())) {
+            $this->classFields[$name] = $val;
+        } else {
+            $warns = sprintf("Field %s is invalid for Amqp message type %s.%s",
+                             $name, $this->classProto->getSpecName(), $this->methProto->getSpecName());
+            trigger_error($warns, E_USER_WARNING);
         }
     }
+
+    /* Return the given field value */
     function getField ($name) {
-        return isset($this->fields[$name]) ? $this->fields[$name] : null;
+        if (array_key_exists($name, $this->fields)) {
+            return $this->fields[$name];
+        } else if (array_key_exists($name, $this->classFields)) {
+            return $this->classFields[$name];
+        } else if (! in_array($name, array_merge($this->classProto->getSpecFields(), $this->methProto->getSpecFields()))) {
+            $warns = sprintf("Field %s is invalid for Amqp message type %s.%s",
+                             $name, $this->classProto->getSpecName(), $this->methProto->getSpecName());
+            trigger_error($warns, E_USER_WARNING);
+        }
     }
-    function getFields () { return $this->fields; }
+
+    function getFields () { return array_merge($this->classFields, $this->fields); }
 
     function setClassField ($name, $val) {
-        if ($this->mode == 'read') {
-            trigger_error('Setting class field value for read constructed method', E_USER_WARNING);
-        } else if (! $this->methProto->getSpecHasContent()) {
-            trigger_error('Setting class field value for a method which doesn\'t take content (' .
-                          $this->classProto->getSpecName() . '.' . $this->methProto->getSpecName() . ')', E_USER_WARNING);
-        } else {
-            $this->classFields[$name] = $val;
-        }
+        trigger_error('Class fields are no longer distinguished from method fields in ' .
+                      'the amqphp\wire\Method implementation, use setField instead.',
+                      E_USER_DEPRECATED);
+        return $this->setField($name, $val);
     }
     function getClassField ($name) {
-        return isset($this->classFields[$name]) ? $this->classFields[$name] : null;
+        trigger_error('Class fields are no longer distinguished from method fields in ' .
+                      'the amqphp\wire\Method implementation, use getField instead.',
+                      E_USER_DEPRECATED);
+        return $this->getField($name);
     }
-    function getClassFields () { return $this->classFields; }
+
+    function getClassFields () {
+        trigger_error('Class fields are no longer distinguished from method fields in ' .
+                      'the amqphp\wire\Method implementation, use getFields instead.',
+                      E_USER_DEPRECATED);
+        return $this->getFields();
+    }
 
     function setContent ($content) {
-        if (! $content) {
-            return;
-        } else if ($this->mode == 'read') {
+        if ($this->mode == 'read') {
             trigger_error('Setting content value for read constructed method', E_USER_WARNING);
-        } else if (! $this->methProto->getSpecHasContent()) {
-            trigger_error('Setting content value for a method which doesn\'t take content', E_USER_WARNING);
-        } else {
+        } else if (strlen($content)) {
+            if (! $this->methProto->getSpecHasContent()) {
+                trigger_error('Setting content value for a method which doesn\'t take content', E_USER_WARNING);
+            }
             $this->content = $content;
         }
     }
@@ -449,16 +467,17 @@ class Method implements \Serializable
         foreach ($this->methProto->getFields() as $f) {
             $name = $f->getSpecFieldName();
             $type = $f->getSpecDomainType();
-            if (! isset($this->fields[$name])) {
-                trigger_error("Missing field {$name} of method {$this->methProto->getSpecName()}", E_USER_WARNING);
-                return '';
-            } else if (! $f->validate($this->fields[$name])) {
-                $warns = sprintf("Field %s of method %s.%s failed validation by protocol binding class %s",
-                                 $name, $this->classProto->getSpecName(), $this->methProto->getSpecName(), get_class($f));
-                trigger_error($warns, E_USER_WARNING);
-                //return '';
+            $val = '';
+            if (array_key_exists($name, $this->fields)) {
+                $val = $this->fields[$name];
+
+                if (! $f->validate($val)) {
+                    $warns = sprintf("Field %s of method %s.%s failed validation by protocol binding class %s",
+                                     $name, $this->classProto->getSpecName(), $this->methProto->getSpecName(), get_class($f));
+                    trigger_error($warns, E_USER_WARNING);
+                }
             }
-            $src->write($this->fields[$name], $type);
+            $src->write($val, $type);
         }
         return $src->getBuffer();
     }
@@ -490,16 +509,16 @@ class Method implements \Serializable
             }
             $fName = $f->getSpecFieldName();
             $dName = $f->getSpecFieldDomain();
-            if (isset($this->classFields[$fName]) && 
+            if (array_key_exists($fName, $this->classFields) &&
                 ! ($dName == 'bit' && ! $this->classFields[$fName])) {
                 $pFlags .= '1';
             } else {
                 $pFlags .= '0';
             }
-            if (isset($this->classFields[$fName]) && $dName != 'bit') {
+            if (array_key_exists($fName, $this->classFields) && $dName != 'bit') {
                 if (! $f->validate($this->classFields[$fName])) {
                     trigger_error("Field {$fName} of method {$this->methProto->getSpecName()} is not valid", E_USER_WARNING);
-                    return '';
+//                    return '';
                 }
                 $src2->write($this->classFields[$fName], $f->getSpecDomainType());
             }

@@ -772,6 +772,7 @@ class Connection
      * @arg  string   $class       Amqp class
      * @arg  array    $_args       Format: array (<Amqp method name>,
      *                                            <Assoc method/class mixed field array>,
+     *                                            <Message content>)
      * @return                     A corresponding \amqphp\wire\Method
      */
     function constructMethod ($class, $_args) {
@@ -787,18 +788,8 @@ class Connection
         }
 
         $m = new wire\Method($meth);
-        $clsF = $cls->getSpecFields();
-        $mthF = $meth->getSpecFields();
-
-        if ($meth->getSpecHasContent() && $clsF) {
-            foreach (array_merge(array_combine($clsF, array_fill(0, count($clsF), null)), $args) as $k => $v) {
-                $m->setClassField($k, $v);
-            }
-        }
-        if ($mthF) {
-            foreach (array_merge(array_combine($mthF, array_fill(0, count($mthF), '')), $args) as $k => $v) {
-                $m->setField($k, $v);
-            }
+        foreach ($args as $k => $v) {
+            $m->setField($k, $v);
         }
         $m->setContent($content);
         return $m;
