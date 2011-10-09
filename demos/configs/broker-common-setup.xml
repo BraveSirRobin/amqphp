@@ -29,7 +29,7 @@ data is xincluded in to the connection setups in the demos. -->
     <a_method k="string">bind</a_method>
     <a_args>
       <queue k="string">most-basic-q</queue>
-      <routing_key k="string"></routing_key>
+      <routing-key k="string"></routing-key>
       <exchange k="string">most-basic-ex</exchange>
     </a_args>
   </method>

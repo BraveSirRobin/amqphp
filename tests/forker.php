@@ -180,7 +180,7 @@ class Forker
     }
 
     function prepareChannel () {
-        $chan = $this->conn->getChannel();
+        $chan = $this->conn->openChannel();
         if (! $this->chans) {
             /** NOTE: This is only here because the API forces you to create a channel before
                 you can have access to Method construction functions.  Could either provide

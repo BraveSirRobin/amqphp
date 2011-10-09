@@ -177,10 +177,7 @@ class Connection
 
         $meth = new wire\Method();
         $meth->readConstruct(new wire\Reader($raw), $pl);
-        if (! ($meth->getClassProto() &&
-               $meth->getClassProto()->getSpecName() == 'connection' &&
-               $meth->getMethodProto() &&
-               $meth->getMethodProto()->getSpecName() == 'close-ok')) {
+        if ($meth->amqpClass != 'connection.close-ok') {
             trigger_error("Channel protocol shudown fault", E_USER_WARNING);
         }
         $this->sock->close();
@@ -245,8 +242,7 @@ class Connection
         }
 
         // Expect start
-        if ($meth->getMethodProto()->getSpecIndex() == 10 &&
-            $meth->getClassProto()->getSpecIndex() == 10) {
+        if ($meth->amqpClass == 'connection.start') {
             $resp = $meth->getMethodProto()->getResponses();
             $meth = new wire\Method($resp[0]);
         } else {
@@ -274,7 +270,7 @@ class Connection
         $this->frameMax = ($this->frameMax == 0 || $frameMax < $this->frameMax) ? $frameMax : $this->frameMax;
 
         // Expect tune
-        if ($meth->getMethodProto()->getSpecIndex() == 30 && $meth->getClassProto()->getSpecIndex() == 10) {
+        if ($meth->amqpClass == 'connection.tune') {
             $resp = $meth->getMethodProto()->getResponses();
             $meth = new wire\Method($resp[0]);
         } else {
@@ -291,7 +287,7 @@ class Connection
         // Now call connection.open
         $meth = $this->constructMethod('connection', array('open', array('virtual-host' => $this->vhost)));
         $meth = $this->invoke($meth);
-        if (! $meth || ! ($meth->getMethodProto()->getSpecIndex() == 41 && $meth->getClassProto()->getSpecIndex() == 10)) {
+        if ($meth->amqpClass != 'connection.open-ok') {
             throw new \Exception("Connection initialisation failed (13)", 9885);
         }
         $this->connected = true;
@@ -457,12 +453,12 @@ class Connection
             $this->write($resp);
             return;
         }
-        $clsMth = "{$meth->getClassProto()->getSpecName()}.{$meth->getMethodProto()->getSpecName()}";
-        switch ($clsMth) {
+
+        switch ($meth->amqpClass) {
         case 'connection.close':
             $pl = $this->getProtocolLoader();
             if ($culprit = $pl('ClassFactory', 'GetMethod', array($meth->getField('class-id'), $meth->getField('method-id')))) {
-                $culprit = "{$culprit->getSpecClass()}.{$culprit->getSpecName()}";
+                $culprit = $culprit->amqpClass;
             } else {
                 $culprit = '(Unknown or unspecified)';
             }
@@ -486,8 +482,8 @@ class Connection
             throw new \Exception($em, $n);
         default:
             $this->sock->close();
-            throw new \Exception(sprintf("Unexpected channel message (%s.%s), connection closed",
-                                         $meth->getClassProto()->getSpecName(), $meth->getMethodProto()->getSpecName()), 96356);
+            throw new \Exception(sprintf("Unexpected channel message (%s), connection closed",
+                                         $meth->amqpClass), 96356);
         }
     }
 
@@ -633,9 +629,7 @@ class Connection
             }
             while (true) {
                 if (! ($buff = $this->read())) {
-                    throw new \Exception(sprintf("(2) Send message failed for %s.%s:\n",
-                                                 $inMeth->getClassProto()->getSpecName(),
-                                                 $inMeth->getMethodProto()->getSpecName()), 5624);
+                    throw new \Exception(sprintf("(2) Send message failed for %s:\n", $inMeth->amqpClass), 5624);
                 }
                 $meths = $this->readMessages($buff);
                 foreach (array_keys($meths) as $k) {
@@ -772,6 +766,7 @@ class Connection
      * @arg  string   $class       Amqp class
      * @arg  array    $_args       Format: array (<Amqp method name>,
      *                                            <Assoc method/class mixed field array>,
+     *                                            <Message content>)
      * @return                     A corresponding \amqphp\wire\Method
      */
     function constructMethod ($class, $_args) {
@@ -787,18 +782,8 @@ class Connection
         }
 
         $m = new wire\Method($meth);
-        $clsF = $cls->getSpecFields();
-        $mthF = $meth->getSpecFields();
-
-        if ($meth->getSpecHasContent() && $clsF) {
-            foreach (array_merge(array_combine($clsF, array_fill(0, count($clsF), null)), $args) as $k => $v) {
-                $m->setClassField($k, $v);
-            }
-        }
-        if ($mthF) {
-            foreach (array_merge(array_combine($mthF, array_fill(0, count($mthF), '')), $args) as $k => $v) {
-                $m->setField($k, $v);
-            }
+        foreach ($args as $k => $v) {
+            $m->setField($k, $v);
         }
         $m->setContent($content);
         return $m;

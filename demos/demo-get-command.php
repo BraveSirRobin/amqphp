@@ -47,11 +47,9 @@ $getCommand = $chan->basic('get', $getParams);
 $response = $chan->invoke($getCommand);
 
 // Examine the response to see what we've got...
-if ($response->getClassProto()->getSpecName() == 'basic' && 
-    $response->getMethodProto()->getSpecName() == 'get-empty') {
+if ($response->amqpClass == 'basic.get-empty') {
     printf("There are no messages on the queue %s, try running the demo-producer script to add some first!\n", $Q);
-} else if ($response->getClassProto()->getSpecName() == 'basic' && 
-           $response->getMethodProto()->getSpecName() == 'get-ok') {
+} else if ($response->amqpClass == 'basic.get-ok') {
     printf("1 Message read from %s (%d messages remain on the queue):\n%s\n", $Q, $response->getField('message-count'), $response->getContent());
     // Now, remember that unless you 'ack' this message, it'll stay on the broker
     // Alternatively, you can choose to reject a message with basic.reject
