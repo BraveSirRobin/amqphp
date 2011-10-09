@@ -28,10 +28,7 @@ class Consumer implements amqp\Consumer
             $f = new amqp\Factory(BROKER_CONFIG);
             $meths = $f->run($this->channel);
             foreach ($meths as $m) {
-                if ($m instanceof wire\Method &&
-                    $m->getClassProto()->getSpecName() == 'queue' &&
-                    $m->getMethodProto()->getSpecName() == 'declare-ok')
-                {
+                if ($m instanceof wire\Method && $m->amqpClass == 'queue.declare-ok') {
                     $this->queueName = $m->getField('queue');
                 }
             }

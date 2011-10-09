@@ -91,8 +91,7 @@ class Channel
         $confSelect = $this->confirm('select');
         $confSelectOk = $this->invoke($confSelect);
         if (! ($confSelectOk instanceof wire\Method) ||
-            ! ($confSelectOk->getClassProto()->getSpecName() == 'confirm' &&
-               $confSelectOk->getMethodProto()->getSpecName() == 'select-ok')) {
+            $confSelectOk->amqpClass != 'confirm.select-ok') {
             throw new \Exception("Failed to set confirm mode", 8674);
         }
         $this->confirmMode = true;
@@ -159,8 +158,7 @@ class Channel
         }
 
         // Do numbering of basic.publish during confirm mode
-        if ($this->confirmMode && $m->getClassProto()->getSpecName() == 'basic'
-            && $m->getMethodProto()->getSpecName() == 'publish') {
+        if ($this->confirmMode && $m->amqpClass == 'basic.publish') {
             $this->confirmSeq++;
             $this->confirmSeqs[] = $this->confirmSeq;
         }
@@ -177,9 +175,7 @@ class Channel
      *                          False: Remove message from internal queue
      */
     function handleChannelMessage (wire\Method $meth) {
-        $sid = "{$meth->getClassProto()->getSpecName()}.{$meth->getMethodProto()->getSpecName()}";
-
-        switch ($sid) {
+        switch ($meth->amqpClass) {
         case 'channel.flow':
             $this->flow = ! $this->flow;
             if ($r = $meth->getMethodProto()->getResponses()) {
@@ -218,7 +214,7 @@ class Channel
         case 'channel.flow-ok':
             return true;
         default:
-            throw new \Exception("Received unexpected channel message: $sid", 8795);
+            throw new \Exception("Received unexpected channel message: {$meth->amqpClass}", 8795);
         }
     }
 
@@ -227,11 +223,9 @@ class Channel
      * Delivery handler for all non-channel class input messages.
      */
     function handleChannelDelivery (wire\Method $meth) {
-        $sid = "{$meth->getClassProto()->getSpecName()}.{$meth->getMethodProto()->getSpecName()}";
-
-        switch ($sid) {
+        switch ($meth->amqpClass) {
         case 'basic.deliver':
-            return $this->deliverConsumerMessage($meth, $sid);
+            return $this->deliverConsumerMessage($meth, $meth->amqpClass);
         case 'basic.return':
             if ($this->callbackHandler) {
                 $this->callbackHandler->publishReturn($meth);
@@ -244,7 +238,7 @@ class Channel
             $this->removeConfirmSeqs($meth, 'publishNack');
             return false;
         default:
-            throw new \Exception("Received unexpected channel delivery:\n$sid", 87998);
+            throw new \Exception("Received unexpected channel delivery:\n{$meth->amqpClass}", 87998);
         }
     }
 
@@ -395,8 +389,7 @@ class Channel
     private function removeConsumerByTag (Consumer $cons, $ctag) {
         $cnl = $this->basic('cancel', array('consumer-tag' => $ctag, 'no-wait' => false));
         $cOk = $this->invoke($cnl);
-        if ($cOk && ($cOk->getClassProto()->getSpecName() == 'basic'
-                     && $cOk->getMethodProto()->getSpecName() == 'cancel-ok')) {
+        if ($cOk->amqpClass == 'basic.cancel-ok') {
             $this->setConsumerStatus($ctag, 'CLOSED') OR
                 trigger_error("Failed to set consumer status flag", E_USER_WARNING);
 

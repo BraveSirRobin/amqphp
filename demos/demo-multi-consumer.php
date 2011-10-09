@@ -63,7 +63,7 @@ foreach ($cons as $con) {
     if ($unDel = $con->getUndeliveredMessages()) {
         printf("You have undelivered messages!\n");
         foreach ($unDel as $d) {
-            printf(" Undelivered %s.%s\n", $d->getClassProto()->getSpecName(), $d->getMethodProto()->getSpecName());
+            printf(" Undelivered %s\n", $d->amqpClass);
         }
     }
     $con->shutdown();

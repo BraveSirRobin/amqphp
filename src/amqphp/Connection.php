@@ -177,10 +177,7 @@ class Connection
 
         $meth = new wire\Method();
         $meth->readConstruct(new wire\Reader($raw), $pl);
-        if (! ($meth->getClassProto() &&
-               $meth->getClassProto()->getSpecName() == 'connection' &&
-               $meth->getMethodProto() &&
-               $meth->getMethodProto()->getSpecName() == 'close-ok')) {
+        if ($meth->amqpClass != 'connection.close-ok') {
             trigger_error("Channel protocol shudown fault", E_USER_WARNING);
         }
         $this->sock->close();
@@ -457,8 +454,8 @@ class Connection
             $this->write($resp);
             return;
         }
-        $clsMth = "{$meth->getClassProto()->getSpecName()}.{$meth->getMethodProto()->getSpecName()}";
-        switch ($clsMth) {
+
+        switch ($meth->amqpClass) {
         case 'connection.close':
             $pl = $this->getProtocolLoader();
             if ($culprit = $pl('ClassFactory', 'GetMethod', array($meth->getField('class-id'), $meth->getField('method-id')))) {
@@ -486,8 +483,8 @@ class Connection
             throw new \Exception($em, $n);
         default:
             $this->sock->close();
-            throw new \Exception(sprintf("Unexpected channel message (%s.%s), connection closed",
-                                         $meth->getClassProto()->getSpecName(), $meth->getMethodProto()->getSpecName()), 96356);
+            throw new \Exception(sprintf("Unexpected channel message (%s), connection closed",
+                                         $meth->amqpClass), 96356);
         }
     }
 
@@ -633,9 +630,7 @@ class Connection
             }
             while (true) {
                 if (! ($buff = $this->read())) {
-                    throw new \Exception(sprintf("(2) Send message failed for %s.%s:\n",
-                                                 $inMeth->getClassProto()->getSpecName(),
-                                                 $inMeth->getMethodProto()->getSpecName()), 5624);
+                    throw new \Exception(sprintf("(2) Send message failed for %s:\n", $inMeth->amqpClass), 5624);
                 }
                 $meths = $this->readMessages($buff);
                 foreach (array_keys($meths) as $k) {

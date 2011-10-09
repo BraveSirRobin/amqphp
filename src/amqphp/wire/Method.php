@@ -44,10 +44,8 @@ class Method implements \Serializable
     /** List of fields that will be persisted as-is */
     private static $PlainPFields = 
         array('rcState', 'mode', 'fields', 'classFields', 'content',
-              'frameMax', 'wireChannel', 'isHb', 'wireMethodId', 'wireClassId',
+              'frameSize', 'wireChannel', 'isHb', 'wireMethodId', 'wireClassId',
               'contentSize');
-
-
 
     private $rcState = 0; // Holds a bitmask of ST_* consts
 
@@ -58,15 +56,19 @@ class Method implements \Serializable
     private $classFields = array(); // Amqp message class fields
     private $content; // Amqp message payload
 
-    private $frameMax; // Max frame size in bytes
+    private $frameSize; // Max frame size in bytes, set by channel
 
     private $wireChannel = null; // Read from Amqp frame
-    private $isHb = false; // Heartbeat from flag
     private $wireMethodId; // Read from Amqp method frame
     private $wireClassId; // Read from Amqp method frame
     private $contentSize; // Read from Amqp content header frame
+    private $isHb = false; // Heartbeat from flag
 
     private $protoLoader; // Closure passed in to readConstruct from Connection
+
+    /** Set to class.method as soon as the type of the underlying Amqp
+     * method is known */
+    public $amqpClass;
 
     function serialize () {
         if ($this->mode != 'read') {
@@ -98,6 +100,7 @@ class Method implements \Serializable
              * re-used) from their factories. */
             $this->methProto = new $mc;
             $this->classProto = new $cc;
+            $this->amqpClass = sprintf('%s.%s', $this->classProto->getSpecName(), $this->methProto->getSpecName());
         }
     }
 
@@ -122,6 +125,7 @@ class Method implements \Serializable
             $this->classProto = $this->methProto->getClass();
             $this->mode = 'write';
             $this->wireChannel = $chan;
+            $this->amqpClass = sprintf('%s.%s', $this->classProto->getSpecName(), $this->methProto->getSpecName());
         } else {
             $this->mode = 'read';
         }
@@ -203,9 +207,8 @@ class Method implements \Serializable
             }
 
             if ($src->read('octet') != $FRME) {
-                throw new \Exception(sprintf("Framing exception - missed frame end (%s.%s) - (%d,%d,%d,%d) [%d, %d]",
-                                             $this->classProto->getSpecName(),
-                                             $this->methProto->getSpecName(),
+                throw new \Exception(sprintf("Framing exception - missed frame end (%s) - (%d,%d,%d,%d) [%d, %d]",
+                                             $this->amqpClass,
                                              $this->rcState,
                                              $break,
                                              $src->isSpent(),
@@ -253,6 +256,7 @@ class Method implements \Serializable
         } else if (! ($this->methProto = $this->classProto->getMethodByIndex($this->wireMethodId))) {
             throw new \Exception("Failed to construct method prototype", 5645);
         }
+        $this->amqpClass = sprintf('%s.%s', $this->classProto->getSpecName(), $this->methProto->getSpecName());
         // Copy field data in to cache
         foreach ($this->methProto->getFields() as $f) {
             $this->fields[$f->getSpecFieldName()] = $src->read($f->getSpecDomainType());
@@ -340,8 +344,7 @@ class Method implements \Serializable
         } else if (in_array($name, $this->classProto->getSpecFields())) {
             $this->classFields[$name] = $val;
         } else {
-            $warns = sprintf("Field %s is invalid for Amqp message type %s.%s",
-                             $name, $this->classProto->getSpecName(), $this->methProto->getSpecName());
+            $warns = sprintf("Field %s is invalid for Amqp message type %s", $name, $this->amqpClass);
             trigger_error($warns, E_USER_WARNING);
         }
     }
@@ -353,20 +356,22 @@ class Method implements \Serializable
         } else if (array_key_exists($name, $this->classFields)) {
             return $this->classFields[$name];
         } else if (! in_array($name, array_merge($this->classProto->getSpecFields(), $this->methProto->getSpecFields()))) {
-            $warns = sprintf("Field %s is invalid for Amqp message type %s.%s",
-                             $name, $this->classProto->getSpecName(), $this->methProto->getSpecName());
+            $warns = sprintf("Field %s is invalid for Amqp message type %s", $name, $this->amqpClass);
             trigger_error($warns, E_USER_WARNING);
         }
     }
 
     function getFields () { return array_merge($this->classFields, $this->fields); }
 
+    /** @deprecated  **/
     function setClassField ($name, $val) {
         trigger_error('Class fields are no longer distinguished from method fields in ' .
                       'the amqphp\wire\Method implementation, use setField instead.',
                       E_USER_DEPRECATED);
         return $this->setField($name, $val);
     }
+
+    /** @deprecated  **/
     function getClassField ($name) {
         trigger_error('Class fields are no longer distinguished from method fields in ' .
                       'the amqphp\wire\Method implementation, use getField instead.',
@@ -374,6 +379,7 @@ class Method implements \Serializable
         return $this->getField($name);
     }
 
+    /** @deprecated  **/
     function getClassFields () {
         trigger_error('Class fields are no longer distinguished from method fields in ' .
                       'the amqphp\wire\Method implementation, use getFields instead.',
@@ -472,8 +478,8 @@ class Method implements \Serializable
                 $val = $this->fields[$name];
 
                 if (! $f->validate($val)) {
-                    $warns = sprintf("Field %s of method %s.%s failed validation by protocol binding class %s",
-                                     $name, $this->classProto->getSpecName(), $this->methProto->getSpecName(), get_class($f));
+                    $warns = sprintf("Field %s of method %s failed validation by protocol binding class %s",
+                                     $name, $this->amqpClass, get_class($f));
                     trigger_error($warns, E_USER_WARNING);
                 }
             }
@@ -517,7 +523,7 @@ class Method implements \Serializable
             }
             if (array_key_exists($fName, $this->classFields) && $dName != 'bit') {
                 if (! $f->validate($this->classFields[$fName])) {
-                    trigger_error("Field {$fName} of method {$this->methProto->getSpecName()} is not valid", E_USER_WARNING);
+                    trigger_error("Field {$fName} of method {$this->amqpClass} is not valid", E_USER_WARNING);
 //                    return '';
                 }
                 $src2->write($this->classFields[$fName], $f->getSpecDomainType());
