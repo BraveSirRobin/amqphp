@@ -186,7 +186,7 @@ class Channel
         case 'channel.close':
             $pl = $this->myConn->getProtocolLoader();
             if ($culprit = $pl('ClassFactory', 'GetMethod', array($meth->getField('class-id'), $meth->getField('method-id')))) {
-                $culprit = "{$culprit->getSpecClass()}.{$culprit->getSpecName()}";
+                $culprit = $culprit->amqpClass;
             } else {
                 $culprit = '(Unknown or unspecified)';
             }

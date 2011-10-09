@@ -242,8 +242,7 @@ class Connection
         }
 
         // Expect start
-        if ($meth->getMethodProto()->getSpecIndex() == 10 &&
-            $meth->getClassProto()->getSpecIndex() == 10) {
+        if ($meth->amqpClass == 'connection.start') {
             $resp = $meth->getMethodProto()->getResponses();
             $meth = new wire\Method($resp[0]);
         } else {
@@ -271,7 +270,7 @@ class Connection
         $this->frameMax = ($this->frameMax == 0 || $frameMax < $this->frameMax) ? $frameMax : $this->frameMax;
 
         // Expect tune
-        if ($meth->getMethodProto()->getSpecIndex() == 30 && $meth->getClassProto()->getSpecIndex() == 10) {
+        if ($meth->amqpClass == 'connection.tune') {
             $resp = $meth->getMethodProto()->getResponses();
             $meth = new wire\Method($resp[0]);
         } else {
@@ -288,7 +287,7 @@ class Connection
         // Now call connection.open
         $meth = $this->constructMethod('connection', array('open', array('virtual-host' => $this->vhost)));
         $meth = $this->invoke($meth);
-        if (! $meth || ! ($meth->getMethodProto()->getSpecIndex() == 41 && $meth->getClassProto()->getSpecIndex() == 10)) {
+        if ($meth->amqpClass != 'connection.open-ok') {
             throw new \Exception("Connection initialisation failed (13)", 9885);
         }
         $this->connected = true;
@@ -459,7 +458,7 @@ class Connection
         case 'connection.close':
             $pl = $this->getProtocolLoader();
             if ($culprit = $pl('ClassFactory', 'GetMethod', array($meth->getField('class-id'), $meth->getField('method-id')))) {
-                $culprit = "{$culprit->getSpecClass()}.{$culprit->getSpecName()}";
+                $culprit = $culprit->amqpClass;
             } else {
                 $culprit = '(Unknown or unspecified)';
             }

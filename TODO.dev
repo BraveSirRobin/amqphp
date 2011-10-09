@@ -8,9 +8,6 @@
  * Add support for  sending multiple Amqp messages in  a single "write
    session".  May be best to use a "send stack"
 
- * Sort out the  hacky mess of discovering the amqp  type of a Method,
-   put in a helper method to return, say, exchange.declare-ok
-
  * Alter the build sequence to refuse  to build in cases where a class
    and  method  field  name   clashes.   This  should  mean  that  the
    simplified field handling in the wire\Method class is safe.
