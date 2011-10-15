@@ -150,7 +150,7 @@ class MultiProcessPCTest
             $loops = ($params['param1'] && is_numeric($params['param1'])) ?
                 (int) $params['param1']
                 : 1;
-            $conn->setSelectMode(amqp\SELECT_MAXLOOPS, $loops);
+            $conn->pushExitStrategy(amqp\STRAT_MAXLOOPS, $loops);
             $conn->select();
             $this->view->messages[] = sprintf("Consumed %d messages on connection %d via. maxloops with trigger %d",
                                               MultiProcessPCTest::$CC, $params['connection'], $loops);
@@ -163,7 +163,7 @@ class MultiProcessPCTest
             $usecs = ($params['param2'] && is_numeric($params['param2'])) ?
                 (int) $params['param2']
                 : 0;
-            $conn->setSelectMode(amqp\SELECT_TIMEOUT_REL, (string) $secs, (string) $usecs);
+            $conn->pushExitStrategy(amqp\STAT_TIMEOUT_REL, (string) $secs, (string) $usecs);
             $conn->select();
             $this->view->messages[] = sprintf("Consumed %d messages on connection %d via. timeout with trigger (%s, %s)",
                                               MultiProcessPCTest::$CC, $params['connection'], (string) $secs, (string) $usecs);

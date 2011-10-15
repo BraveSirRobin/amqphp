@@ -24,37 +24,32 @@ use amqphp\protocol;
 use amqphp\wire;
 
 
-
-
-class MaxloopSelectHelper implements SelectLoopHelper
+/**
+ * @internal
+ */
+interface ExitStrategy
 {
-    /** Config param - max loops value */
-    private $maxLoops;
+    /**
+     * Called once when the  select mode is first configured, possibly
+     * with other parameters
+     */
+    function configure ($sMode);
 
-    /** Runtime param */
-    private $nLoops;
+    /**
+     * Called once  per select loop run, calculates  initial values of
+     * select loop timeouts.
+     */
+    function init (Connection $conn);
 
-    function configure ($sMode, $ml=null) {
-        if (! is_int($ml) || $ml == 0) {
-            trigger_error("Select mode - invalid maxloops params", E_USER_WARNING);
-            return false;
-        } else {
-            $this->maxLoops = $ml;
-            return true;
-        }
-    }
+    /**
+     * Forms a "chain of responsibility" - each
+     *
+     * @return   mixed    True=Loop without timeout, False=exit loop, array(int, int)=specific timeout
+     */
+    function preSelect ($prev=null);
 
-    function init (Connection $conn) {
-        $this->nLoops = 0;
-    }
-
-    function preSelect () {
-        if (++$this->nLoops > $this->maxLoops) {
-            return false;
-        } else {
-            return array(null, 0);
-        }
-    }
-
-    function complete () {}
+    /**
+     * Notification that the loop has exited
+     */
+    function complete ();
 }

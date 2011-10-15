@@ -26,15 +26,35 @@ use amqphp\wire;
 
 
 
-class InfiniteSelectHelper implements SelectLoopHelper
+
+class ConditionalExitStrategy implements ExitStrategy
 {
+    /** A copy of the Connection from the init callback */
+    private $conn;
+
     function configure ($sMode) {}
 
-    function init (Connection $conn) {}
-
-    function preSelect () {
-        return array(null, 0);
+    function init (Connection $conn) {
+        $this->conn = $conn;
     }
 
-    function complete () {}
+    function preSelect ($prev=null) {
+        $hasConsumers = false;
+        foreach ($this->conn->getChannels() as $chan) {
+            if ($chan->canListen()) {
+                $hasConsumers = true;
+                break;
+            }
+        }
+
+        if (! $hasConsumers) {
+            return false;
+        } else {
+            return $prev;
+        }
+    }
+
+    function complete () {
+        $this->conn = null;
+    }
 }

@@ -27,12 +27,12 @@ const DEBUG = false;
 
 const PROTOCOL_HEADER = "AMQP\x00\x00\x09\x01";
 
-const SELECT_TIMEOUT_ABS = 1;
-const SELECT_TIMEOUT_REL = 2;
-const SELECT_MAXLOOPS = 3;
-const SELECT_CALLBACK = 4;
-const SELECT_COND = 5;
-const SELECT_INFINITE = 6;
+const STRAT_TIMEOUT_ABS = 1;
+const STRAT_TIMEOUT_REL = 2;
+const STRAT_MAXLOOPS = 3;
+const STRAT_CALLBACK = 4;
+const STRAT_COND = 5;
+const STRAT_INFINITE = 6;
 
 
 /**
@@ -58,14 +58,6 @@ const CONSUMER_CANCEL = 4; // basic.cancel (no-wait=false)
  */
 class Connection
 {
-    // DEPRECATED - these consts are now stand-alone consts as they are used by more than one class in this package.
-    const SELECT_TIMEOUT_ABS = SELECT_TIMEOUT_ABS;
-    const SELECT_TIMEOUT_REL = SELECT_TIMEOUT_REL;
-    const SELECT_MAXLOOPS = SELECT_MAXLOOPS;
-    const SELECT_CALLBACK = SELECT_CALLBACK;
-    const SELECT_COND = SELECT_COND;
-    const SELECT_INFINITE = SELECT_INFINITE;
-
     /** Default client-properties field used during connection setup */
     public static $ClientProperties = array(
         'product' => ' BraveSirRobin/amqphp',
@@ -114,13 +106,13 @@ class Connection
 
     protected $connected = false; // Flag flipped after protcol connection setup is complete
 
-    private $slHelper;
+    /** A set of exit strategies, forms a chain of responsibility */
+    private $exStrats = array();
 
 
 
     function __construct (array $params = array()) {
         $this->setConnectionParams($params);
-        $this->setSelectMode(SELECT_COND);
     }
 
     /**
@@ -495,9 +487,10 @@ class Connection
 
     /**
      * Enter  a select  loop in  order  to receive  messages from  the
-     * broker.  Use setSelectMode() to  set an  exit strategy  for the
-     * loop.  Do not call  concurrently, this will raise an exception.
-     * Use  isBlocking() to  test whether  select() should  be called.
+     * broker.  Use  pushExitStrategy() to append exit  strategies for
+     * the  loop.   Do  not  call concurrently,  this  will  raise  an
+     * exception.  Use isBlocking() to test whether select() should be
+     * called.
      * @throws Exception
      */
     function select () {
@@ -520,52 +513,61 @@ class Connection
      *  5) Conditional exit (automatic) (current impl)
      *  6) Infinite
 
-     * @param   integer    $mode      One of the SELECT_XXX consts.
+     * @param   integer    $mode      One of the STRAT_XXX consts.
      * @param   ...                   Following 0 or more params are $mode dependant
      * @return  boolean               True if the mode was set OK
      */
-    function setSelectMode () {
+    function pushExitStrategy () {
         if ($this->blocking) {
-            trigger_error("Select mode - cannot switch mode whilst blocking", E_USER_WARNING);
+            trigger_error("Push exit strategy - cannot switch mode whilst blocking", E_USER_WARNING);
             return false;
         }
         $_args = func_get_args();
         if (! $_args) {
-            trigger_error("Select mode - no select parameters supplied", E_USER_WARNING);
+            trigger_error("Push exit strategy - no select parameters supplied", E_USER_WARNING);
             return false;
         }
         switch ($mode = array_shift($_args)) {
-        case SELECT_TIMEOUT_ABS:
-        case SELECT_TIMEOUT_REL:
+        case STRAT_TIMEOUT_ABS:
+        case STRAT_TIMEOUT_REL:
             @list($epoch, $usecs) = $_args;
-            $this->slHelper = new TimeoutSelectHelper;
-            return $this->slHelper->configure($mode, $epoch, $usecs);
-        case SELECT_MAXLOOPS:
-            $this->slHelper = new MaxloopSelectHelper;
-            return $this->slHelper->configure(SELECT_MAXLOOPS, array_shift($_args));
-        case SELECT_CALLBACK:
+            $this->exStrats[] = $tmp = new TimeoutExitStrategy;
+            return $tmp->configure($mode, $epoch, $usecs);
+        case STRAT_MAXLOOPS:
+            $this->exStrats[] = $tmp = new MaxloopExitStrategy;
+            return $tmp->configure(STRAT_MAXLOOPS, array_shift($_args));
+        case STRAT_CALLBACK:
             $cb = array_shift($_args);
-            $this->slHelper = new CallbackSelectHelper;
-            return $this->slHelper->configure(SELECT_CALLBACK, $cb, $_args);
-        case SELECT_COND:
-            $this->slHelper = new ConditionalSelectHelper;
-            return $this->slHelper->configure(SELECT_COND, $this);
-        case SELECT_INFINITE:
-            $this->slHelper = new InfiniteSelectHelper;
-            return $this->slHelper->configure(SELECT_INFINITE);
+            $this->exStrats[] = $tmp = new CallbackExitStrategy;
+            return $tmp->configure(STRAT_CALLBACK, $cb, $_args);
+        case STRAT_COND:
+            $this->exStrats[] = $tmp = new ConditionalExitStrategy;
+            return $tmp->configure(STRAT_COND, $this);
         default:
             trigger_error("Select mode - mode not found", E_USER_WARNING);
             return false;
         }
     }
 
+    /** Remove all event loop exit strategy helpers.  */
+    function clearExitStrategies () {
+        $this->exStrats = array();
+    }
 
     /**
      * Internal - proxy EventLoop "notify pre-select" signal to select
-     * helper
+     * helper.    This   is   a  "chain   of   responsibility"-   type
+     * implementation, each strategy is visited  in turn and is passed
+     * the response from  the previous strategy, it has  the option to
+     * accept  the current  value or  replace  it with  it's own.   By
+     * default we loop forever without a select timeout.
      */
     function notifyPreSelect () {
-        return $this->slHelper->preSelect();
+        $r = true;
+        foreach ($this->exStrats as $strat) {
+            $r = $strat->preSelect($r);
+        }
+        return $r;
     }
 
     /**
@@ -573,7 +575,9 @@ class Connection
      * helper
      */
     function notifySelectInit () {
-        $this->slHelper->init($this);
+        foreach ($this->exStrats as $strat) {
+            $strat->init($this);
+        }
         // Notify all channels
         foreach ($this->chans as $chan) {
             $chan->startAllConsumers();
@@ -584,7 +588,9 @@ class Connection
      * Internal - proxy EventLoop "complete" signal to select helper
      */
     function notifyComplete () {
-        $this->slHelper->complete();
+        foreach($this->exStrats as $strat) {
+            $strat->complete();
+        }
         // Notify all channels
         foreach ($this->chans as $chan) {
             $chan->onSelectEnd();

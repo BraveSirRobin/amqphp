@@ -154,9 +154,11 @@ class Factory
             $_conn->connect();
             $ret[] = $_conn;
 
-            // Set select mode, if required.
-            if (count($conn->select_mode) > 0) {
-                call_user_func_array(array($_conn, 'setSelectMode'), $this->xmlToArray($conn->select_mode->children()));
+            // Add exit strategies, if required.
+            if (count($conn->exit_strats) > 0) {
+                foreach ($conn->exit_strats->strat as $strat) {
+                    call_user_func_array(array($_conn, 'pushExitStrategy'), $this->xmlToArray($strat->children()));
+                }
             }
 
             if ($_conn instanceof pers\PConnection && $_conn->getPersistenceStatus() == pers\PConnection::SOCK_REUSED) {

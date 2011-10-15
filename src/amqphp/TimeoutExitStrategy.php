@@ -27,11 +27,11 @@ use amqphp\wire;
 
 
 /**
- * Question: why use bcmath functions?
+ * This strategy can be used to set a timeout for the event loop.
  */
-class TimeoutSelectHelper implements SelectLoopHelper
+class TimeoutExitStrategy implements ExitStrategy
 {
-    /** Config param, one of SELECT_TIMEOUT_ABS or SELECT_TIMEOUT_REL */
+    /** Config param, one of STRAT_TIMEOUT_ABS or STRAT_TIMEOUT_REL */
     private $toStyle;
 
     /** Config param */
@@ -44,9 +44,9 @@ class TimeoutSelectHelper implements SelectLoopHelper
     private $epoch;
 
     /**
-     * @param   integer     $sMode      The select mode const that was passed to setSelectMode
+     * @param   integer     $sMode      The select mode const that was passed to pushExitStrategy
      * @param   string      $secs       The configured seconds timeout value
-     * @param   string      $usecs      the configured millisecond timeout value (1 millionth os a second)
+     * @param   string      $usecs      the configured millisecond timeout value (1 millionth of a second)
      */
     function configure ($sMode, $secs=null, $usecs=null) {
         $this->toStyle = $sMode;
@@ -56,7 +56,7 @@ class TimeoutSelectHelper implements SelectLoopHelper
     }
 
     function init (Connection $conn) {
-        if ($this->toStyle == Connection::SELECT_TIMEOUT_REL) {
+        if ($this->toStyle == STRAT_TIMEOUT_REL) {
             list($uSecs, $epoch) = explode(' ', microtime());
             $uSecs = bcmul($uSecs, '1000000');
             $this->usecs = bcadd($this->usecs, $uSecs);
@@ -70,7 +70,13 @@ class TimeoutSelectHelper implements SelectLoopHelper
         }
     }
 
-    function preSelect () {
+    /** Return a timeout spec */
+    function preSelect ($prev=null) {
+        if ($prev === false) {
+            // Don't override previous handlers if they want to exit.
+            return false;
+        }
+
         list($uSecs, $epoch) = explode(' ', microtime());
         $epDiff = bccomp($epoch, $this->epoch);
         if ($epDiff == 1) {
@@ -91,8 +97,13 @@ class TimeoutSelectHelper implements SelectLoopHelper
         } else {
             $blockTmSecs = (int) bcsub($this->epoch, $epoch);
         }
-        //printf("(secs, usecs) = (%s, %s)\n", $blockTmSecs, $udiff);
-        return array($blockTmSecs, $udiff);
+
+        // Return the nearest timeout.
+        if (is_array($prev) && ($prev[0] < $blockTmSecs || ($prev[0] == $blockTmSecs && $prev[1] < $udiff))) {
+            return $prev;
+        } else {
+            return array($blockTmSecs, $udiff);
+        }
     }
 
     function complete () {}

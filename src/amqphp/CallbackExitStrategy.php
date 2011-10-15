@@ -24,33 +24,34 @@ use amqphp\protocol;
 use amqphp\wire;
 
 
-/**
- * @internal
- */
-interface SelectLoopHelper
+
+
+
+class CallbackExitStrategy implements ExitStrategy
 {
-    /**
-     * Called once when the  select mode is first configured, possibly
-     * with other parameters
-     */
-    function configure ($sMode);
+    private $cb;
+    private $args;
 
-    /**
-     * Called once  per select loop run, calculates  initial values of
-     * select loop timeouts.
-     */
-    function init (Connection $conn);
+    function configure ($sMode, $cb=null, $args=null) {
+        if (! is_callable($cb)) {
+            trigger_error("Select mode - invalid callback params", E_USER_WARNING);
+            return false;
+        } else {
+            $this->cb = $cb;
+            $this->args = $args;
+            return true;
+        }
+    }
 
-    /**
-     * Called  each time round  the select  loop, returns  select loop
-     * timeout  values, or  false to  signal that  looping  should end
-     *
-     * @return   mixed    Either: (Tuple of tvSec, tvUsec) Or: (false)
-     */
-    function preSelect ();
+    function init (Connection $conn) {}
 
-    /**
-     * Notification that the loop has exited
-     */
-    function complete ();
+    function preSelect ($prev=null) {
+        if (true !== call_user_func_array($this->cb, $this->args)) {
+            return false;
+        } else {
+            return $prev;
+        }
+    }
+
+    function complete () {}
 }
