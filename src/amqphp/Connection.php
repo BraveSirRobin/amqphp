@@ -27,12 +27,13 @@ const DEBUG = false;
 
 const PROTOCOL_HEADER = "AMQP\x00\x00\x09\x01";
 
+/** Event loop exit strategy identifiers. */
 const STRAT_TIMEOUT_ABS = 1;
 const STRAT_TIMEOUT_REL = 2;
 const STRAT_MAXLOOPS = 3;
 const STRAT_CALLBACK = 4;
 const STRAT_COND = 5;
-const STRAT_INFINITE = 6;
+
 
 
 /**
