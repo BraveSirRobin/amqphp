@@ -100,13 +100,17 @@ class ExitStratDemo implements amqp\Consumer, amqp\ChannelEventHandler
         $evl = new amqp\EventLoop;
         $evl->addConnection($this->connection);
         $evl->select();
-        info("Event loop exits.");
+        $this->channel->removeAllConsumers();
+        $this->connection->shutdown();
+        info("Consumers removed, event loop exits.");
     }
 
 
 
     /** @override \amqphp\Consumer */
-    function handleCancelOk (wire\Method $m, amqp\Channel $chan) { }
+    function handleCancelOk (wire\Method $m, amqp\Channel $chan) {
+        info("Consumer %s cancelled OK", $m->getField('consumer-tag'));
+    }
 
     /** @override \amqphp\Consumer */
     function handleConsumeOk (wire\Method $m, amqp\Channel $chan) {
@@ -218,7 +222,7 @@ if (array_key_exists('strat', $opts)) {
 
 if (array_key_exists('num-cons', $opts)) {
     $numCons = (int) $opts['num-cons'];
-    info(" * Add %d consumers\n", $opts['num-cons']);
+    info(" * Add %d consumer(s)\n", $opts['num-cons']);
 } else {
     $numCons = 1;
 }
