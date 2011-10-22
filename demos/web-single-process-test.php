@@ -260,7 +260,7 @@ class PConnHelper
 
         foreach ($cons as $k) {
             if (array_key_exists($k, $this->cache)) {
-                $this->cache[$k]->setSelectMode(amqp\SELECT_TIMEOUT_REL, 1, 500000);
+                $this->cache[$k]->pushExitStrategy(amqp\STRAT_TIMEOUT_REL, 1, 500000);
                 foreach ($this->cache[$k]->getChannels() as $chan) {
                     foreach ($chan->getConsumerTags() as $ctag) {
                         $chan->getConsumerByTag()->nf = array('PConnHelper', 'ConsumerCallback');

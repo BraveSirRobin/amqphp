@@ -82,6 +82,9 @@ class EventLoop
             $psr = $this->processPreSelects($tv); // Connections could be removed here.
             if (is_array($psr)) {
                 list($tvSecs, $tvUsecs) = $psr;
+            } else if ($psr === true) {
+                $tvSecs = 0;
+                $tvUsecs = null;
             } else if (is_null($psr) && empty($this->cons)) {
                 // All connections have finished listening.
                 if (! $started) {
@@ -105,7 +108,7 @@ class EventLoop
 
             if ($ret === false) {
                 $this->signal();
-                $errNo = $errStr = array('??');
+                $errNo = $errStr = array('(No specific socket exceptions found)');
                 if ($ex) {
                     $errNo = $errStr = array();
                     foreach ($ex as $sock) {
@@ -123,9 +126,6 @@ class EventLoop
                     $c->doSelectRead();
                     $c->deliverAll();
                 }
-                foreach ($ex as $sock) {
-                    printf("--(Socket Exception (?))--\n");
-                }
             }
         } // End - the loop
 
@@ -142,8 +142,7 @@ class EventLoop
      * complete  and  filter  out  the "soonest"  timeout.   Call  the
      * 'complete' callback for connections that get removed
      *
-     * @return  mixed   Array = (tvSecs, tvUsecs), False = loop complete
-     *                  (no more listening connections)
+     * @return  mixed   True=Loop without timeout, False=exit loop, array(int, int)=specific timeout
      */
     private function processPreSelects (array $tvs) {
         $wins = null;
@@ -156,30 +155,24 @@ class EventLoop
                 $this->removeConnection($this->cons[$sid]);
             } else if (is_null($wins)) {
                 $wins = $tv;
-                $winSum = is_null($tv[0]) ? 0 : bcadd($tv[0], $tv[1], 5);
-            } else if (! is_null($tv[0])) {
-                // A Specific timeout
-                if (is_null($wins[0])) {
+            } else if ($tv === true && ! is_array($wins)) {
+                $wins = true;
+            } else if (is_array($tv)) {
+                if ($wins === true) {
                     $wins = $tv;
                 } else {
-                    // TODO: compact this logic - too many continues!
-                    $diff = bccomp($wins[0], $tv[0]);
-                    if ($diff == -1) {
-                        // $wins second timeout is smaller
-                        continue;
-                    } else if ($diff == 0) {
-                        // seconds are the same, compare millis
-                        $diff = bccomp($wins[1], $tv[1]);
-                        if ($diff == -1) {
-                            continue;
-                        } else if ($diff == 0) {
-                            continue;
-                        } else {
+                    // Figure out which timeout is sooner and choose that one
+                    switch (bccomp((string) $wins[0], (string) $tv[0])) {
+                    case 0:
+                        // Seconds are the same, compare millis
+                        if (1 === bccomp((string) $wins[1], (string) $tv[1])) {
                             $wins = $tv;
                         }
-                    } else {
+                        break;
+                    case 1;
                         // $wins second timeout is bigger
                         $wins = $tv;
+                        break;
                     }
                 }
             }

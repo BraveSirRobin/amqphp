@@ -225,7 +225,7 @@ class Channel
     function handleChannelDelivery (wire\Method $meth) {
         switch ($meth->amqpClass) {
         case 'basic.deliver':
-            return $this->deliverConsumerMessage($meth, $meth->amqpClass);
+            return $this->deliverConsumerMessage($meth);
         case 'basic.return':
             if ($this->callbackHandler) {
                 $this->callbackHandler->publishReturn($meth);
@@ -237,6 +237,15 @@ class Channel
         case 'basic.nack':
             $this->removeConfirmSeqs($meth, 'publishNack');
             return false;
+        case 'basic.cancel':
+            // TODO: Allow the broker  to cancel this consume session,
+            // ..as per spec: "It may also  be sent from the server to
+            //   the  client  in  the  event  of  the  consumer  being
+            //   unexpectedly cancelled (i.e. cancelled for any reason
+            //   other  than the  server  receiving the  corresponding
+            //   basic.cancel from the client). This allows clients to
+            //   be notified  of the loss  of consumers due  to events
+            //   such as queue deletion"
         default:
             throw new \Exception("Received unexpected channel delivery:\n{$meth->amqpClass}", 87998);
         }
@@ -246,16 +255,32 @@ class Channel
     /**
      * Delivers 'Consume Session'  messages to channels consumers, and
      * handles responses.
+     * @param    amqphp\wire\Method   $meth      Always basic.deliver
      */
-    private function deliverConsumerMessage ($meth, $sid) {
+    private function deliverConsumerMessage ($meth) {
         // Look up the target consume handler and invoke the callback
         $ctag = $meth->getField('consumer-tag');
+        $response = false;
         list($cons, $status) = $this->getConsumerAndStatus($ctag);
-        $response = $cons->handleDelivery($meth, $this);
+        if ($cons && $status == 'READY') {
+            $response = $cons->handleDelivery($meth, $this);
+        } else if ($cons) {
+            $m = sprintf("Message delivered to closed consumer %s -- reject %s",
+                         $ctag, $meth->getField('delivery-tag'));
+            trigger_error($m, E_USER_WARNING);
+            $rej = $this->basic('reject', array('delivery-tag' => $meth->getField('delivery-tag'),
+                                                'requeue' => true));
+            $this->invoke($rej);
+        } else {
+            $m = sprintf("Message delivered to closed consumer %s -- reject %s",
+                         $ctag, $meth->getField('delivery-tag'));
+            trigger_error($m, E_USER_WARNING);
+        }
 
-        // Handle callback response signals, i.e the CONSUMER_XXX API messages, but only
-        // for API responses to the basic.deliver message
-        if ($sid !== 'basic.deliver' || ! $response) {
+        // Handle callback response signals,  i.e the CONSUMER_XXX API
+        // messages, but  only for API responses  to the basic.deliver
+        // message
+        if (! $response) {
             return false;
         }
 
@@ -387,6 +412,11 @@ class Channel
 
 
     private function removeConsumerByTag (Consumer $cons, $ctag) {
+        list(, $cstate) = $this->getConsumerAndStatus($ctag);
+        if ($cstate == 'CLOSED') {
+            trigger_error("Consumer is already removed", E_USER_WARNING);
+            return;
+        }
         $cnl = $this->basic('cancel', array('consumer-tag' => $ctag, 'no-wait' => false));
         $cOk = $this->invoke($cnl);
         if ($cOk->amqpClass == 'basic.cancel-ok') {

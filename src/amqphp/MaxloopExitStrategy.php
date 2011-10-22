@@ -25,31 +25,44 @@ use amqphp\wire;
 
 
 
-
-
-class CallbackSelectHelper implements SelectLoopHelper
+/**
+ * This exit strategy counts the  number of times the underlying event
+ * loop breaks and forces an exit  after a specified number of breaks.
+ * NOTE: this  does _NOT_ mean the  same as a "max  number of messages
+ * received"  - a  single  break of  an event  loop  can deliver  many
+ * messages, or indeed deliver no message, for example if a very large
+ * message is being received in many parts.
+ */
+class MaxloopExitStrategy implements ExitStrategy
 {
-    private $cb;
-    private $args;
+    /** Config param - max loops value */
+    private $maxLoops;
 
-    function configure ($sMode, $cb=null, $args=null) {
-        if (! is_callable($cb)) {
-            trigger_error("Select mode - invalid callback params", E_USER_WARNING);
+    /** Runtime param */
+    private $nLoops;
+
+    function configure ($sMode, $ml=null) {
+        if (! (is_int($ml) || is_numeric($ml)) || $ml == 0) {
+            trigger_error("Select mode - invalid maxloops params : '$ml'", E_USER_WARNING);
             return false;
         } else {
-            $this->cb = $cb;
-            $this->args = $args;
+            $this->maxLoops = (int) $ml;
             return true;
         }
     }
 
-    function init (Connection $conn) {}
+    function init (Connection $conn) {
+        $this->nLoops = 0;
+    }
 
-    function preSelect () {
-        if (true !== call_user_func_array($this->cb, $this->args)) {
+    function preSelect ($prev=null) {
+        if ($prev === false) {
+            return false;
+        }
+        if (++$this->nLoops > $this->maxLoops) {
             return false;
         } else {
-            return array(null, 0);
+            return $prev;
         }
     }
 
