@@ -39,6 +39,9 @@ class ConditionalExitStrategy implements ExitStrategy
     }
 
     function preSelect ($prev=null) {
+        if ($prev === false) {
+            return false;
+        }
         $hasConsumers = false;
         foreach ($this->conn->getChannels() as $chan) {
             if ($chan->canListen()) {

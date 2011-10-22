@@ -39,7 +39,7 @@ define("CONNECTION_CONF", realpath(__DIR__ . '/configs/exstrats.xml'));
 
 
 if (! is_file(CONNECTION_CONF)) {
-    printf("Fatal: cannnot find connection config %s\n", CONNECTION_CONF);
+    warn("Fatal: cannnot find connection config %s\n", CONNECTION_CONF);
     die;
 }
 
@@ -146,13 +146,24 @@ class ExitStratDemo implements amqp\Consumer, amqp\ChannelEventHandler
 
     /** @override \amqphp\ChannelEventHandler */
     public function publishReturn (wire\Method $m) {
-        printf("Your message was rejected: %s [%d]\n", $m->getField('reply-text'), $m->getField('reply-code'));
+        info("Your message was rejected: %s [%d]\n", $m->getField('reply-text'), $m->getField('reply-code'));
         $this->requests--;
     }
 
     /** @override \amqphp\ChannelEventHandler */
     public function publishNack (wire\Method $m) { }
 }
+
+
+/**
+ * Use or replace this to test the callback exit strategy
+ */
+function randomExitController () {
+    $r = ((rand(0,25) % 25) != 0);
+    info("Random exit controller invoked, returns %d", $r);
+    return $r;
+}
+
 
 $USAGE = sprintf("Usage: php demo-exit-strategies.php [switches]
 

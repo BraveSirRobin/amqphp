@@ -25,7 +25,14 @@ use amqphp\wire;
 
 
 
-
+/**
+ * This exit strategy counts the  number of times the underlying event
+ * loop breaks and forces an exit  after a specified number of breaks.
+ * NOTE: this  does _NOT_ mean the  same as a "max  number of messages
+ * received"  - a  single  break of  an event  loop  can deliver  many
+ * messages, or indeed deliver no message, for example if a very large
+ * message is being received in many parts.
+ */
 class MaxloopExitStrategy implements ExitStrategy
 {
     /** Config param - max loops value */
@@ -35,11 +42,11 @@ class MaxloopExitStrategy implements ExitStrategy
     private $nLoops;
 
     function configure ($sMode, $ml=null) {
-        if (! is_int($ml) || $ml == 0) {
-            trigger_error("Select mode - invalid maxloops params", E_USER_WARNING);
+        if (! (is_int($ml) || is_numeric($ml)) || $ml == 0) {
+            trigger_error("Select mode - invalid maxloops params : '$ml'", E_USER_WARNING);
             return false;
         } else {
-            $this->maxLoops = $ml;
+            $this->maxLoops = (int) $ml;
             return true;
         }
     }
@@ -50,7 +57,7 @@ class MaxloopExitStrategy implements ExitStrategy
 
     function preSelect ($prev=null) {
         if ($prev === false) {
-            return $prev;
+            return false;
         }
         if (++$this->nLoops > $this->maxLoops) {
             return false;

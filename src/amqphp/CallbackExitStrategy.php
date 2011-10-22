@@ -46,6 +46,9 @@ class CallbackExitStrategy implements ExitStrategy
     function init (Connection $conn) {}
 
     function preSelect ($prev=null) {
+        if ($prev === false) {
+            return false;
+        }
         if (true !== call_user_func_array($this->cb, $this->args)) {
             return false;
         } else {
