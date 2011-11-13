@@ -19,11 +19,11 @@ First, publish some messages:
 
     php php producer.php --message="Hello, world" --repeat=5
 
-Now, read these back from the broker using get:
+Now, read one of these back from the broker using get:
 
     php get.php
 
-You should have 3 left - read these back using consume:
+You should have 4 left - read these back using consume:
 
     php consumer.php --strat="trel 1 0"
 
