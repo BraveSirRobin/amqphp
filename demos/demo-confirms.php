@@ -24,6 +24,10 @@ use amqphp as amqp;
 use amqphp\protocol;
 use amqphp\wire;
 
+
+// DEPRECATED - add a switch to the main producer script to allow this
+// to do confirms instead of having a separate demo
+
 require __DIR__ . '/demo-loader.php';
 
 
