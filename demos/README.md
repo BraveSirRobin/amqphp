@@ -9,7 +9,7 @@ There are 3 scripts to demostrate the most basic usage of **Amqphp**:
  3. consumer.php - set up a consumer to receive messages.
 
 The first  of these is  very simple, the  other 2 accept  command line
-options  which vary  their behaviour,  use  a --help  switch for  more
+options which  vary their  behaviour, use a  `--help` switch  for more
 information.
 
 
