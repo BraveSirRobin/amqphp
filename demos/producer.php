@@ -4,9 +4,13 @@ use amqphp as amqp;
 use amqphp\protocol;
 use amqphp\wire;
 
-require __DIR__ . '/demo-loader.php';
+require __DIR__ . '/class-loader.php';
 
-$USAGE = "USAGE: php demo-multi-producer.php [arguments]
+/**
+ * Parse command line options
+ */
+
+$USAGE = sprintf("USAGE: php %s [arguments]
 
 A simple  message producer,  messages can  be consumed  by any  of the
 Amqphp demo consumers.
@@ -19,14 +23,18 @@ Paramers:
   --repeat [integer]
     How many times to send the message
 
-  --conn {0,1}
-    Sets  target  connections,  by  default   you  can  publish  to  2
-    connections,  use  multiple  arguments   to  publish  to  multiple
-    connections.
-";
+  --confirms
+    Switch on the streaming confirms feature (default false)
 
-// Grab run options from the command line.
-$conf = getopt('', array('help', 'message:', 'repeat:', 'conn:'));
+  --mandatory
+    Publish messages with mandatory=true (default false)
+
+  --immediate
+    Publish messages with immediate=true (default false)
+", basename(__FILE__));
+
+/** Grab run options from the command line. */
+$conf = getopt('', array('help', 'message:', 'repeat:', 'confirms', 'mandatory', 'immediate'));
 
 if (array_key_exists('help', $conf)) {
     echo $USAGE;
@@ -45,71 +53,107 @@ if (array_key_exists('repeat', $conf) && is_numeric($conf['repeat'])) {
     $N = 1;
 }
 
-if (array_key_exists('conn', $conf)) {
-    if (is_array($conf['conn'])) {
-        $tcons = array_values($conf['conn']);
-    } else {
-        $tcons = array($conf['conn']);
+$confirms = array_key_exists('confirms', $conf);
+$mandatory = array_key_exists('mandatory', $conf);
+$immediate = array_key_exists('immediate', $conf);
+
+/**
+ * A  Very simple  channel event  handler, simply  saves  all incoming
+ * events to be reported on later.
+ */
+class DemoCEH implements amqp\ChannelEventHandler
+{
+    public $confirms = array();
+    public $returns = array();
+    public $nacks = array();
+
+    function publishConfirm (wire\Method $meth) {
+        $this->confirms[] = $meth->getField('delivery-tag');
     }
-} else {
-    $tcons = array(0);
+
+    function publishReturn (wire\Method $meth) {
+        $this->returns[] = $meth->getField('delivery-tag');
+    }
+
+    function publishNack (wire\Method $meth) {
+        $this->nacks[] = $meth->getField('delivery-tag');
+    }
+}
+
+function info () {
+    $args = func_get_args();
+    if (! $fmt = array_shift($args)) {
+        return;
+    }
+    $fmt = sprintf("[INFO] %s\n", $fmt);
+    vprintf($fmt, $args);
 }
 
 
+/** Confirm selected options to the user */
+info("Ready to publish:\n Message '%s..' \n Send %d times\n mandatory: %d\n" .
+       " immediate: %d\n confirms: %d", substr($content, 0, 24), $N, $mandatory,
+       $immediate, $confirms);
+
+
+/** Initialise the broker connection and send the messages. */
 $publishParams = array(
     'content-type' => 'text/plain',
     'content-encoding' => 'UTF-8',
     'routing-key' => '',
-    'mandatory' => false,
-    'immediate' => false,
+    'mandatory' => $mandatory,
+    'immediate' => $immediate,
     'exchange' => 'most-basic-ex'); // Must match exchange in multi-producer.xml
 
 
 $su = new amqp\Factory(__DIR__ . '/configs/new/producer.xml');
-$_conns = $su->getConnections();
+$conn = $su->getConnections();
+$conn = array_pop($conn);
+$chan = $conn->getChannel(1);
 
-$conns = array();
-foreach ($_conns as $i => $c) {
-    if (in_array($i, $tcons)) {
-        $conns[] = $c;
-    }
+
+$ceh = new DemoCEH;
+$chan->setEventHandler($ceh);
+
+if ($confirms) {
+    $chan->setConfirmMode();
 }
 
-if (! $conns) {
-    printf("No valid connections selected!\n");
-    die;
-}
-
-
-printf("Ready: Publish message '%s..' to connection(s) [%s] %d times.\n",
-       substr($content, 0, 8), implode(', ', array_keys($conns)), $N);
 
 
 
-$cons = array();
-foreach ($conns as $con) {
-    $chans = $con->getChannels();
-    $chan = array_pop($chans);
-    $basicP = $chan->basic('publish', $publishParams);
-    $cons[] = array($con, $chan, $basicP);
-}
-
+$basicP = $chan->basic('publish', $publishParams);
+$basicP->setContent($content);
 
 
 
 $n = 0;
 for ($i = 0; $i < $N; $i++) {
-    foreach ($cons as $c) {
-        $c[2]->setContent($content);
-        $c[1]->invoke($c[2]);
-        $n++;
+    $chan->invoke($basicP);
+    $n++;
+}
+
+info("Published %d messages", $n);
+
+if ($confirms || $mandatory || $immediate) {
+    /** Never wait more than 3 seconds for responses */
+    $conn->pushExitStrategy(amqp\STRAT_TIMEOUT_REL, 3, 0);
+    if ($confirms) {
+        /** In confirm mode,  add an additional rule so  that the loop
+           exits as soon as all confirms have returned. */
+        $conn->pushExitStrategy(amqp\STRAT_COND);
     }
+    $evl = new amqp\EventLoop;
+    $evl->addConnection($conn);
+    info("Begin listening for responses...");
+    $evl->select();
+    info("Response receiving is complete, responses received are:\n " .
+         "confirms: %d\n returns %d\n nacks: %d", count($ceh->confirms),
+         count($ceh->returns), count($ceh->nacks));
 }
 
 
-foreach ($cons as $c) {
-    $c[1]->shutdown(); // Shut down channel only.
-    $c[0]->shutdown();
-}
+$conn->shutdown();
 
-printf("Test complete, published %d messages\n", $n);
+info("Process is complete");
+
