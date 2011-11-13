@@ -120,12 +120,8 @@ if ($confirms) {
 }
 
 
-
-
 $basicP = $chan->basic('publish', $publishParams);
 $basicP->setContent($content);
-
-
 
 $n = 0;
 for ($i = 0; $i < $N; $i++) {
@@ -135,6 +131,8 @@ for ($i = 0; $i < $N; $i++) {
 
 info("Published %d messages", $n);
 
+/** If  required, enter  a select  loop  in order  to receive  message
+   responses. */
 if ($confirms || $mandatory || $immediate) {
     /** Never wait more than 3 seconds for responses */
     $conn->pushExitStrategy(amqp\STRAT_TIMEOUT_REL, 3, 0);
@@ -142,6 +140,13 @@ if ($confirms || $mandatory || $immediate) {
         /** In confirm mode,  add an additional rule so  that the loop
            exits as soon as all confirms have returned. */
         $conn->pushExitStrategy(amqp\STRAT_COND);
+    } else {
+        /** Add a callback exit strategy  so that we can exit early if
+           all messages are returned */
+        $callback = function () use ($n, $ceh) {
+            return (count($ceh->returns) < $n);
+        };
+        $conn->pushExitStrategy(amqp\STRAT_CALLBACK, $callback);
     }
     $evl = new amqp\EventLoop;
     $evl->addConnection($conn);
