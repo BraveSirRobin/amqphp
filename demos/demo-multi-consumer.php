@@ -19,6 +19,10 @@
  * 02110-1301 USA
  */
 
+
+// DEPRECATED - Demo does  nothing and the multi-consumer aspect isn't
+// particularly interesting either.
+
 use amqphp as amqp;
 use amqphp\protocol;
 use amqphp\wire;

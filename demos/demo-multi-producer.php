@@ -65,7 +65,7 @@ $publishParams = array(
     'exchange' => 'most-basic-ex'); // Must match exchange in multi-producer.xml
 
 
-$su = new amqp\Factory(__DIR__ . '/configs/multi-producer.xml');
+$su = new amqp\Factory(__DIR__ . '/configs/new/producer.xml');
 $_conns = $su->getConnections();
 
 $conns = array();
