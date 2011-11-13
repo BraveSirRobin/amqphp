@@ -15,6 +15,10 @@ information.
 
 ## Examples.
 
+Before you  run the  demos you must  set up  an Amqp broker,  edit the
+connection parameters in  configs/rabbit1-host-config.xml to suit your
+environment.
+
 First, publish some messages:
 
     php php producer.php --message="Hello, world" --repeat=5
