@@ -25,10 +25,10 @@ use amqphp as amqp;
 use amqphp\protocol;
 use amqphp\wire;
 
-require __DIR__ . '/demo-loader.php';
+require __DIR__ . '/class-loader.php';
 
 
-$su = new amqp\Factory(__DIR__ . '/configs/multi-producer.xml');
+$su = new amqp\Factory(__DIR__ . '/configs/basic-connection.xml');
 $cons = $su->getConnections();
 
 $conn = reset($cons);
@@ -48,7 +48,7 @@ $response = $chan->invoke($getCommand);
 
 // Examine the response to see what we've got...
 if ($response->amqpClass == 'basic.get-empty') {
-    printf("There are no messages on the queue %s, try running the demo-producer script to add some first!\n", $Q);
+    printf("There are no messages on the queue %s, try running the producer.php script to add some first!\n", $Q);
 } else if ($response->amqpClass == 'basic.get-ok') {
     printf("1 Message read from %s (%d messages remain on the queue):\n%s\n", $Q, $response->getField('message-count'), $response->getContent());
     // Now, remember that unless you 'ack' this message, it'll stay on the broker

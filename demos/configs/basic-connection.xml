@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<!--
+The basic demos all use this as the connection setup.
+-->
+<setup xmlns:xi="http://www.w3.org/2001/XInclude">
+  <connection>
+    <impl>\amqphp\Connection</impl>
+    <constr_args>
+      <xi:include href="rabbit1-host-config.xml"/>
+    </constr_args>
+
+    <channel>
+      <xi:include href="broker-common-setup.xml"/>
+    </channel>
+  </connection>
+</setup>
