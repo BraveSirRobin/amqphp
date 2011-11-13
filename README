@@ -52,7 +52,7 @@ this version can be used with  a class loader, for example if you want
 to autoload  the Amqphp packages.   There is no  functional difference
 between the 2 packages, they are  produced from the same set of source
 files.  For  more info on how to  use each kind of  package, check the
-demo-loader.php file in the demos/ directory.
+class-loader.php file in the demos/ directory.
 
 To build  the packages  yourself you'll need  to install  phing first,
 then simply  `cd` in to  the Amqphp base  dir and type  `phing`.  Note

@@ -6,7 +6,7 @@
 use amqphp as amqp,
     amqphp\wire;
 
-require_once __DIR__ . '/../demo-loader.php';
+require_once __DIR__ . '/../class-loader.php';
 
 
 class RpcClient implements amqp\Consumer, amqp\ChannelEventHandler

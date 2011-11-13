@@ -11,3 +11,9 @@
  * Alter the build sequence to refuse  to build in cases where a class
    and  method  field  name   clashes.   This  should  mean  that  the
    simplified field handling in the wire\Method class is safe.
+
+ * Consider persistence WRT Connection exit strategy helpers.
+
+ * Ensure that  if a channel  is removed, all undelivered  and partial
+   messages for that  channel are also removed.  Warn  if content gets
+   discarded.

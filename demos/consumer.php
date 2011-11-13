@@ -32,10 +32,10 @@ use amqphp\wire;
 // HACK : Manually pre-load the connection class so that Amqphp consts
 // are available - these cannot be loaded by the class loader.
 require __DIR__ . '/../src/amqphp/Connection.php';
-require __DIR__ . '/demo-loader.php';
+require __DIR__ . '/class-loader.php';
 
 
-define("CONNECTION_CONF", realpath(__DIR__ . '/configs/exstrats.xml'));
+define("CONNECTION_CONF", realpath(__DIR__ . '/configs/basic-connection.xml'));
 
 
 if (! is_file(CONNECTION_CONF)) {

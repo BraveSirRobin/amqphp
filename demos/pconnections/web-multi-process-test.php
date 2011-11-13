@@ -40,7 +40,7 @@ if (0) {
                                       'cpf',
                                       DIRECTORY_SEPARATOR));
 }
-require LIBDIR . DIRECTORY_SEPARATOR . 'demo-loader.php';
+require LIBDIR . DIRECTORY_SEPARATOR . 'class-loader.php';
 require LIBDIR . DIRECTORY_SEPARATOR . 'web-common.php';
 
 
