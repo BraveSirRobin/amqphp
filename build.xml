@@ -181,7 +181,7 @@ Prepare the NSPF and CPF source trees.
     <exec command="scp demos/pconnections/web-controls-multi.phtml demos/pconnections/web-controls-single.phtml phpvm:${webdepl.basedir}/${webdepl.viewdir}" dir="${project.basedir}"/>
 
     <!-- libs -->
-    <exec command="scp demos/Setup.php demos/pconnections/web-common.php demos/demo-loader.php phpvm:${webdepl.basedir}/${webdepl.libdir}" dir="${project.basedir}"/>
+    <exec command="scp demos/Setup.php demos/pconnections/web-common.php demos/class-loader.php phpvm:${webdepl.basedir}/${webdepl.libdir}" dir="${project.basedir}"/>
 
     <!-- configs -->
     <exec command="scp demos/configs/web-multi.xml demos/configs/broker-common-setup.xml phpvm:${webdepl.basedir}/${webdepl.confdir}" dir="${project.basedir}"/>

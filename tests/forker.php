@@ -24,7 +24,7 @@ use amqphp as amqp;
 use amqphp\protocol;
 use amqphp\wire;
 
-require dirname(__DIR__) . '/demos/demo-loader.php';
+require dirname(__DIR__) . '/demos/class-loader.php';
 
 
 
