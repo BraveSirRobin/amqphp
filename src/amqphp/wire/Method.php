@@ -363,29 +363,6 @@ class Method implements \Serializable
 
     function getFields () { return array_merge($this->classFields, $this->fields); }
 
-    /** @deprecated  **/
-    function setClassField ($name, $val) {
-        trigger_error('Class fields are no longer distinguished from method fields in ' .
-                      'the amqphp\wire\Method implementation, use setField instead.',
-                      E_USER_DEPRECATED);
-        return $this->setField($name, $val);
-    }
-
-    /** @deprecated  **/
-    function getClassField ($name) {
-        trigger_error('Class fields are no longer distinguished from method fields in ' .
-                      'the amqphp\wire\Method implementation, use getField instead.',
-                      E_USER_DEPRECATED);
-        return $this->getField($name);
-    }
-
-    /** @deprecated  **/
-    function getClassFields () {
-        trigger_error('Class fields are no longer distinguished from method fields in ' .
-                      'the amqphp\wire\Method implementation, use getFields instead.',
-                      E_USER_DEPRECATED);
-        return $this->getFields();
-    }
 
     function setContent ($content) {
         if ($this->mode == 'read') {

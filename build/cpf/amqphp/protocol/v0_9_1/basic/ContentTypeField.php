@@ -1,2 +1,0 @@
-<?php
- namespace amqphp\protocol\v0_9_1\basic; class ContentTypeField extends \amqphp\protocol\v0_9_1\ShortstrDomain implements \amqphp\protocol\abstrakt\XmlSpecField { function getSpecFieldName() { return 'content-type'; } function getSpecFieldDomain() { return 'shortstr'; } }

@@ -480,12 +480,6 @@ class Channel
     }
 
 
-    function onSelectStart () {
-        trigger_error("Channel->onSelectStart is deprecated - use startAllConsumers instead", E_USER_DEPRECATED);
-        return $this->startAllConsumers();
-    }
-
-
     /**
      * Invoke  the   basic.consume  amqp  command   for  all  attached
      * consumers which are in the READY_WAIT state.

@@ -1,2 +1,0 @@
-<?php
- namespace amqphp\protocol\v0_9_1\queue; class DeclareOkConsumerCountField extends \amqphp\protocol\v0_9_1\LongDomain implements \amqphp\protocol\abstrakt\XmlSpecField { function getSpecFieldName() { return 'consumer-count'; } function getSpecFieldDomain() { return 'long'; } }

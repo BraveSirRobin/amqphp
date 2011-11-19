@@ -1,2 +1,0 @@
-<?php
- namespace amqphp\protocol\abstrakt; abstract class DomainFactory { protected static $Cache; final static function IsDomain ($dName) { return isset(static::$Cache[$dName]); } final static function GetDomain ($dName) { if (isset(static::$Cache[$dName])) { return (is_string(static::$Cache[$dName])) ? (static::$Cache[$dName] = new static::$Cache[$dName]) : static::$Cache[$dName]; } } final static function Validate ($val, $dName) { return static::GetDomain($dName)->validate($val); } } 

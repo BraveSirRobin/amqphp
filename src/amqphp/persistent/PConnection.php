@@ -121,13 +121,6 @@ class PConnection extends \amqphp\Connection implements \Serializable
             trigger_error("PConnection is connected already", E_USER_WARNING);
             return;
         }
-        // Backward compat: if connection params are passed here, deal with them and emit a deprecated warning.
-        if (($args = func_get_args()) && is_array($args[0])) {
-            trigger_error("Setting connection parameters via. the connect method is deprecated, please specify " .
-                          "these parameters in the Connection class constructor instead.", E_USER_DEPRECATED);
-            $this->setConnectionParams($args[0]);
-        }
-
 
         $this->initSocket();
         $this->sock->connect();

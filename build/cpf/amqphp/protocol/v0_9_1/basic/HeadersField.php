@@ -1,2 +1,0 @@
-<?php
- namespace amqphp\protocol\v0_9_1\basic; class HeadersField extends \amqphp\protocol\v0_9_1\TableDomain implements \amqphp\protocol\abstrakt\XmlSpecField { function getSpecFieldName() { return 'headers'; } function getSpecFieldDomain() { return 'table'; } }

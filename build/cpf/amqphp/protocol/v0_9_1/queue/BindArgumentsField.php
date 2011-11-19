@@ -1,2 +1,0 @@
-<?php
- namespace amqphp\protocol\v0_9_1\queue; class BindArgumentsField extends \amqphp\protocol\v0_9_1\TableDomain implements \amqphp\protocol\abstrakt\XmlSpecField { function getSpecFieldName() { return 'arguments'; } function getSpecFieldDomain() { return 'table'; } }
