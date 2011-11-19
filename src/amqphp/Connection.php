@@ -196,12 +196,6 @@ class Connection
             trigger_error("Connection is connected already", E_USER_WARNING);
             return;
         }
-        // Backward compat: if connection params are passed here, deal with them and emit a deprecated warning.
-        if (($args = func_get_args()) && is_array($args[0])) {
-            trigger_error("Setting connection parameters via. the connect method is deprecated, please specify " .
-                          "these parameters in the Connection class constructor instead.", E_USER_DEPRECATED);
-            $this->setConnectionParams($args[0]);
-        }
         $this->initSocket();
         $this->sock->connect();
         $this->doConnectionStartup();
@@ -315,24 +309,8 @@ class Connection
         return substr($w->getBuffer(), 4);
     }
 
-    /**
-     * Return an existing channel.
-     *
-     * [Current implementation is  deprecated,  previously you  called
-     * this to  open a  new channel (without  a parameter) or  with an
-     * integer to retreive an existing channel.]
-     */
-    function getChannel ($num=false) {
-        if ($num === false) {
-            trigger_error("Opening new channels with the \amqp\Connection - " .
-                          "use \amqp\Connection->openChannel() instead", E_USER_DEPRECATED);
-            return $this->openChannel();
-        }
-        return $this->newGetChannel($num);
-    }
-
-    /** TODO: rename to getChannel after deprecation period */
-    private function newGetChannel ($num) {
+    /** Returns the given channel. */
+    function getChannel ($num) {
         return $this->chans[$num];
     }
 
@@ -450,8 +428,9 @@ class Connection
         switch ($meth->amqpClass) {
         case 'connection.close':
             $pl = $this->getProtocolLoader();
-            if ($culprit = $pl('ClassFactory', 'GetMethod', array($meth->getField('class-id'), $meth->getField('method-id')))) {
-                $culprit = $culprit->amqpClass;
+            if ($culprit = $pl('ClassFactory', 'GetMethod', array($meth->getField('class-id'),
+                                                                  $meth->getField('method-id')))) {
+                $culprit = $culprit->getSpecName();
             } else {
                 $culprit = '(Unknown or unspecified)';
             }

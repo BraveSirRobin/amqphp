@@ -184,8 +184,10 @@ class Factory
                     $_chan->setEventHandler($_evh);
                 }
                 $_chans[] = $_chan;
-                if (count($chan->method) > 0) {
-                    $ret[] = $this->runMethodSequence($_chan, $chan->xpath('./method'));
+                $rMeths = $chan->xpath('.//method');
+
+                if (count($rMeths) > 0) {
+                    $ret[] = $this->runMethodSequence($_chan, $rMeths);
                 }
                 if (count($chan->confirm_mode) > 0 && $this->kast($chan->confirm_mode, 'boolean')) {
                     $_chan->setConfirmMode();

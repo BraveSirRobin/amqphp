@@ -185,8 +185,9 @@ class Channel
             return false;
         case 'channel.close':
             $pl = $this->myConn->getProtocolLoader();
-            if ($culprit = $pl('ClassFactory', 'GetMethod', array($meth->getField('class-id'), $meth->getField('method-id')))) {
-                $culprit = $culprit->amqpClass;
+            if ($culprit = $pl('ClassFactory', 'GetMethod', array($meth->getField('class-id'),
+                                                                  $meth->getField('method-id')))) {
+                $culprit = $culprit->getSpecName();
             } else {
                 $culprit = '(Unknown or unspecified)';
             }
@@ -477,12 +478,6 @@ class Channel
             }
         }
         return $tags;
-    }
-
-
-    function onSelectStart () {
-        trigger_error("Channel->onSelectStart is deprecated - use startAllConsumers instead", E_USER_DEPRECATED);
-        return $this->startAllConsumers();
     }
 
 

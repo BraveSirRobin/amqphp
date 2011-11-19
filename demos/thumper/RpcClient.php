@@ -68,6 +68,7 @@ class RpcClient implements amqp\Consumer, amqp\ChannelEventHandler
         $evh->addConnection($this->connection);
         $evh->select();
         $this->channel->removeAllConsumers();
+        return $this->replies;
     }
 
 

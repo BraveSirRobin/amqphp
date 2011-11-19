@@ -1,2 +1,0 @@
-<?php
- namespace amqphp\protocol\v0_9_1\basic; class CancelOkConsumerTagField extends \amqphp\protocol\v0_9_1\ConsumerTagDomain implements \amqphp\protocol\abstrakt\XmlSpecField { function getSpecFieldName() { return 'consumer-tag'; } function getSpecFieldDomain() { return 'consumer-tag'; } }

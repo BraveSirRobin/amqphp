@@ -1,2 +1,0 @@
-<?php
- namespace amqphp\wire; use amqphp\protocol as proto; use amqphp\protocol\abstrakt; class TableField extends Protocol { protected $val; protected $type; function __construct($val, $type=false) { $this->val = $val; $this->type = ($type === false) ? $this->getTableTypeForValue($val) : $type; } function getValue() { return $this->val; } function setValue($val) { $this->val = $val; } function getType() { return $this->type; } function __toString() { return (string) $this->val; } } 

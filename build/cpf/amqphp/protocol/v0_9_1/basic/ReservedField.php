@@ -1,2 +1,0 @@
-<?php
- namespace amqphp\protocol\v0_9_1\basic; class ReservedField extends \amqphp\protocol\v0_9_1\ShortstrDomain implements \amqphp\protocol\abstrakt\XmlSpecField { function getSpecFieldName() { return 'reserved'; } function getSpecFieldDomain() { return 'shortstr'; } }

@@ -103,7 +103,7 @@ $publishParams = array(
     'routing-key' => '',
     'mandatory' => $mandatory,
     'immediate' => $immediate,
-    'exchange' => 'most-basic-ex'); // Must match exchange in multi-producer.xml
+    'exchange' => 'most-basic-ex');
 
 
 $su = new amqp\Factory(__DIR__ . '/configs/basic-connection.xml');
