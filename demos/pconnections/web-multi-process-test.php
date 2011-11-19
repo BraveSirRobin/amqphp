@@ -134,7 +134,6 @@ class MultiProcessPCTest
 
         // Attach an output alert function to any connected consumers
         $nf = function (wire\Method $meth, amqp\Channel $chan, $cons) {
-            error_log(sprintf("[multi-recv:%s]\n%s\n", $cons->name, substr($meth->getContent(), 0, 10)));
             MultiProcessPCTest::$CC++;
         };
         foreach ($conn->getChannels() as $chan) {

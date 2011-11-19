@@ -208,7 +208,11 @@ class PConnHelper
         if (array_key_exists($ckey, $this->cache)) {
             foreach ($this->cache[$ckey]->getChannels() as $chan) {
                 if ($chan->getChanId() == $chanId) {
-                    $cons = new $impl($this->Q);
+                    $cons = new $impl(array('queue' => $this->Q,
+                                            'no-local' => false,
+                                            'no-ack' => false,
+                                            'exclusive' => false,
+                                            'no-wait' => false));
                     $chan->addConsumer($cons);
                     return true;
                 }
@@ -263,7 +267,7 @@ class PConnHelper
                 $this->cache[$k]->pushExitStrategy(amqp\STRAT_TIMEOUT_REL, 1, 500000);
                 foreach ($this->cache[$k]->getChannels() as $chan) {
                     foreach ($chan->getConsumerTags() as $ctag) {
-                        $chan->getConsumerByTag()->nf = array('PConnHelper', 'ConsumerCallback');
+                        $chan->getConsumerByTag($ctag)->nf = array('PConnHelper', 'ConsumerCallback');
                     }
                 }
                 $evl->addConnection($this->cache[$k]);
@@ -369,7 +373,7 @@ class PConnHelperAlt extends PConnHelper
                     // Found some connections for this process, wake em up!
                     foreach ($k as $key => $connParams) {
                         $this->cache[$key] = new pconn\PConnection($connParams);
-                        $this->cache[$key]->setPersistenceHelperImpl('\\amqphp\\persistent\\FilePersistenceHelper');
+                        $this->cache[$key]->pHelperImpl = '\\amqphp\\persistent\\FilePersistenceHelper';
                         $this->cache[$key]->connect();
                         $this->altCache[$key] = $connParams;
                     }
@@ -384,7 +388,7 @@ class PConnHelperAlt extends PConnHelper
      */
     function addConnection ($key, $params) {
         parent::addConnection($key, $params);
-        $this->cache[$key]->setPersistenceHelperImpl('\\amqphp\\persistent\\FilePersistenceHelper');
+        $this->cache[$key]->pHelperImpl = '\\amqphp\\persistent\\FilePersistenceHelper';
         $this->altCache[$key] = $params;
     }
 }
