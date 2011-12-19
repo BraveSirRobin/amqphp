@@ -31,14 +31,32 @@ Paramers:
 
   --immediate
     Publish messages with immediate=true (default false)
+
+  --exchange (most-basic-ex)
+    Publish to this exchange
+
+  --routing-key
+    Use this routing key
 ", basename(__FILE__));
 
 /** Grab run options from the command line. */
-$conf = getopt('', array('help', 'message:', 'repeat:', 'confirms', 'mandatory', 'immediate'));
+$conf = getopt('', array('help', 'message:', 'repeat:', 'confirms', 'mandatory', 'immediate', 'exchange:', 'routing-key:'));
 
 if (array_key_exists('help', $conf)) {
     echo $USAGE;
     die;
+}
+
+if (array_key_exists('exchange', $conf)) {
+    $exchange = $conf['exchange'];
+} else {
+    $exchange = 'most-basic-ex';
+}
+
+if (array_key_exists('routing-key', $conf)) {
+    $routingKey = $conf['routing-key'];
+} else {
+    $routingKey = '';
 }
 
 if (array_key_exists('message', $conf)) {
@@ -92,18 +110,18 @@ function info () {
 
 /** Confirm selected options to the user */
 info("Ready to publish:\n Message '%s..' \n Send %d times\n mandatory: %d\n" .
-       " immediate: %d\n confirms: %d", substr($content, 0, 24), $N, $mandatory,
-       $immediate, $confirms);
+       " immediate: %d\n confirms: %d\n routing-key: %s\n exchange: %s\n", substr($content, 0, 24),
+	$N, $mandatory, $immediate, $confirms, $routingKey, $exchange);
 
 
 /** Initialise the broker connection and send the messages. */
 $publishParams = array(
     'content-type' => 'text/plain',
     'content-encoding' => 'UTF-8',
-    'routing-key' => '',
+    'routing-key' => $routingKey,
     'mandatory' => $mandatory,
     'immediate' => $immediate,
-    'exchange' => 'most-basic-ex');
+    'exchange' => $exchange);
 
 
 $su = new amqp\Factory(__DIR__ . '/configs/basic-connection.xml');
