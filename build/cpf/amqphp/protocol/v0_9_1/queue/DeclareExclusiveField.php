@@ -1,0 +1,2 @@
+<?php
+ namespace amqphp\protocol\v0_9_1\queue; class DeclareExclusiveField extends \amqphp\protocol\v0_9_1\BitDomain implements \amqphp\protocol\abstrakt\XmlSpecField { function getSpecFieldName() { return 'exclusive'; } function getSpecFieldDomain() { return 'bit'; } }

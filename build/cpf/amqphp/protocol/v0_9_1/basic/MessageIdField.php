@@ -1,0 +1,2 @@
+<?php
+ namespace amqphp\protocol\v0_9_1\basic; class MessageIdField extends \amqphp\protocol\v0_9_1\ShortstrDomain implements \amqphp\protocol\abstrakt\XmlSpecField { function getSpecFieldName() { return 'message-id'; } function getSpecFieldDomain() { return 'shortstr'; } }

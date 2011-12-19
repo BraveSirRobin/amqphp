@@ -1,0 +1,2 @@
+<?php
+ namespace amqphp\protocol\abstrakt; abstract class XmlSpecDomain { protected $name; protected $protocolType; final function getSpecDomainName () { return $this->name; } final function getSpecDomainType () { return $this->protocolType; } function validate($subject) { return true; } } 
