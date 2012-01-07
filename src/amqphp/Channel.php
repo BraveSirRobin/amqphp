@@ -247,6 +247,8 @@ class Channel
             //   basic.cancel from the client). This allows clients to
             //   be notified  of the loss  of consumers due  to events
             //   such as queue deletion"
+            // ALSO: this  has a bearing  on the implementation  of HA
+            // queues.
         default:
             throw new \Exception("Received unexpected channel delivery:\n{$meth->amqpClass}", 87998);
         }

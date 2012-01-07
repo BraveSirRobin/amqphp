@@ -17,3 +17,15 @@
  * Ensure that  if a channel  is removed, all undelivered  and partial
    messages for that  channel are also removed.  Warn  if content gets
    discarded.
+
+ * Add support for consumer cancellation notifications:
+   http://www.rabbitmq.com/extensions.html#consumer-cancel-notify
+
+ * Figure out how to support RMQ HA queues:
+   http://www.rabbitmq.com/ha.html
+   In  particular:  "As  a  result  of  the  requeuing,  clients  that
+   re-consume from  the queue  must be aware  that they are  likely to
+   subsequently receive messages that they have seen previously"
+
+ * Add  support  for configurable  multiple  acks, i.e.  automatically
+   buffer up to N acks and send as a single nack.

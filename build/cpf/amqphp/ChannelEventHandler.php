@@ -1,2 +1,1 @@
-<?php
- namespace amqphp; use amqphp\protocol; use amqphp\wire; interface ChannelEventHandler { function publishConfirm (wire\Method $meth); function publishReturn (wire\Method $meth); function publishNack(wire\Method $meth); }
+/home/robin/Templates/CMP/src/amqphp/ChannelEventHandler.php
