@@ -46,7 +46,7 @@ if (! is_file(CONNECTION_CONF)) {
 
 /** Demo implementation class, is both  a consumer and a channel event
  * handler. */
-class ExitStratDemo implements amqp\Consumer, amqp\ChannelEventHandler
+class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
 {
     /** CLI Exit strategy identifier map */
     public static $StratMap = array(
@@ -64,6 +64,8 @@ class ExitStratDemo implements amqp\Consumer, amqp\ChannelEventHandler
     private $connection;
     private $channel;
 
+    private $consumeParams = array();
+    private $consumePointer;
 
     function __construct ($config) {
         // Set up connection using a Factory
@@ -86,8 +88,17 @@ class ExitStratDemo implements amqp\Consumer, amqp\ChannelEventHandler
     }
 
 
-    /** Create a consume session with this object as the handler. */
-    function addConsumeSession () {
+    /**
+     * Register a consume  session with the local channel  and add the
+     * given consume params to the  local stack - these will be picked
+     * up when the local connection is added to an event loop.
+     */
+    function addConsumeSession ($queue, $noLocal=false, $noAck=false, $exclusive=false) {
+        $this->consumeParams[] = array('queue' => $queue,
+                                       'no-local' => $noLocal,
+                                       'no-ack' => $noAck,
+                                       'exclusive' => $exclusive,
+                                       'no-wait' => false);
         $this->channel->addConsumer($this);
     }
 
@@ -97,6 +108,7 @@ class ExitStratDemo implements amqp\Consumer, amqp\ChannelEventHandler
      */
     function runDemo () {
         info("Start consuming...");
+        $this->consumePointer = 0;
         $evl = new amqp\EventLoop;
         $evl->addConnection($this->connection);
         $evl->select();
@@ -131,13 +143,13 @@ class ExitStratDemo implements amqp\Consumer, amqp\ChannelEventHandler
     /** @override \amqphp\Consumer */
     function handleRecoveryOk (wire\Method $m, amqp\Channel $chan) { }
 
-    /** @override \amqphp\Consumer */
+    /**
+     * Called by the API, returns the local consume session parameters
+     * one at a time.
+     * @override \amqphp\Consumer
+     */
     function getConsumeMethod (amqp\Channel $chan) {
-        $cps = array('queue' => 'most-basic-q',
-                     'no-local' => false,
-                     'no-ack' => false,
-                     'exclusive' => false,
-                     'no-wait' => false);
+        $cps = $this->consumeParams[$this->consumePointer++];
         return $chan->basic('consume', $cps);
     }
 
@@ -165,7 +177,7 @@ function randomExitController () {
 }
 
 
-$USAGE = sprintf("Usage: php demo-exit-strategies.php [switches]
+$USAGE = sprintf('Usage: php consumer.php [switches]
 
 Starts a consumer  with a variable number of exit  strategies that are
 added from the command line.  Used  to test exit strategies and chains
@@ -173,18 +185,40 @@ of exit strategies.
 
 Switches are:
 
-  --strat  name [args,]  Adds a  strategy to  the connection  strategy
-    chain, you  can specify  multiple strategies
+  --strat "name [args,]" -  Adds a strategy to the connection strategy
+    chain, you can specify multiple strategies
 
-    name = {%s}
-    arg =  A whitespace separated list of strategy parameters
+      name: {%s}
+      arg:  Optional whitespace separated list of strategy parameters
 
-  --exit-message message
-    when the following message string  is received, exit the receiving
-    consumer
+    You can  specify multiple strategies  using more than  one --strat
+    option.
 
-  --num-cons  Sets up this many consumers (all bound to one object)
-", implode(', ', array_keys(ExitStratDemo::$StratMap)));
+  --exit-message message   -  when  the following  message  string  is
+    received, exit the receiving consumer
+
+  --consumer "queue [consume-args]"  Adds  a  consumer
+
+      queue:          Name of the queue to listen on
+      consume-args:   3 consumer setup flags, must be a sequence  of 3
+      t/f  values  corresponding   to  the  following  consumer  setup
+      properties, with the following defaults:
+                      no-local: f
+                      no-ack: f
+                      exclusive: f
+
+    You  can  add  more than  one  consumer  by  using more  than  one
+    --consumer option.
+
+
+Example:
+  This should work "out of the box":
+
+php consumer.php --strat "cond" \
+                 --strat "trel 5 0" \
+                 --consumer "most-basic-q" \
+                 --exit-when-message "break."
+', implode(', ', array_keys(MultiConsumer::$StratMap)));
 
 
 
@@ -212,18 +246,45 @@ function warn() {
 
 /** Create the demo client and configure it as per CLI args. */
 
-$opts = getopt('', array('help', 'strat:', 'num-cons:', 'exit-message:'));
+$opts = getopt('', array('help', 'strat:', 'consumer:', 'exit-message:'));
 if (array_key_exists('help', $opts)) {
     echo $USAGE;
     die;
 }
 
+
+
+// Load consumers from the command line args
+$consumeSessions = array();
+if (! array_key_exists('consumer', $opts)) {
+    printf("Error: you must specify at least one --consumer option\n");
+    die;
+}
+foreach ((array) $opts['consumer'] as $cOpt) {
+    $bits = explode(' ', $cOpt);
+    $queue = $bits[0];
+    $cFlags = array_key_exists(1, $bits)
+        ? $cFlags[1]
+        : 'fff';
+    if (strlen($cFlags) != 3) {
+        print("Error: invalid consumer switch, consume params option must contain exactly 3 characters.\n");
+        die;
+    }
+    $consumeSessions[] = array($queue,
+                               $cFlags[0] == 't',
+                               $cFlags[1] == 't',
+                               $cFlags[2] == 't');
+}
+
+
+
+
 info("Create demo object and connection..");
-$exd = new \ExitStratDemo(CONNECTION_CONF);
+$exd = new \MultiConsumer(CONNECTION_CONF);
 
 
 
-// Load exit strategies from the command line args
+// Apply exit strategies from the command line
 if (array_key_exists('strat', $opts)) {
     foreach ((array) $opts['strat'] as $strat) {
         $exd->addExitStrategy($strat);
@@ -231,17 +292,15 @@ if (array_key_exists('strat', $opts)) {
     }
 }
 
-if (array_key_exists('num-cons', $opts)) {
-    $numCons = (int) $opts['num-cons'];
-    info(" * Add %d consumer(s)\n", $opts['num-cons']);
-} else {
-    $numCons = 1;
+// Create consumers
+foreach ($consumeSessions as $cs) {
+    info("Add consume session: queue=%s, no-local=%s, no-ack=%s, exclusive=%s\n",
+         $cs[0],
+         ($cs[1] ? 't' : 'f'),
+         ($cs[2] ? 't' : 'f'),
+         ($cs[3] ? 't' : 'f'));
+    call_user_func_array(array($exd, 'addConsumeSession'), $cs);
 }
-
-for ($i = 0; $i < $numCons; $i++) {
-    $exd->addConsumeSession();
-}
-info("Initialised %d consumer sessions", $numCons);
 
 if (array_key_exists('exit-message', $opts)) {
     $exd->exitMessage = $opts['exit-message'];
