@@ -46,6 +46,7 @@ class Writer extends Protocol
                 return;
             }
         }
+
         $r = $this->{"write$implType"}($value);
         if ($implType === 'Boolean') {
             $this->binPackOffset++;
@@ -55,31 +56,24 @@ class Writer extends Protocol
     }
 
 
+
     /** @arg  mixed   $val   Either a pre-built Table or an array - arrays are used
         to construct a table to write. */
     private function writeTable ($val) {
         if (is_array($val)) {
             $val = new Table($val);
         } else if (! ($val instanceof Table)) {
-            // WARNING!  This code means that this functions will swallow scalars
-            // and turn them in to nothing
-            //trigger_error("Invalid table, cannot write", E_USER_WARNING);
             $val = array();
         }
-        $p = strlen($this->bin); // Rewind to here and write in the table length
+        $w = new Writer;
         foreach ($val as $fName => $field) {
-            $this->writeShortString($fName);
-            $this->writeShortShortUInt(ord($field->getType()));
-            $this->write($field->getValue(), $field->getType(), true);
+            $w->writeShortString($fName);
+            $w->writeShortShortUInt(ord($field->getType()));
+            $w->write($field->getValue(), $field->getType(), true); // Could recurse
         }
-        // Switcheroo the bin buffer so we cn re-use the native long u-int implementation
-        $p2 = strlen($this->bin);
-        $binSav = $this->bin;
-        $this->bin = '';
-        $this->writeLongUInt($p2 - $p);
-        $binLen = $this->bin;
-        $this->bin = substr($binSav, 0, $p) . $binLen . substr($binSav, $p);
+        $this->bin .= pack('N', strlen($w->bin)) . $w->bin;
     }
+
 
 
     private function writeFieldArray (array $arr) {

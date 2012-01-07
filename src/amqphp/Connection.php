@@ -62,10 +62,14 @@ class Connection
     /** Default client-properties field used during connection setup */
     public static $ClientProperties = array(
         'product' => ' BraveSirRobin/amqphp',
-        'version' => '0.9.0',
+        'version' => '0.9.3',
         'platform' => 'PHP 5.3 +',
-        'copyright' => 'Copyright (c) 2010,2011 Robin Harvey (harvey.robin@gmail.com)',
-        'information' => 'This software is released under the terms of the GNU LGPL: http://www.gnu.org/licenses/lgpl-3.0.txt');
+        'copyright' => 'Copyright (c) 2010,2011,2012 Robin Harvey (harvey.robin@gmail.com)',
+        'information' => 'This software is released under the terms of the GNU LGPL: http://www.gnu.org/licenses/lgpl-3.0.txt',
+        'capabilities' => array('exchange_exchange_bindings' => true,
+                                'consumer_cancel_notify' => true,
+                                'basic.nack' => true,
+                                'publisher_confirms' => true));
 
     /** For RMQ 2.4.0+, server capabilites are stored here, as a plain array */
     public $capabilities;
@@ -235,7 +239,7 @@ class Connection
         } else {
             throw new \Exception("Connection initialisation failed (5)", 9877);
         }
-        $meth->setField('client-properties', $this->getClientProperties());
+        $meth->setField('client-properties', new wire\Table(self::$ClientProperties));
         $meth->setField('mechanism', 'AMQPLAIN');
         $meth->setField('response', $this->getSaslResponse());
         $meth->setField('locale', 'en_US');
@@ -280,21 +284,6 @@ class Connection
         $this->connected = true;
     }
 
-
-
-
-    /**
-     * Helper:  return   the  client  properties   parameter  used  in
-     * connection setup.
-     */
-    private function getClientProperties () {
-        /* Build table to use long strings - RMQ seems to require this. */
-        $t = new wire\Table;
-        foreach (self::$ClientProperties as $pn => $pv) {
-            $t[$pn] = new wire\TableField($pv, 'S');
-        }
-        return $t;
-    }
 
     /**
      * Helper: return  the Sasl response parameter  used in connection

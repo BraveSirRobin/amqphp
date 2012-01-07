@@ -127,9 +127,12 @@ abstract class Protocol
             // Prefer Decimal?
             return 'f'; // float
         } else if (is_string($val)) {
+            /* RabbitMQ doesn't seem to like short strings so always maps to long strings.
             return (strlen($val) < 255) ?
                 's' // short-string
                 : 'S'; // long-string
+            */
+            return 'S';
         } else if (is_array($val)) {
             // If $val is integer keyed, assume an array type, otherwise a table
             $isArray = false;
@@ -139,7 +142,7 @@ abstract class Protocol
                     break;
                 }
             }
-            return $isArray ? 'A' : 't';
+            return $isArray ? 'A' : 'F';
         } else if ($val instanceof Decimal) {
             //'D' => 'DecimalValue',
             return 'D';

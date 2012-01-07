@@ -249,10 +249,36 @@ class Channel
             //   such as queue deletion"
             // ALSO: this  has a bearing  on the implementation  of HA
             // queues.
+            $this->handleConsumerCancel($meth);
         default:
             throw new \Exception("Received unexpected channel delivery:\n{$meth->amqpClass}", 87998);
         }
     }
+
+
+    /**
+     * Handle an  incoming consumer.cancel by  notifying the consumer,
+     * removing  the local  consumer and  sending  the basic.cancel-ok
+     * response.
+     */
+    private function handleConsumerCancel ($meth) {
+        $ctag = $meth->getField('consumer-tag');
+        list($cons, $status) = $this->getConsumerAndStatus($ctag);
+        if ($cons && $status == 'READY') {
+            $cons->handleCancel($meth, $this); // notify
+            $this->removeConsumerByTag($cons, $ctag); // remove
+            if (! $meth->getField('no-wait')) {
+                $this->invoke($this->basic('cancel-ok', array('consumer-tag', $ctag))); // respond
+            }
+        } else if ($cons) {
+            $m = sprintf("Cancellation message delivered to closed consumer %s", $ctag);
+            trigger_error($m, E_USER_WARNING);
+        } else {
+            $m = sprintf("Unable to load consumer for consumer cancellation %s", $ctag);
+            trigger_error($m, E_USER_WARNING);
+        }
+    }
+
 
 
     /**
@@ -268,16 +294,15 @@ class Channel
         if ($cons && $status == 'READY') {
             $response = $cons->handleDelivery($meth, $this);
         } else if ($cons) {
-            $m = sprintf("Message delivered to closed consumer %s -- reject %s",
-                         $ctag, $meth->getField('delivery-tag'));
+            $m = sprintf("Message delivered to closed consumer %s in non-ready state %s -- reject %s",
+                         $ctag, $status, $meth->getField('delivery-tag'));
             trigger_error($m, E_USER_WARNING);
-            $rej = $this->basic('reject', array('delivery-tag' => $meth->getField('delivery-tag'),
-                                                'requeue' => true));
-            $this->invoke($rej);
+            $response = CONSUMER_REJECT;
         } else {
-            $m = sprintf("Message delivered to closed consumer %s -- reject %s",
+            $m = sprintf("Unable to load consumer for delivery %s -- reject %s",
                          $ctag, $meth->getField('delivery-tag'));
             trigger_error($m, E_USER_WARNING);
+            $response = CONSUMER_REJECT;
         }
 
         // Handle callback response signals,  i.e the CONSUMER_XXX API

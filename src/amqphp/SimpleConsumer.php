@@ -34,7 +34,9 @@ class SimpleConsumer implements Consumer
         $this->consumeParams = $consumeParams;
     }
 
-    function handleCancelOk (wire\Method $meth, Channel $chan) {}
+    function handleCancelOk (wire\Method $meth, Channel $chan) { $this->consuming = false; }
+
+    function handleCancel (wire\Method $meth, Channel $chan) { $this->consuming = false; }
 
     function handleConsumeOk (wire\Method $meth, Channel $chan) { $this->consuming = true; }
 

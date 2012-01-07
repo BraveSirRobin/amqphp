@@ -152,6 +152,7 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
         $content = $m->getContent();
         info("Message received on consumer %d [%s]\n  %s", $cNum, $cTag, substr($content, 0, 10));
         if ($content == $this->exitMessage) {
+            info("Received exit message, cancel consumer");
             return array(amqp\CONSUMER_ACK, amqp\CONSUMER_CANCEL);
         } else {
             return amqp\CONSUMER_ACK;
@@ -179,6 +180,9 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
         info("Your message was rejected: %s [%d]\n", $m->getField('reply-text'), $m->getField('reply-code'));
         $this->requests--;
     }
+
+    // Server has cancelled us for some reason.
+    function handleCancel (wire\Method $meth, amqp\Channel $chan) { }
 
     /** @override \amqphp\ChannelEventHandler */
     public function publishNack (wire\Method $m) { }
