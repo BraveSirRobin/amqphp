@@ -197,11 +197,10 @@ function randomExitController () {
 
 $USAGE = sprintf('Usage: php consumer.php [switches]
 
-Starts a consumer  with a variable number of exit  strategies that are
-added from the command line.  Used  to test exit strategies and chains
-of exit strategies.
+Starts a consume  session and prints received messages  to the command
+line.  The consume parameters, exit  strategies and other items can be
+configured with the following switches:
 
-Switches are:
 
   --strat "name [args,]" -  Adds a strategy to the connection strategy
     chain, you can specify multiple strategies
