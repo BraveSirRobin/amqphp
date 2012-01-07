@@ -67,6 +67,8 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
     private $consumeParams = array();
     private $consumePointer;
 
+    private $consumeTags = array();
+
     function __construct ($config) {
         // Set up connection using a Factory
         $fact = new amqp\Factory($config);
@@ -121,18 +123,34 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
 
     /** @override \amqphp\Consumer */
     function handleCancelOk (wire\Method $m, amqp\Channel $chan) {
-        info("Consumer %s cancelled OK", $m->getField('consumer-tag'));
+        // Remove this consume tag from local list
+        $cTag = $m->getField('consumer-tag');
+        $cNum = array_search($cTag, $this->consumeTags);
+        if ($cNum === false) {
+            warn("Received a cancel for an unknown consumer tag %s", $cTag);
+        } else {
+            info("Consumer %s [%s] cancelled OK", $cNum, $cTag);
+        }
     }
 
     /** @override \amqphp\Consumer */
     function handleConsumeOk (wire\Method $m, amqp\Channel $chan) {
+        $this->consumeTags[] = $m->getField('consumer-tag');
         info("Consume session started, ctag %s", $m->getField('consumer-tag'));
     }
 
     /** @override \amqphp\Consumer */
     function handleDelivery (wire\Method $m, amqp\Channel $chan) {
+        // Look up which consumer is being delivered to.
+        $cTag = $m->getField('consumer-tag');
+        $cNum = array_search($cTag, $this->consumeTags);
+        if ($cNum === false) {
+            // This should never happen!
+            warn("Received message for unknown consume tag %s, reject", $cTag);
+            return amqp\CONSUMER_REJECT;
+        }
         $content = $m->getContent();
-        info("Message received on consumer tag %s\n  %s", $m->getField('consumer-tag'), substr($content, 0, 10));
+        info("Message received on consumer %d [%s]\n  %s", $cNum, $cTag, substr($content, 0, 10));
         if ($content == $this->exitMessage) {
             return array(amqp\CONSUMER_ACK, amqp\CONSUMER_CANCEL);
         } else {
@@ -149,7 +167,7 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
      * @override \amqphp\Consumer
      */
     function getConsumeMethod (amqp\Channel $chan) {
-        $cps = $this->consumeParams[$this->consumePointer++];
+        $cps = $this->consumeParams[$this->consumePointer];
         return $chan->basic('consume', $cps);
     }
 
