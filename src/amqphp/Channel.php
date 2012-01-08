@@ -257,7 +257,8 @@ class Channel
         list($cons, $status) = $this->getConsumerAndStatus($ctag);
         if ($cons && $status == 'READY') {
             $cons->handleCancel($meth, $this); // notify
-            $this->removeConsumerByTag($cons, $ctag); // remove
+            $this->setConsumerStatus($ctag, 'CLOSED') OR
+                trigger_error("Failed to set consumer status flag (2)", E_USER_WARNING); // remove
             if (! $meth->getField('no-wait')) {
                 $this->invoke($this->basic('cancel-ok', array('consumer-tag', $ctag))); // respond
             }
@@ -279,8 +280,6 @@ class Channel
      */
     private function deliverConsumerMessage ($meth) {
         // Look up the target consume handler and invoke the callback
-        printf(" (amqphp\Channel: receive dtag=%s  ctag=%s\n", $meth->getField('delivery-tag'), $meth->getField('consumer-tag'));
-
         $ctag = $meth->getField('consumer-tag');
         $response = false;
         list($cons, $status) = $this->getConsumerAndStatus($ctag);
@@ -310,7 +309,6 @@ class Channel
         foreach ($response as $resp) {
             switch ($resp) {
             case CONSUMER_ACK:
-                printf(" (amqphp\Channel: ack %s  %s\n", $meth->getField('delivery-tag'), $meth->getField('consumer-tag'));
                 $ack = $this->basic('ack', array('delivery-tag' => $meth->getField('delivery-tag'),
                                                  'multiple' => false));
                 $this->invoke($ack);
@@ -384,15 +382,7 @@ class Channel
      * TODO: Add a second parameter so for basic.consume params (?)
      */
     function addConsumer (Consumer $cons) {
-/*
-        foreach ($this->consumers as $c) {
-            if ($c === $cons) {
-                throw new \Exception("Consumer can only be added to channel once", 9684);
-            }
-        }
-*/
         $this->consumers[] = array($cons, false, 'READY_WAIT');
-        printf(" (amqp\Channel) addConsumer - there are %d consumers\n", count($this->consumers));
     }
 
 
@@ -402,7 +392,7 @@ class Channel
      * @return  boolean      True:  Request Connection stays in select loop
      *                       False: Confirm to connection it's OK to exit from loop
      */
-    function canListen (){
+    function canListen () {
         return $this->hasListeningConsumers() || $this->hasOutstandingConfirms();
     }
 

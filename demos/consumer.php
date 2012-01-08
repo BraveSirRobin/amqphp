@@ -35,11 +35,11 @@ require __DIR__ . '/../src/amqphp/Connection.php';
 require __DIR__ . '/class-loader.php';
 
 
-define("CONNECTION_CONF", realpath(__DIR__ . '/configs/basic-connection.xml'));
+define("DEFAULT_CONF", realpath(__DIR__ . '/configs/basic-connection.xml'));
 
 
-if (! is_file(CONNECTION_CONF)) {
-    warn("Fatal: cannnot find connection config %s\n", CONNECTION_CONF);
+if (! is_file(DEFAULT_CONF)) {
+    warn("Fatal: cannnot find connection config %s\n", DEFAULT_CONF);
     die;
 }
 
@@ -137,6 +137,7 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
     function handleConsumeOk (wire\Method $m, amqp\Channel $chan) {
         $this->consumeTags[] = $m->getField('consumer-tag');
         info("Consume session started, ctag %s", $m->getField('consumer-tag'));
+        $this->consumePointer++;
     }
 
     /** @override \amqphp\Consumer */
@@ -153,12 +154,21 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
 
         // Does this consumer have the no-ack flag set?
         if ($content == $this->exitMessage) {
-            info("Received exit message, cancel consumer %d", $cNum);
+            if ($this->consumeParams[$cNum]['no-ack']) {
+                info("Received exit message, cancel consumer %d", $cNum);
+            } else {
+                info("Received exit message, cancel consumer %d ACK", $cNum);
+            }
             return $this->consumeParams[$cNum]['no-ack']
                 ? array(amqp\CONSUMER_CANCEL)
                 : array(amqp\CONSUMER_ACK, amqp\CONSUMER_CANCEL);
         } else {
-            info("Message received on consumer %d [%s]\n  %s", $cNum, $cTag, substr($content, 0, 10));
+            if ($this->consumeParams[$cNum]['no-ack']) {
+                info("Message received on consumer %d [%s]\n  %s", $cNum, $cTag, $content);
+            } else {
+                info("Message received on consumer %d [%s] ACK\n  %s", $cNum, $cTag, $content);
+            }
+
             if (! $this->consumeParams[$cNum]['no-ack']) {
                 return amqp\CONSUMER_ACK;
             }
@@ -188,7 +198,16 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
     }
 
     // Server has cancelled us for some reason.
-    function handleCancel (wire\Method $meth, amqp\Channel $chan) { }
+    function handleCancel (wire\Method $meth, amqp\Channel $chan) {
+        $cTag = $m->getField('consumer-tag');
+        $cNum = array_search($cTag, $this->consumeTags);
+        if ($cNum === false) {
+            // This should never happen!
+            warn("Received cancellation for unknown consumer tag %s, reject", $cTag);
+        } else {
+            info("Received a consumer cancel from broker for consumer %d [%s]", $cNum, $cTag);
+        }
+    }
 
     /** @override \amqphp\ChannelEventHandler */
     public function publishNack (wire\Method $m) { }
@@ -211,6 +230,8 @@ Starts a consume  session and prints received messages  to the command
 line.  The consume parameters, exit  strategies and other items can be
 configured with the following switches:
 
+  --config <file-path>  Load connection configs from this file, default 
+    configs/basic-connection.xml
 
   --strat "name [args,]" -  Adds a strategy to the connection strategy
     chain, you can specify multiple strategies
@@ -273,10 +294,19 @@ function warn() {
 
 /** Create the demo client and configure it as per CLI args. */
 
-$opts = getopt('', array('help', 'strat:', 'consumer:', 'exit-message:'));
+$opts = getopt('', array('help', 'strat:', 'consumer:', 'exit-message:', 'config:'));
 if (array_key_exists('help', $opts)) {
     echo $USAGE;
     die;
+}
+
+if (array_key_exists('config', $opts)) {
+    if (is_array($opts['config'])) {
+        warn("Too many config options, discarding all but the first.");
+        $opts['config'] = array_shift($opts['config']);
+    }
+} else {
+    $opts['config'] = DEFAULT_CONF;
 }
 
 
@@ -306,8 +336,8 @@ foreach ((array) $opts['consumer'] as $cOpt) {
 
 
 
-info("Create demo object and connection..");
-$exd = new \MultiConsumer(CONNECTION_CONF);
+info("Start demo from config %s", $opts['config']);
+$exd = new \MultiConsumer($opts['config']);
 
 
 
@@ -321,7 +351,7 @@ if (array_key_exists('strat', $opts)) {
 
 // Create consumers
 foreach ($consumeSessions as $cs) {
-    info("Add consume session: queue=%s, no-local=%s, no-ack=%s, exclusive=%s\n",
+    info("Add consume session: queue=%s, no-local=%s, no-ack=%s, exclusive=%s",
          $cs[0],
          ($cs[1] ? 't' : 'f'),
          ($cs[2] ? 't' : 'f'),
