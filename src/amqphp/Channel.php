@@ -55,7 +55,16 @@ class Channel
     protected $isOpen = false;
 
     /**
-     * Consumers for this channel, format array(array(<Consumer>, <consumer-tag OR false>, <#FLAG#>)+)
+     * Consumers for this channel, a list of consumer / state entries,
+     * each with the following data format:
+     *
+     * array (
+     *    <amqphp\Consumer instance>,
+     *    <consumer-tag or false>,
+     *    <#FLAG#>,
+     *    <consume params (array)>
+     * )
+     *
      * #FLAG# is the consumer status, this is:
      *  'READY_WAIT' - not yet started, i.e. before basic.consume/basic.consume-ok
      *  'READY' - started and ready to recieve messages
@@ -71,6 +80,33 @@ class Channel
 
     /** Flag set during RMQ confirm mode */
     protected $confirmMode = false;
+
+
+    /**
+     * Use  this  value as  an  (n)ack  buffer  whilst consuming,  the
+     * channel  will  group  together   this  many  (n)acks  and  send
+     * responses using the Amqp 'multiple' field.
+     * @field   int
+     */
+    public $ackBuffer = 0;
+
+    /** 
+     * Used  at runtime  to buffer  (n)acks, just  a list  of numbers.
+     * Note   from   the   Amqp    spec   that   delivery   tags   are
+     * channel-specific:
+     *
+     *     <doc>The  server-assigned   and  channel-specific  delivery
+     *     tag</doc>
+     *
+     *     <rule> The  delivery  tag  is valid only within the channel
+     *     from which the message was received. I.e. a client MUST NOT
+     *     receive a message on one channel and then acknowledge it on
+     *     another.</rule>
+     */
+    private $pendingAcks = array();
+
+    /** Are we buffering acks or nacks? */
+    private $ackNackFlag;
 
 
     /**
@@ -254,7 +290,7 @@ class Channel
      */
     private function handleConsumerCancel ($meth) {
         $ctag = $meth->getField('consumer-tag');
-        list($cons, $status) = $this->getConsumerAndStatus($ctag);
+        list($cons, $status,) = $this->getConsumerAndStatus($ctag);
         if ($cons && $status == 'READY') {
             $cons->handleCancel($meth, $this); // notify
             $this->setConsumerStatus($ctag, 'CLOSED') OR
@@ -282,7 +318,7 @@ class Channel
         // Look up the target consume handler and invoke the callback
         $ctag = $meth->getField('consumer-tag');
         $response = false;
-        list($cons, $status) = $this->getConsumerAndStatus($ctag);
+        list($cons, $status, $consParams) = $this->getConsumerAndStatus($ctag);
         if ($cons && $status == 'READY') {
             $response = $cons->handleDelivery($meth, $this);
         } else if ($cons) {
@@ -309,9 +345,11 @@ class Channel
         foreach ($response as $resp) {
             switch ($resp) {
             case CONSUMER_ACK:
-                $ack = $this->basic('ack', array('delivery-tag' => $meth->getField('delivery-tag'),
+                if (! $consParams['no-ack']) {
+                    $ack = $this->basic('ack', array('delivery-tag' => $meth->getField('delivery-tag'),
                                                  'multiple' => false));
-                $this->invoke($ack);
+                    $this->invoke($ack);
+                }
                 break;
             case CONSUMER_DROP:
             case CONSUMER_REJECT:
@@ -379,10 +417,11 @@ class Channel
     }
 
     /**
-     * TODO: Add a second parameter so for basic.consume params (?)
+     * Add the given consumer  to the local consumer group, optionally
+     * specifying consume parameters $cParams at the same time.
      */
-    function addConsumer (Consumer $cons) {
-        $this->consumers[] = array($cons, false, 'READY_WAIT');
+    function addConsumer (Consumer $cons, array $cParams=null) {
+        $this->consumers[] = array($cons, false, 'READY_WAIT', $cParams);
     }
 
 
@@ -426,7 +465,7 @@ class Channel
 
 
     private function removeConsumerByTag (Consumer $cons, $ctag) {
-        list(, $cstate) = $this->getConsumerAndStatus($ctag);
+        list(, $cstate,) = $this->getConsumerAndStatus($ctag);
         if ($cstate == 'CLOSED') {
             trigger_error("Consumer is already removed", E_USER_WARNING);
             return;
@@ -457,10 +496,10 @@ class Channel
     private function getConsumerAndStatus ($tag) {
         foreach ($this->consumers as $c) {
             if ($c[1] == $tag) {
-                return array($c[0], $c[2]);
+                return array($c[0], $c[2], $c[3]);
             }
         }
-        return array(null, 'INVALID');
+        return array(null, 'INVALID', null);
     }
 
 
@@ -514,13 +553,29 @@ class Channel
         return $r;
     }
 
-
+    /**
+     * Locate consume parameters for  the given consumer and start the
+     * broker-side  consume  session.   After  this, the  broker  will
+     * immediately start sending messages.
+     */
     private function _startConsumer ($cnum) {
-        $consume = $this->consumers[$cnum][0]->getConsumeMethod($this);
+        $consume = false;
+        if (($consume = $this->consumers[$cnum][0]->getConsumeMethod($this)) && ! ($consume instanceof wire\Method)) {
+            trigger_error("Consumer returned invalid consume method", E_USER_WARNING);
+            $consume = false;
+        }
+        if (! $consume && is_array($this->consumers[$cnum][3])) {
+            // Consume params were passed to addConsumer().
+            $consume = $this->basic('consume', $this->consumers[$cnum][3]);
+        }
+        if (! $consume) {
+            throw new \Exception("Couldn't find any consume paramters while starting consumer", 9265);
+        }
         $cOk = $this->invoke($consume);
         $this->consumers[$cnum][0]->handleConsumeOk($cOk, $this);
         $this->consumers[$cnum][2] = 'READY';
         $this->consumers[$cnum][1] = $cOk->getField('consumer-tag');
+        $this->consumers[$cnum][3] = $consume->getFields();
     }
 
     /**
@@ -538,7 +593,13 @@ class Channel
         return false;
     }
 
+    /**
+     * Consume   Lifecycle  callback,   called  from   the  containing
+     * connection  to notify  that the  connection is  no longer  in a
+     * consume loop
+     */
     function onSelectEnd () {
+        // TODO: consider whether pending (n)acks should be flushed.
         $this->consuming = false;
     }
 

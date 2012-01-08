@@ -159,19 +159,14 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
             } else {
                 info("Received exit message, cancel consumer %d ACK", $cNum);
             }
-            return $this->consumeParams[$cNum]['no-ack']
-                ? array(amqp\CONSUMER_CANCEL)
-                : array(amqp\CONSUMER_ACK, amqp\CONSUMER_CANCEL);
+            return array(amqp\CONSUMER_ACK, amqp\CONSUMER_CANCEL);
         } else {
             if ($this->consumeParams[$cNum]['no-ack']) {
                 info("Message received on consumer %d [%s]\n  %s", $cNum, $cTag, $content);
             } else {
                 info("Message received on consumer %d [%s] ACK\n  %s", $cNum, $cTag, $content);
             }
-
-            if (! $this->consumeParams[$cNum]['no-ack']) {
-                return amqp\CONSUMER_ACK;
-            }
+            return amqp\CONSUMER_ACK;
         }
     }
 

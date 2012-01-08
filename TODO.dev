@@ -18,9 +18,6 @@
    messages for that  channel are also removed.  Warn  if content gets
    discarded.
 
- * Add support for consumer cancellation notifications:
-   http://www.rabbitmq.com/extensions.html#consumer-cancel-notify
-
  * Figure out how to support RMQ HA queues:
    http://www.rabbitmq.com/ha.html
    In  particular:  "As  a  result  of  the  requeuing,  clients  that
