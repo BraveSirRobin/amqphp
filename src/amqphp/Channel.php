@@ -239,17 +239,8 @@ class Channel
             $this->removeConfirmSeqs($meth, 'publishNack');
             return false;
         case 'basic.cancel':
-            // TODO: Allow the broker  to cancel this consume session,
-            // ..as per spec: "It may also  be sent from the server to
-            //   the  client  in  the  event  of  the  consumer  being
-            //   unexpectedly cancelled (i.e. cancelled for any reason
-            //   other  than the  server  receiving the  corresponding
-            //   basic.cancel from the client). This allows clients to
-            //   be notified  of the loss  of consumers due  to events
-            //   such as queue deletion"
-            // ALSO: this  has a bearing  on the implementation  of HA
-            // queues.
             $this->handleConsumerCancel($meth);
+            break;
         default:
             throw new \Exception("Received unexpected channel delivery:\n{$meth->amqpClass}", 87998);
         }
@@ -288,6 +279,8 @@ class Channel
      */
     private function deliverConsumerMessage ($meth) {
         // Look up the target consume handler and invoke the callback
+        printf(" (amqphp\Channel: receive dtag=%s  ctag=%s\n", $meth->getField('delivery-tag'), $meth->getField('consumer-tag'));
+
         $ctag = $meth->getField('consumer-tag');
         $response = false;
         list($cons, $status) = $this->getConsumerAndStatus($ctag);
@@ -304,7 +297,6 @@ class Channel
             trigger_error($m, E_USER_WARNING);
             $response = CONSUMER_REJECT;
         }
-
         // Handle callback response signals,  i.e the CONSUMER_XXX API
         // messages, but  only for API responses  to the basic.deliver
         // message
@@ -318,6 +310,7 @@ class Channel
         foreach ($response as $resp) {
             switch ($resp) {
             case CONSUMER_ACK:
+                printf(" (amqphp\Channel: ack %s  %s\n", $meth->getField('delivery-tag'), $meth->getField('consumer-tag'));
                 $ack = $this->basic('ack', array('delivery-tag' => $meth->getField('delivery-tag'),
                                                  'multiple' => false));
                 $this->invoke($ack);
@@ -391,12 +384,15 @@ class Channel
      * TODO: Add a second parameter so for basic.consume params (?)
      */
     function addConsumer (Consumer $cons) {
+/*
         foreach ($this->consumers as $c) {
             if ($c === $cons) {
                 throw new \Exception("Consumer can only be added to channel once", 9684);
             }
         }
+*/
         $this->consumers[] = array($cons, false, 'READY_WAIT');
+        printf(" (amqp\Channel) addConsumer - there are %d consumers\n", count($this->consumers));
     }
 
 

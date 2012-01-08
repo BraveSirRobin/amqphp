@@ -150,12 +150,18 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
             return amqp\CONSUMER_REJECT;
         }
         $content = $m->getContent();
-        info("Message received on consumer %d [%s]\n  %s", $cNum, $cTag, substr($content, 0, 10));
+
+        // Does this consumer have the no-ack flag set?
         if ($content == $this->exitMessage) {
-            info("Received exit message, cancel consumer");
-            return array(amqp\CONSUMER_ACK, amqp\CONSUMER_CANCEL);
+            info("Received exit message, cancel consumer %d", $cNum);
+            return $this->consumeParams[$cNum]['no-ack']
+                ? array(amqp\CONSUMER_CANCEL)
+                : array(amqp\CONSUMER_ACK, amqp\CONSUMER_CANCEL);
         } else {
-            return amqp\CONSUMER_ACK;
+            info("Message received on consumer %d [%s]\n  %s", $cNum, $cTag, substr($content, 0, 10));
+            if (! $this->consumeParams[$cNum]['no-ack']) {
+                return amqp\CONSUMER_ACK;
+            }
         }
     }
 
@@ -238,7 +244,7 @@ Example:
 php consumer.php --strat "cond" \
                  --strat "trel 5 0" \
                  --consumer "most-basic-q" \
-                 --exit-when-message "break."
+                 --exit-message "break."
 ', implode(', ', array_keys(MultiConsumer::$StratMap)));
 
 
@@ -285,7 +291,7 @@ foreach ((array) $opts['consumer'] as $cOpt) {
     $bits = explode(' ', $cOpt);
     $queue = $bits[0];
     $cFlags = array_key_exists(1, $bits)
-        ? $cFlags[1]
+        ? $bits[1]
         : 'fff';
     if (strlen($cFlags) != 3) {
         print("Error: invalid consumer switch, consume params option must contain exactly 3 characters.\n");

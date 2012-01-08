@@ -290,9 +290,7 @@ class Connection
      * setup.
      */
     private function getSaslResponse () {
-        $t = new wire\Table();
-        $t['LOGIN'] = new wire\TableField($this->username, 'S');
-        $t['PASSWORD'] = new wire\TableField($this->userpass, 'S');
+        $t = new wire\Table(array('LOGIN' => $this->username, 'PASSWORD' => $this->userpass));
         $w = new wire\Writer();
         $w->write($t, 'table');
         return substr($w->getBuffer(), 4);
