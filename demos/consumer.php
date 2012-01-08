@@ -64,9 +64,6 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
     private $connection;
     private $channel;
 
-    private $consumeParams = array();
-    private $consumePointer;
-
     private $consumeTags = array();
 
     function __construct ($config) {
@@ -96,12 +93,12 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
      * up when the local connection is added to an event loop.
      */
     function addConsumeSession ($queue, $noLocal=false, $noAck=false, $exclusive=false) {
-        $this->consumeParams[] = array('queue' => $queue,
-                                       'no-local' => $noLocal,
-                                       'no-ack' => $noAck,
-                                       'exclusive' => $exclusive,
-                                       'no-wait' => false);
-        $this->channel->addConsumer($this);
+        $consumeParams = array('queue' => $queue,
+                               'no-local' => $noLocal,
+                               'no-ack' => $noAck,
+                               'exclusive' => $exclusive,
+                               'no-wait' => false);
+        $this->channel->addConsumer($this, $consumeParams);
     }
 
 
@@ -110,7 +107,6 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
      */
     function runDemo () {
         info("Start consuming...");
-        $this->consumePointer = 0;
         $evl = new amqp\EventLoop;
         $evl->addConnection($this->connection);
         $evl->select();
@@ -137,7 +133,6 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
     function handleConsumeOk (wire\Method $m, amqp\Channel $chan) {
         $this->consumeTags[] = $m->getField('consumer-tag');
         info("Consume session started, ctag %s", $m->getField('consumer-tag'));
-        $this->consumePointer++;
     }
 
     /** @override \amqphp\Consumer */
@@ -154,18 +149,10 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
 
         // Does this consumer have the no-ack flag set?
         if ($content == $this->exitMessage) {
-            if ($this->consumeParams[$cNum]['no-ack']) {
-                info("Received exit message, cancel consumer %d", $cNum);
-            } else {
-                info("Received exit message, cancel consumer %d ACK", $cNum);
-            }
+            info("Received exit message, cancel consumer %d", $cNum);
             return array(amqp\CONSUMER_ACK, amqp\CONSUMER_CANCEL);
         } else {
-            if ($this->consumeParams[$cNum]['no-ack']) {
-                info("Message received on consumer %d [%s]\n  %s", $cNum, $cTag, $content);
-            } else {
-                info("Message received on consumer %d [%s] ACK\n  %s", $cNum, $cTag, $content);
-            }
+            info("Message received on consumer %d [%s]\n  %s", $cNum, $cTag, $content);
             return amqp\CONSUMER_ACK;
         }
     }
@@ -174,14 +161,12 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
     function handleRecoveryOk (wire\Method $m, amqp\Channel $chan) { }
 
     /**
-     * Called by the API, returns the local consume session parameters
-     * one at a time.
+     * Called  by the  API  to look  for  consume session  parameters.
+     * We're providing these via. the addConnection method rather than
+     * here, although we could over-ride those params here
      * @override \amqphp\Consumer
      */
-    function getConsumeMethod (amqp\Channel $chan) {
-        $cps = $this->consumeParams[$this->consumePointer];
-        return $chan->basic('consume', $cps);
-    }
+    function getConsumeMethod (amqp\Channel $chan) { }
 
     /** @override \amqphp\ChannelEventHandler */
     public function publishConfirm (wire\Method $m) { }
