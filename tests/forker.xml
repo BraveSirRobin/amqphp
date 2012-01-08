@@ -20,9 +20,9 @@
   <numProducers>20</numProducers>
   <consumerClass>ForkerConsumer</consumerClass>
   <producerClass>ForkerProducer</producerClass>
-  <consumerChannels>2</consumerChannels>
-  <consumerPrefetch>4</consumerPrefetch>
-  <consumersPerChannel>4</consumersPerChannel>
+  <consumerChannels>1</consumerChannels>
+  <consumerPrefetch>0</consumerPrefetch>
+  <consumersPerChannel>1</consumersPerChannel>
 
   <!-- Test producer settings.  Message bounds are in bytes. -->
   <prodSmallMsgPercent>20</prodSmallMsgPercent>

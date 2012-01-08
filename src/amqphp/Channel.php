@@ -85,10 +85,13 @@ class Channel
     /**
      * Use  this  value as  an  (n)ack  buffer  whilst consuming,  the
      * channel  will  group  together   this  many  (n)acks  and  send
-     * responses using the Amqp 'multiple' field.
+     * responses  using   the  Amqp  'multiple'   field.   To  prevent
+     * buffering,  set to  zero.   Setting  this to  a  hig value  can
+     * increase throughput of consumers.
+     *
      * @field   int
      */
-    public $ackBuffer = 0;
+    public $ackBuffer = 5;
 
     /** 
      * Used  at runtime  to buffer  (n)acks, just  a list  of numbers.
@@ -104,9 +107,11 @@ class Channel
      *     another.</rule>
      */
     private $pendingAcks = array();
+    private $numPendAcks = 0; // Avoid re-counting lots.
 
-    /** Are we buffering acks or nacks? */
-    private $ackNackFlag;
+    /** Used   to   track   ack   response,   one   of   CONSUMER_ACK,
+     * CONSUMER_REJECT, CONSUMER_DROP */
+    private $ackFlag;
 
 
     /**
@@ -346,16 +351,12 @@ class Channel
             switch ($resp) {
             case CONSUMER_ACK:
                 if (! $consParams['no-ack']) {
-                    $ack = $this->basic('ack', array('delivery-tag' => $meth->getField('delivery-tag'),
-                                                 'multiple' => false));
-                    $this->invoke($ack);
+                    $this->ack($meth, CONSUMER_ACK);
                 }
                 break;
             case CONSUMER_DROP:
             case CONSUMER_REJECT:
-                $rej = $this->basic('reject', array('delivery-tag' => $meth->getField('delivery-tag'),
-                                                    'requeue' => ($resp == CONSUMER_REJECT)));
-                $this->invoke($rej);
+                $this->ack($meth, $resp);
                 break;
             case CONSUMER_CANCEL:
                 // Basic.cancel this consumer, then change the it's status flag
@@ -368,6 +369,54 @@ class Channel
     }
 
 
+    /**
+     * Ack / Nack helper, tracks  buffered acks and triggers the flush
+     * when necessary
+     */
+    private function ack ($meth, $action) {
+        if (is_null($this->ackFlag)) {
+            $this->ackFlag = $action;
+        } else if ($action != $this->ackFlag) {
+            // Need to flush all acks before we can start accumulating acks of a different kind.
+            $this->flushAcks();
+        }
+        $this->pendingAcks[] = $meth->getField('delivery-tag');
+        $this->numPendAcks++;
+
+        if ($this->numPendAcks >= $this->ackBuffer) {
+            $this->flushAcks();
+        }
+    }
+
+
+    /**
+     * Ack all buffered responses and clear the local response list.
+     */
+    private function flushAcks () {
+        if (is_null($this->ackFlag)) {
+            // Nothing to do here.
+            return;
+        }
+//        printf(" (amqp\Channel) - flush acks for messages %s\n", implode(',', $this->pendingAcks));
+        switch ($this->ackFlag) {
+        case CONSUMER_ACK:
+            $ack = $this->basic('ack', array('delivery-tag' => array_pop($this->pendingAcks),
+                                             'multiple' => true));
+            $this->invoke($ack);
+            break;
+        case CONSUMER_REJECT:
+        case CONSUMER_DROP:
+            $rej = $this->basic('nack', array('delivery-tag' => array_pop($this->pendingAcks),
+                                              'requeue' => ($this->ackFlag == CONSUMER_REJECT)));
+            $this->invoke($rej);
+            break;
+        default:
+            throw new \Exception("Internal (n)ack tracking state error", 2956);
+        }
+        $this->ackFlag = null;
+        $this->numPendAcks = 0;
+        $this->pendingAcks = array();
+    }
 
     /**
      * Helper:  remove  message   sequence  record(s)  for  the  given
@@ -599,7 +648,7 @@ class Channel
      * consume loop
      */
     function onSelectEnd () {
-        // TODO: consider whether pending (n)acks should be flushed.
+        $this->flushAcks();
         $this->consuming = false;
     }
 
