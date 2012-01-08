@@ -215,7 +215,7 @@ class StreamSocket
     }
 
     function strError () {
-        return '';
+        return '(\amqphp\StreamSocket->strError -- not implemented)';
     }
 
     function readAll ($readLen = self::READ_LENGTH) {

@@ -57,9 +57,10 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
         'callb' => amqp\STRAT_CALLBACK
         );
 
-    /* If a  consumer receives  this as a  message, the  consumer will
-     * detatch itself. */
-    public $exitMessage = 'exit.';
+    /* Specify default 'action messages' (these are defined in CLI args) */
+    public $exitMessage = 'Cancel.';
+    public $rejectMessage = 'Reject.';
+    public $dropMessage = 'Drop.';
 
     private $connection;
     private $channel;
@@ -147,11 +148,22 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
         }
         $content = $m->getContent();
 
-        // Does this consumer have the no-ack flag set?
-        if ($content == $this->exitMessage) {
+        if (! $content) {
+            info("Empty Message received on consumer %d [%s]", $cNum, $cTag);
+            return amqp\CONSUMER_ACK;
+        }
+
+        switch ($content) {
+        case $this->exitMessage:
             info("Received exit message, cancel consumer %d", $cNum);
             return array(amqp\CONSUMER_ACK, amqp\CONSUMER_CANCEL);
-        } else {
+        case $this->rejectMessage:
+            info("Received reject message, reject consumer %d", $cNum);
+            return amqp\CONSUMER_REJECT;
+        case $this->dropMessage:
+            info("Received drop message, drop consumer %d", $cNum);
+            return amqp\CONSUMER_DROP;
+        default:
             info("Message received on consumer %d [%s]\n  %s", $cNum, $cTag, $content);
             return amqp\CONSUMER_ACK;
         }
@@ -179,7 +191,7 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
 
     // Server has cancelled us for some reason.
     function handleCancel (wire\Method $meth, amqp\Channel $chan) {
-        $cTag = $m->getField('consumer-tag');
+        $cTag = $meth->getField('consumer-tag');
         $cNum = array_search($cTag, $this->consumeTags);
         if ($cNum === false) {
             // This should never happen!
@@ -210,22 +222,19 @@ Starts a consume  session and prints received messages  to the command
 line.  The consume parameters, exit  strategies and other items can be
 configured with the following switches:
 
-  --config <file-path>  Load connection configs from this file, default 
+  --config [file-path] Load connection configs from this file, default
     configs/basic-connection.xml
 
-  --strat "name [args,]" -  Adds a strategy to the connection strategy
+  --strat ["name args"]  - Adds a strategy to  the connection strategy
     chain, you can specify multiple strategies
 
       name: {%s}
-      arg:  Optional whitespace separated list of strategy parameters
+      args:  Optional whitespace separated list of strategy parameters
 
     You can  specify multiple strategies  using more than  one --strat
     option.
 
-  --exit-message message   -  when  the following  message  string  is
-    received, exit the receiving consumer
-
-  --consumer "queue [consume-args]"  Adds  a  consumer
+  --consumer ["queue consume-args"]  Adds  a  consumer
 
       queue:          Name of the queue to listen on
       consume-args:   3 consumer setup flags, must be a sequence  of 3
@@ -234,6 +243,19 @@ configured with the following switches:
                       no-local: f
                       no-ack: f
                       exclusive: f
+
+  --exit-message  [string]  - when  the  following  message string  is
+    received,  exit  the   receiving  consumer  with  CONSUMER_CANCEL.
+    Default Value: "Cancel."
+
+  --reject-message  [string] -  when the  following message  string is
+    received,  reject  the   incoming  message  with  CONSUMER_REJECT.
+    Default Value: "Reject."
+
+  --drop-message  [string]  - when  the  following  message string  is
+    received, reject the incoming message with CONSUMER_DROP.  Default
+    Value: "Drop."
+
 
     You  can  add  more than  one  consumer  by  using more  than  one
     --consumer option.
@@ -244,8 +266,7 @@ Example:
 
 php consumer.php --strat "cond" \
                  --strat "trel 5 0" \
-                 --consumer "most-basic-q" \
-                 --exit-message "break."
+                 --consumer "most-basic-q"
 ', implode(', ', array_keys(MultiConsumer::$StratMap)));
 
 
@@ -274,7 +295,7 @@ function warn() {
 
 /** Create the demo client and configure it as per CLI args. */
 
-$opts = getopt('', array('help', 'strat:', 'consumer:', 'exit-message:', 'config:'));
+$opts = getopt('', array('help', 'strat:', 'consumer:', 'exit-message:', 'reject-message:', 'drop-message:', 'config:'));
 if (array_key_exists('help', $opts)) {
     echo $USAGE;
     die;
@@ -341,6 +362,12 @@ foreach ($consumeSessions as $cs) {
 
 if (array_key_exists('exit-message', $opts)) {
     $exd->exitMessage = $opts['exit-message'];
+}
+if (array_key_exists('reject-message', $opts)) {
+    $exd->rejectMessage = $opts['reject-message'];
+}
+if (array_key_exists('drop-message', $opts)) {
+    $exd->dropMessage = $opts['drop-message'];
 }
 
 $exd->runDemo();

@@ -409,6 +409,7 @@ class Connection
         if ($meth->isHeartbeat()) {
             $resp = "\x08\x00\x00\x00\x00\x00\x00\xce";
             $this->write($resp);
+            print(" (amqp\Connection) Wrote heartbeat\n");
             return;
         }
 
@@ -573,9 +574,11 @@ class Connection
         $buff = $this->sock->readAll();
         if ($buff && ($meths = $this->readMessages($buff))) {
             $this->unDelivered = array_merge($this->unDelivered, $meths);
-        } else if ($buff == '') {
+        } else if ($buff === '') {
             $this->blocking = false;
-            throw new \Exception("Empty read in blocking select loop : " . strlen($buff), 9864);
+            throw new \Exception("Empty read in blocking select loop, socket error:\n" . $this->sock->strError(), 9864);
+        } else {
+            printf(" (amqp\Connection) doSelectRead got no methods from string [length=%d]:\n%s\n", strlen($buff), wire\Hexdump::hexdump($buff));
         }
     }
 

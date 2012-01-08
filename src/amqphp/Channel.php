@@ -356,7 +356,9 @@ class Channel
                 break;
             case CONSUMER_DROP:
             case CONSUMER_REJECT:
-                $this->ack($meth, $resp);
+                if (! $consParams['no-ack']) {
+                    $this->ack($meth, $resp);
+                }
                 break;
             case CONSUMER_CANCEL:
                 // Basic.cancel this consumer, then change the it's status flag
@@ -379,6 +381,7 @@ class Channel
         } else if ($action != $this->ackFlag) {
             // Need to flush all acks before we can start accumulating acks of a different kind.
             $this->flushAcks();
+            $this->ackFlag = $action;
         }
         $this->pendingAcks[] = $meth->getField('delivery-tag');
         $this->numPendAcks++;
@@ -397,16 +400,21 @@ class Channel
             // Nothing to do here.
             return;
         }
-//        printf(" (amqp\Channel) - flush acks for messages %s\n", implode(',', $this->pendingAcks));
         switch ($this->ackFlag) {
         case CONSUMER_ACK:
+            printf(" (amqp\Channel) - flush acks for messages %s\n", implode(',', $this->pendingAcks));
             $ack = $this->basic('ack', array('delivery-tag' => array_pop($this->pendingAcks),
                                              'multiple' => true));
             $this->invoke($ack);
             break;
         case CONSUMER_REJECT:
         case CONSUMER_DROP:
+            printf(" (amqp\Channel) - flush %s for messages %s\n",
+                   ($this->ackFlag == CONSUMER_REJECT) ? 'rejects' : 'drops',
+                   implode(',', $this->pendingAcks));
+
             $rej = $this->basic('nack', array('delivery-tag' => array_pop($this->pendingAcks),
+                                              'multiple' => true,
                                               'requeue' => ($this->ackFlag == CONSUMER_REJECT)));
             $this->invoke($rej);
             break;
