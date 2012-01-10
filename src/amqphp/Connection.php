@@ -577,8 +577,6 @@ class Connection
         } else if ($buff === '') {
             $this->blocking = false;
             throw new \Exception("Empty read in blocking select loop, socket error:\n" . $this->sock->strError(), 9864);
-        } else {
-            printf(" (amqp\Connection) doSelectRead got no methods from string [length=%d]:\n%s\n", strlen($buff), wire\Hexdump::hexdump($buff));
         }
     }
 

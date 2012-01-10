@@ -106,12 +106,12 @@ class Channel
      *     receive a message on one channel and then acknowledge it on
      *     another.</rule>
      */
-    private $pendingAcks = array();
-    private $numPendAcks = 0; // Avoid re-counting lots.
+    protected $pendingAcks = array();
+    protected $numPendAcks = 0; // Avoid re-counting lots.
 
     /** Used   to   track   ack   response,   one   of   CONSUMER_ACK,
      * CONSUMER_REJECT, CONSUMER_DROP */
-    private $ackFlag;
+    protected $ackFlag;
 
 
     /**
@@ -350,13 +350,13 @@ class Channel
         foreach ($response as $resp) {
             switch ($resp) {
             case CONSUMER_ACK:
-                if (! $consParams['no-ack']) {
+                if (! array_key_exists('no-ack', $consParams) || ! $consParams['no-ack']) {
                     $this->ack($meth, CONSUMER_ACK);
                 }
                 break;
             case CONSUMER_DROP:
             case CONSUMER_REJECT:
-                if (! $consParams['no-ack']) {
+                if (! array_key_exists('no-ack', $consParams) || ! $consParams['no-ack']) {
                     $this->ack($meth, $resp);
                 }
                 break;
@@ -402,16 +402,16 @@ class Channel
         }
         switch ($this->ackFlag) {
         case CONSUMER_ACK:
-            printf(" (amqp\Channel) - flush acks for messages %s\n", implode(',', $this->pendingAcks));
+            //printf(" (amqp\Channel) - flush acks for messages %s\n", implode(',', $this->pendingAcks));
             $ack = $this->basic('ack', array('delivery-tag' => array_pop($this->pendingAcks),
                                              'multiple' => true));
             $this->invoke($ack);
             break;
         case CONSUMER_REJECT:
         case CONSUMER_DROP:
-            printf(" (amqp\Channel) - flush %s for messages %s\n",
+            /*printf(" (amqp\Channel) - flush %s for messages %s\n",
                    ($this->ackFlag == CONSUMER_REJECT) ? 'rejects' : 'drops',
-                   implode(',', $this->pendingAcks));
+                   implode(',', $this->pendingAcks));*/
 
             $rej = $this->basic('nack', array('delivery-tag' => array_pop($this->pendingAcks),
                                               'multiple' => true,

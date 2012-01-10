@@ -45,7 +45,8 @@ class PChannel extends \amqphp\Channel implements \Serializable
     private static $PersProps = array('chanId', 'flow', 'frameMax', 'confirmSeqs',
                                       'confirmSeq', 'confirmMode', 'isOpen',
                                       'callbackHandler', 'suspendOnSerialize',
-                                      'resumeOnHydrate');
+                                      'resumeOnHydrate', 'ackBuffer', 'pendingAcks',
+                                      'numPendAcks', 'ackFlag');
 
     function serialize () {
         $data = array();
@@ -70,7 +71,7 @@ class PChannel extends \amqphp\Channel implements \Serializable
             $this->$p = $data[$p];
         }
         foreach ($data['consumers'] as $i => $c) {
-            $this->consumers[$i] = array($c[0], $c[1], $c[2]);
+            $this->consumers[$i] = array($c[0], $c[1], $c[2], $c[3]);
         }
     }
 

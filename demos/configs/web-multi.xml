@@ -21,6 +21,7 @@
       <set_properties>
         <suspendOnSerialize k="boolean">true</suspendOnSerialize>
         <resumeOnHydrate k="boolean">true</resumeOnHydrate>
+        <ackBuffer k="integer">0</ackBuffer>
       </set_properties>
       <consumer>
         <impl>DemoPConsumer</impl>
@@ -69,6 +70,7 @@
       <set_properties>
         <suspendOnSerialize k="boolean">true</suspendOnSerialize>
         <resumeOnHydrate k="boolean">true</resumeOnHydrate>
+        <ackBuffer k="integer">0</ackBuffer>
       </set_properties>
       <consumer>
         <impl>DemoPConsumer</impl>

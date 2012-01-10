@@ -16,13 +16,13 @@
   <saveMessagesDir></saveMessagesDir><!-- Set to empty for no message saving -->
 
   <!-- Test consumer settings -->
-  <numConsumers>4</numConsumers>
-  <numProducers>20</numProducers>
+  <numConsumers>3</numConsumers>
+  <numProducers>6</numProducers>
   <consumerClass>ForkerConsumer</consumerClass>
   <producerClass>ForkerProducer</producerClass>
-  <consumerChannels>1</consumerChannels>
-  <consumerPrefetch>0</consumerPrefetch>
-  <consumersPerChannel>1</consumersPerChannel>
+  <consumerChannels>2</consumerChannels>
+  <consumerPrefetch>10</consumerPrefetch>
+  <consumersPerChannel>4</consumersPerChannel>
 
   <!-- Test producer settings.  Message bounds are in bytes. -->
   <prodSmallMsgPercent>20</prodSmallMsgPercent>
@@ -31,7 +31,7 @@
   <largeMsgMin>800</largeMsgMin>
   <largeMsgMax>800</largeMsgMax>
   <prodNumLoops>0</prodNumLoops><!-- Set to zero for open-ended run. -->
-  <prodSleepMillis>8</prodSleepMillis>
+  <prodSleepMillis>16</prodSleepMillis>
   <prodForceRead>1</prodForceRead>
 
 
