@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<!--
+  Sets up bindings and connections to receive messages from amq.rabbitmq.log and amq.rabbitmq.trace
+-->
+<setup xmlns:xi="http://www.w3.org/2001/XInclude">
+  <connection>
+    <impl>\amqphp\Connection</impl>
+    <constr_args>
+      <xi:include href="rabbit1-host-config.xml"/>
+    </constr_args>
+
+    <channel>
+      <xi:include href="all-amq-exchanges-binding.xml"/>
+    </channel>
+  </connection>
+</setup>
