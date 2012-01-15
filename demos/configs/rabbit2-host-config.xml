@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!-- Externalise network connection parameters for this broker -->
 <conn_params>
-  <vhost k="string">robin</vhost>
+  <vhost k="string">/</vhost>
   <username k="string">testing</username>
   <userpass k="string">letmein</userpass>
   <heartbeat k="int">5</heartbeat>

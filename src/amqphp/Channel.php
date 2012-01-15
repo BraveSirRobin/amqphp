@@ -55,7 +55,16 @@ class Channel
     protected $isOpen = false;
 
     /**
-     * Consumers for this channel, format array(array(<Consumer>, <consumer-tag OR false>, <#FLAG#>)+)
+     * Consumers for this channel, a list of consumer / state entries,
+     * each with the following data format:
+     *
+     * array (
+     *    <amqphp\Consumer instance>,
+     *    <consumer-tag or false>,
+     *    <#FLAG#>,
+     *    <consume params (array)>
+     * )
+     *
      * #FLAG# is the consumer status, this is:
      *  'READY_WAIT' - not yet started, i.e. before basic.consume/basic.consume-ok
      *  'READY' - started and ready to recieve messages
@@ -71,6 +80,38 @@ class Channel
 
     /** Flag set during RMQ confirm mode */
     protected $confirmMode = false;
+
+
+    /**
+     * Use  this  value as  an  (n)ack  buffer  whilst consuming,  the
+     * channel  will  group  together   this  many  (n)acks  and  send
+     * responses  using   the  Amqp  'multiple'   field.   To  prevent
+     * buffering,  set to  zero.   Setting  this to  a  hig value  can
+     * increase throughput of consumers.
+     *
+     * @field   int
+     */
+    public $ackBuffer = 5;
+
+    /** 
+     * Used  at runtime  to buffer  (n)acks, just  a list  of numbers.
+     * Note   from   the   Amqp    spec   that   delivery   tags   are
+     * channel-specific:
+     *
+     *     <doc>The  server-assigned   and  channel-specific  delivery
+     *     tag</doc>
+     *
+     *     <rule> The  delivery  tag  is valid only within the channel
+     *     from which the message was received. I.e. a client MUST NOT
+     *     receive a message on one channel and then acknowledge it on
+     *     another.</rule>
+     */
+    protected $pendingAcks = array();
+    protected $numPendAcks = 0; // Avoid re-counting lots.
+
+    /** Used   to   track   ack   response,   one   of   CONSUMER_ACK,
+     * CONSUMER_REJECT, CONSUMER_DROP */
+    protected $ackFlag;
 
 
     /**
@@ -239,18 +280,38 @@ class Channel
             $this->removeConfirmSeqs($meth, 'publishNack');
             return false;
         case 'basic.cancel':
-            // TODO: Allow the broker  to cancel this consume session,
-            // ..as per spec: "It may also  be sent from the server to
-            //   the  client  in  the  event  of  the  consumer  being
-            //   unexpectedly cancelled (i.e. cancelled for any reason
-            //   other  than the  server  receiving the  corresponding
-            //   basic.cancel from the client). This allows clients to
-            //   be notified  of the loss  of consumers due  to events
-            //   such as queue deletion"
+            $this->handleConsumerCancel($meth);
+            break;
         default:
             throw new \Exception("Received unexpected channel delivery:\n{$meth->amqpClass}", 87998);
         }
     }
+
+
+    /**
+     * Handle an  incoming consumer.cancel by  notifying the consumer,
+     * removing  the local  consumer and  sending  the basic.cancel-ok
+     * response.
+     */
+    private function handleConsumerCancel ($meth) {
+        $ctag = $meth->getField('consumer-tag');
+        list($cons, $status,) = $this->getConsumerAndStatus($ctag);
+        if ($cons && $status == 'READY') {
+            $cons->handleCancel($meth, $this); // notify
+            $this->setConsumerStatus($ctag, 'CLOSED') OR
+                trigger_error("Failed to set consumer status flag (2)", E_USER_WARNING); // remove
+            if (! $meth->getField('no-wait')) {
+                $this->invoke($this->basic('cancel-ok', array('consumer-tag', $ctag))); // respond
+            }
+        } else if ($cons) {
+            $m = sprintf("Cancellation message delivered to closed consumer %s", $ctag);
+            trigger_error($m, E_USER_WARNING);
+        } else {
+            $m = sprintf("Unable to load consumer for consumer cancellation %s", $ctag);
+            trigger_error($m, E_USER_WARNING);
+        }
+    }
+
 
 
     /**
@@ -262,22 +323,20 @@ class Channel
         // Look up the target consume handler and invoke the callback
         $ctag = $meth->getField('consumer-tag');
         $response = false;
-        list($cons, $status) = $this->getConsumerAndStatus($ctag);
+        list($cons, $status, $consParams) = $this->getConsumerAndStatus($ctag);
         if ($cons && $status == 'READY') {
             $response = $cons->handleDelivery($meth, $this);
         } else if ($cons) {
-            $m = sprintf("Message delivered to closed consumer %s -- reject %s",
-                         $ctag, $meth->getField('delivery-tag'));
+            $m = sprintf("Message delivered to closed consumer %s in non-ready state %s -- reject %s",
+                         $ctag, $status, $meth->getField('delivery-tag'));
             trigger_error($m, E_USER_WARNING);
-            $rej = $this->basic('reject', array('delivery-tag' => $meth->getField('delivery-tag'),
-                                                'requeue' => true));
-            $this->invoke($rej);
+            $response = CONSUMER_REJECT;
         } else {
-            $m = sprintf("Message delivered to closed consumer %s -- reject %s",
+            $m = sprintf("Unable to load consumer for delivery %s -- reject %s",
                          $ctag, $meth->getField('delivery-tag'));
             trigger_error($m, E_USER_WARNING);
+            $response = CONSUMER_REJECT;
         }
-
         // Handle callback response signals,  i.e the CONSUMER_XXX API
         // messages, but  only for API responses  to the basic.deliver
         // message
@@ -291,15 +350,15 @@ class Channel
         foreach ($response as $resp) {
             switch ($resp) {
             case CONSUMER_ACK:
-                $ack = $this->basic('ack', array('delivery-tag' => $meth->getField('delivery-tag'),
-                                                 'multiple' => false));
-                $this->invoke($ack);
+                if (! array_key_exists('no-ack', $consParams) || ! $consParams['no-ack']) {
+                    $this->ack($meth, CONSUMER_ACK);
+                }
                 break;
             case CONSUMER_DROP:
             case CONSUMER_REJECT:
-                $rej = $this->basic('reject', array('delivery-tag' => $meth->getField('delivery-tag'),
-                                                    'requeue' => ($resp == CONSUMER_REJECT)));
-                $this->invoke($rej);
+                if (! array_key_exists('no-ack', $consParams) || ! $consParams['no-ack']) {
+                    $this->ack($meth, $resp);
+                }
                 break;
             case CONSUMER_CANCEL:
                 // Basic.cancel this consumer, then change the it's status flag
@@ -312,6 +371,59 @@ class Channel
     }
 
 
+    /**
+     * Ack / Nack helper, tracks  buffered acks and triggers the flush
+     * when necessary
+     */
+    private function ack ($meth, $action) {
+        if (is_null($this->ackFlag)) {
+            $this->ackFlag = $action;
+        } else if ($action != $this->ackFlag) {
+            // Need to flush all acks before we can start accumulating acks of a different kind.
+            $this->flushAcks();
+            $this->ackFlag = $action;
+        }
+        $this->pendingAcks[] = $meth->getField('delivery-tag');
+        $this->numPendAcks++;
+
+        if ($this->numPendAcks >= $this->ackBuffer) {
+            $this->flushAcks();
+        }
+    }
+
+
+    /**
+     * Ack all buffered responses and clear the local response list.
+     */
+    private function flushAcks () {
+        if (is_null($this->ackFlag)) {
+            // Nothing to do here.
+            return;
+        }
+        switch ($this->ackFlag) {
+        case CONSUMER_ACK:
+            //printf(" (amqp\Channel) - flush acks for messages %s\n", implode(',', $this->pendingAcks));
+            $ack = $this->basic('ack', array('delivery-tag' => array_pop($this->pendingAcks),
+                                             'multiple' => true));
+            $this->invoke($ack);
+            break;
+        case CONSUMER_REJECT:
+        case CONSUMER_DROP:
+//            printf(" (amqp\Channel) - flush %s for messages %s\n",
+//                   (($this->ackFlag == CONSUMER_REJECT) ? 'rejects' : 'drops'),
+//                   implode(',', $this->pendingAcks));
+            $rej = $this->basic('nack', array('delivery-tag' => array_pop($this->pendingAcks),
+                                              'multiple' => true,
+                                              'requeue' => ($this->ackFlag == CONSUMER_REJECT)));
+            $this->invoke($rej);
+            break;
+        default:
+            throw new \Exception("Internal (n)ack tracking state error", 2956);
+        }
+        $this->ackFlag = null;
+        $this->numPendAcks = 0;
+        $this->pendingAcks = array();
+    }
 
     /**
      * Helper:  remove  message   sequence  record(s)  for  the  given
@@ -361,15 +473,11 @@ class Channel
     }
 
     /**
-     * TODO: Add a second parameter so for basic.consume params (?)
+     * Add the given consumer  to the local consumer group, optionally
+     * specifying consume parameters $cParams at the same time.
      */
-    function addConsumer (Consumer $cons) {
-        foreach ($this->consumers as $c) {
-            if ($c === $cons) {
-                throw new \Exception("Consumer can only be added to channel once", 9684);
-            }
-        }
-        $this->consumers[] = array($cons, false, 'READY_WAIT');
+    function addConsumer (Consumer $cons, array $cParams=null) {
+        $this->consumers[] = array($cons, false, 'READY_WAIT', $cParams);
     }
 
 
@@ -379,7 +487,7 @@ class Channel
      * @return  boolean      True:  Request Connection stays in select loop
      *                       False: Confirm to connection it's OK to exit from loop
      */
-    function canListen (){
+    function canListen () {
         return $this->hasListeningConsumers() || $this->hasOutstandingConfirms();
     }
 
@@ -413,7 +521,7 @@ class Channel
 
 
     private function removeConsumerByTag (Consumer $cons, $ctag) {
-        list(, $cstate) = $this->getConsumerAndStatus($ctag);
+        list(, $cstate,) = $this->getConsumerAndStatus($ctag);
         if ($cstate == 'CLOSED') {
             trigger_error("Consumer is already removed", E_USER_WARNING);
             return;
@@ -444,10 +552,10 @@ class Channel
     private function getConsumerAndStatus ($tag) {
         foreach ($this->consumers as $c) {
             if ($c[1] == $tag) {
-                return array($c[0], $c[2]);
+                return array($c[0], $c[2], $c[3]);
             }
         }
-        return array(null, 'INVALID');
+        return array(null, 'INVALID', null);
     }
 
 
@@ -501,13 +609,29 @@ class Channel
         return $r;
     }
 
-
+    /**
+     * Locate consume parameters for  the given consumer and start the
+     * broker-side  consume  session.   After  this, the  broker  will
+     * immediately start sending messages.
+     */
     private function _startConsumer ($cnum) {
-        $consume = $this->consumers[$cnum][0]->getConsumeMethod($this);
+        $consume = false;
+        if (($consume = $this->consumers[$cnum][0]->getConsumeMethod($this)) && ! ($consume instanceof wire\Method)) {
+            trigger_error("Consumer returned invalid consume method", E_USER_WARNING);
+            $consume = false;
+        }
+        if (! $consume && is_array($this->consumers[$cnum][3])) {
+            // Consume params were passed to addConsumer().
+            $consume = $this->basic('consume', $this->consumers[$cnum][3]);
+        }
+        if (! $consume) {
+            throw new \Exception("Couldn't find any consume paramters while starting consumer", 9265);
+        }
         $cOk = $this->invoke($consume);
         $this->consumers[$cnum][0]->handleConsumeOk($cOk, $this);
         $this->consumers[$cnum][2] = 'READY';
         $this->consumers[$cnum][1] = $cOk->getField('consumer-tag');
+        $this->consumers[$cnum][3] = $consume->getFields();
     }
 
     /**
@@ -525,7 +649,13 @@ class Channel
         return false;
     }
 
+    /**
+     * Consume   Lifecycle  callback,   called  from   the  containing
+     * connection  to notify  that the  connection is  no longer  in a
+     * consume loop
+     */
     function onSelectEnd () {
+        $this->flushAcks();
         $this->consuming = false;
     }
 

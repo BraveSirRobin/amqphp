@@ -4,7 +4,7 @@
   <!-- RabbitMQ settings -->
   <username>testing</username>
   <userpass>letmein</userpass>
-  <vhost>robin</vhost>
+  <vhost>/</vhost>
   <exchange>unit-test-basic</exchange>
   <exchangeType>fanout</exchangeType>
   <queueName>unit-test-basic-q1</queueName>
@@ -16,23 +16,23 @@
   <saveMessagesDir></saveMessagesDir><!-- Set to empty for no message saving -->
 
   <!-- Test consumer settings -->
-  <numConsumers>2</numConsumers>
-  <numProducers>10</numProducers>
+  <numConsumers>3</numConsumers>
+  <numProducers>6</numProducers>
   <consumerClass>ForkerConsumer</consumerClass>
   <producerClass>ForkerProducer</producerClass>
   <consumerChannels>2</consumerChannels>
-  <consumerPrefetch>4</consumerPrefetch>
+  <consumerPrefetch>0</consumerPrefetch>
   <consumersPerChannel>4</consumersPerChannel>
 
   <!-- Test producer settings.  Message bounds are in bytes. -->
   <prodSmallMsgPercent>20</prodSmallMsgPercent>
-  <smallMsgMin>1</smallMsgMin>
-  <smallMsgMax>8192</smallMsgMax>
-  <largeMsgMin>20400</largeMsgMin>
-  <largeMsgMax>102400</largeMsgMax>
+  <smallMsgMin>800</smallMsgMin>
+  <smallMsgMax>800</smallMsgMax>
+  <largeMsgMin>800</largeMsgMin>
+  <largeMsgMax>800</largeMsgMax>
   <prodNumLoops>0</prodNumLoops><!-- Set to zero for open-ended run. -->
-  <prodSleepMillis>10</prodSleepMillis>
-  <prodForceRead>1</prodForceRead>
+  <prodSleepMillis>2000</prodSleepMillis>
+  <prodForceRead>0</prodForceRead>
 
 
   <!-- Transport params - these are passed to the socket class 

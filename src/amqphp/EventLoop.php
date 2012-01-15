@@ -83,8 +83,8 @@ class EventLoop
             if (is_array($psr)) {
                 list($tvSecs, $tvUsecs) = $psr;
             } else if ($psr === true) {
-                $tvSecs = 0;
-                $tvUsecs = null;
+                $tvSecs = null;
+                $tvUsecs = 0;
             } else if (is_null($psr) && empty($this->cons)) {
                 // All connections have finished listening.
                 if (! $started) {

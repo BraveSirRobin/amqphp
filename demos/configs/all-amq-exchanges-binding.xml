@@ -1,0 +1,80 @@
+<?xml version="1.0"?>
+<methods>
+  <!-- Bind all amq exchanges in the root vhost to a single -->
+
+  <method>
+    <a_class k="string">queue</a_class>
+    <a_method k="string">declare</a_method>
+    <a_args>
+      <queue k="string">rmq-mon-q</queue>
+    </a_args>
+  </method>
+
+
+  <method>
+    <a_class k="string">queue</a_class>
+    <a_method k="string">bind</a_method>
+    <a_args>
+      <queue k="string">rmq-mon-q</queue>
+      <routing-key k="string">*</routing-key>
+      <exchange k="string">amq.rabbitmq.log</exchange>
+    </a_args>
+  </method>
+
+  <method>
+    <a_class k="string">queue</a_class>
+    <a_method k="string">bind</a_method>
+    <a_args>
+      <queue k="string">rmq-mon-q</queue>
+      <routing-key k="string">*</routing-key>
+      <exchange k="string">amq.rabbitmq.trace</exchange>
+    </a_args>
+  </method>
+
+<!-- -->
+  <method>
+    <a_class k="string">queue</a_class>
+    <a_method k="string">bind</a_method>
+    <a_args>
+      <queue k="string">rmq-mon-q</queue>
+      <routing-key k="string">*</routing-key>
+      <exchange k="string">amq.direct</exchange>
+    </a_args>
+  </method>
+  <method>
+    <a_class k="string">queue</a_class>
+    <a_method k="string">bind</a_method>
+    <a_args>
+      <queue k="string">rmq-mon-q</queue>
+      <routing-key k="string">*</routing-key>
+      <exchange k="string">amq.fanout</exchange>
+    </a_args>
+  </method>
+  <method>
+    <a_class k="string">queue</a_class>
+    <a_method k="string">bind</a_method>
+    <a_args>
+      <queue k="string">rmq-mon-q</queue>
+      <routing-key k="string">*</routing-key>
+      <exchange k="string">amq.headers</exchange>
+    </a_args>
+  </method>
+  <method>
+    <a_class k="string">queue</a_class>
+    <a_method k="string">bind</a_method>
+    <a_args>
+      <queue k="string">rmq-mon-q</queue>
+      <routing-key k="string">*</routing-key>
+      <exchange k="string">amq.match</exchange>
+    </a_args>
+  </method>
+  <method>
+    <a_class k="string">queue</a_class>
+    <a_method k="string">bind</a_method>
+    <a_args>
+      <queue k="string">rmq-mon-q</queue>
+      <routing-key k="string">*</routing-key>
+      <exchange k="string">amq.topic</exchange>
+    </a_args>
+  </method>
+</methods>

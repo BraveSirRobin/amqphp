@@ -17,6 +17,13 @@ Amqphp demo consumers.
 
 Paramers:
 
+  --sleep [integer]
+    Sets a publish loop sleep, value in milliseconds. (default 0)
+
+  --ticker [integer]
+    Output  a '.'  after  every N  messages,  set to  0  for no  ouput
+    (default 0)
+
   --message [string]
     Sets the body of the message
 
@@ -40,7 +47,8 @@ Paramers:
 ", basename(__FILE__));
 
 /** Grab run options from the command line. */
-$conf = getopt('', array('help', 'message:', 'repeat:', 'confirms', 'mandatory', 'immediate', 'exchange:', 'routing-key:'));
+$conf = getopt('', array('help', 'message:', 'repeat:', 'confirms', 'mandatory',
+                         'immediate', 'exchange:', 'routing-key:', 'sleep:', 'ticker:'));
 
 if (array_key_exists('help', $conf)) {
     echo $USAGE;
@@ -70,6 +78,14 @@ if (array_key_exists('repeat', $conf) && is_numeric($conf['repeat'])) {
 } else {
     $N = 1;
 }
+
+$sleep = array_key_exists('sleep', $conf)
+    ? intval($conf['sleep'])
+    : 0;
+
+$ticks = array_key_exists('ticker', $conf)
+    ? intval($conf['ticker'])
+    : 0;
 
 $confirms = array_key_exists('confirms', $conf);
 $mandatory = array_key_exists('mandatory', $conf);
@@ -110,8 +126,8 @@ function info () {
 
 /** Confirm selected options to the user */
 info("Ready to publish:\n Message '%s..' \n Send %d times\n mandatory: %d\n" .
-       " immediate: %d\n confirms: %d\n routing-key: %s\n exchange: %s\n", substr($content, 0, 24),
-	$N, $mandatory, $immediate, $confirms, $routingKey, $exchange);
+       " immediate: %d\n confirms: %d\n routing-key: %s\n exchange: %s\n sleep: %d\n ticker: %d", substr($content, 0, 24),
+     $N, $mandatory, $immediate, $confirms, $routingKey, $exchange, $sleep, $ticks);
 
 
 /** Initialise the broker connection and send the messages. */
@@ -141,10 +157,24 @@ if ($confirms) {
 $basicP = $chan->basic('publish', $publishParams);
 $basicP->setContent($content);
 
-$n = 0;
+$n = $tc = 0;
+$tc = 1;
 for ($i = 0; $i < $N; $i++) {
     $chan->invoke($basicP);
     $n++;
+
+    if ($ticks && ! ($n % $ticks)) {
+        if (! ($tc % 80)) {
+            echo ".\n";
+            $tc = 1;
+        } else {
+            echo '.';
+            $tc++;
+        }
+    }
+    if ($sleep) {
+        usleep($sleep);
+    }
 }
 
 info("Published %d messages", $n);

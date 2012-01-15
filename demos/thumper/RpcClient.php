@@ -76,6 +76,10 @@ class RpcClient implements amqp\Consumer, amqp\ChannelEventHandler
     function handleCancelOk (wire\Method $m, amqp\Channel $chan) { }
 
     /** @override \amqphp\Consumer */
+    function handleCancel (wire\Method $m, amqp\Channel $chan) { }
+
+
+    /** @override \amqphp\Consumer */
     function handleConsumeOk (wire\Method $m, amqp\Channel $chan) { }
 
     /** @override \amqphp\Consumer */

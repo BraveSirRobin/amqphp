@@ -54,6 +54,9 @@ class Consumer implements amqp\Consumer
     function handleCancelOk (wire\Method $m, amqp\Channel $chan) { }
 
     /** @override \amqphp\Consumer */
+    function handleCancel (wire\Method $m, amqp\Channel $chan) { }
+
+    /** @override \amqphp\Consumer */
     function handleConsumeOk (wire\Method $m, amqp\Channel $chan) { }
 
     /** @override \amqphp\Consumer */
