@@ -409,10 +409,9 @@ class Channel
             break;
         case CONSUMER_REJECT:
         case CONSUMER_DROP:
-            /*printf(" (amqp\Channel) - flush %s for messages %s\n",
-                   ($this->ackFlag == CONSUMER_REJECT) ? 'rejects' : 'drops',
-                   implode(',', $this->pendingAcks));*/
-
+//            printf(" (amqp\Channel) - flush %s for messages %s\n",
+//                   (($this->ackFlag == CONSUMER_REJECT) ? 'rejects' : 'drops'),
+//                   implode(',', $this->pendingAcks));
             $rej = $this->basic('nack', array('delivery-tag' => array_pop($this->pendingAcks),
                                               'multiple' => true,
                                               'requeue' => ($this->ackFlag == CONSUMER_REJECT)));

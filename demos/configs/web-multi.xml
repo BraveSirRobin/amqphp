@@ -7,7 +7,7 @@
     </set_properties>
     <constr_args>
       <conn_params>
-        <vhost k="string">robin</vhost>
+        <vhost k="string">/</vhost>
         <username k="string">testing</username>
         <userpass k="string">letmein</userpass>
         <socketImpl k="string">\amqphp\StreamSocket</socketImpl>
@@ -55,7 +55,7 @@
     </set_properties>
     <constr_args>
       <conn_params>
-        <vhost k="string">robin</vhost>
+        <vhost k="string">/</vhost>
         <username k="string">testing</username>
         <userpass k="string">letmein</userpass>
         <socketImpl k="string">\amqphp\StreamSocket</socketImpl>

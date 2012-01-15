@@ -75,7 +75,7 @@ class ForkerConsumer extends Forker
 
             $cons = array('queue' => $this->fParams['queueName'],
                           'no-local' => true,
-                          'no-ack' => false,
+                          'no-ack' => true,
                           'exclusive' => false,
                           'no-wait' => false);
             for ($j = 0; $j < $this->fParams['consumersPerChannel']; $j++) {
@@ -114,7 +114,7 @@ class TraceConsumer extends amqp\SimpleConsumer
                    $e, $this->i, $md5, md5(substr($pl, $p+1)), strlen($pl));
             printf("Payload is:\n%s\n", $pl);
             //throw new \Exception("Goto error handler ;-)");
-        } else {//if (($this->n % 200) == 0) {
+        } else if (($this->n % 200) == 0) {
             echo '.';
             $this->n = 0;
         }

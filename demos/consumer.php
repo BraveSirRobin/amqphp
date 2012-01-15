@@ -99,6 +99,8 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
                                'no-ack' => $noAck,
                                'exclusive' => $exclusive,
                                'no-wait' => false);
+//        $meth = $this->channel->basic('consume', $consumeParams);
+//        printf("Consume params:\n%s\n", wire\Hexdump::hexdump(implode('', $meth->toBin($this->connection->getProtocolLoader()))));
         $this->channel->addConsumer($this, $consumeParams);
     }
 
@@ -153,18 +155,19 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
             return amqp\CONSUMER_ACK;
         }
 
-        switch ($content) {
-        case $this->exitMessage:
+        if ($content === $this->exitMessage) {
             info("Received exit message, cancel consumer %d", $cNum);
             return array(amqp\CONSUMER_ACK, amqp\CONSUMER_CANCEL);
-        case $this->rejectMessage:
+        } else if ($content === $this->rejectMessage) {
             info("Received reject message, reject consumer %d", $cNum);
             return amqp\CONSUMER_REJECT;
-        case $this->dropMessage:
+        } else if ($content === $this->dropMessage) {
             info("Received drop message, drop consumer %d", $cNum);
             return amqp\CONSUMER_DROP;
-        default:
-            info("Message received on consumer %d [%s]\n  %s", $cNum, $cTag, $content);
+        } else {
+            printf("[MSG] consumer-tag=%s [%d]\ndelivery-tag=%s redelivered=%s\nexchange=%s\nrouting-key=%s\n%s\n",
+                   $cTag, $cNum, $m->getField('delivery-tag'), $m->getField('redelivered') ? 't' : 'f', $m->getField('exchange'),
+                   $m->getField('routing-key'), $content);
             return amqp\CONSUMER_ACK;
         }
     }
@@ -243,6 +246,8 @@ configured with the following switches:
                       no-local: f
                       no-ack: f
                       exclusive: f
+      (Note: RabbitMQ does not support the no-local flag:
+             http://www.rabbitmq.com/interoperability.html)
 
   --exit-message  [string]  - when  the  following  message string  is
     received,  exit  the   receiving  consumer  with  CONSUMER_CANCEL.
@@ -250,7 +255,8 @@ configured with the following switches:
 
   --reject-message  [string] -  when the  following message  string is
     received,  reject  the   incoming  message  with  CONSUMER_REJECT.
-    Default Value: "Reject."
+    Default  Value: "Reject."  (Note:  RabbitMQ does  not support  the
+    no-local flag: http://www.rabbitmq.com/interoperability.html)
 
   --drop-message  [string]  - when  the  following  message string  is
     received, reject the incoming message with CONSUMER_DROP.  Default

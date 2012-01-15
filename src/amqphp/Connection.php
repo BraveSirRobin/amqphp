@@ -409,7 +409,6 @@ class Connection
         if ($meth->isHeartbeat()) {
             $resp = "\x08\x00\x00\x00\x00\x00\x00\xce";
             $this->write($resp);
-            print(" (amqp\Connection) Wrote heartbeat\n");
             return;
         }
 

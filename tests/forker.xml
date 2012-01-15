@@ -4,7 +4,7 @@
   <!-- RabbitMQ settings -->
   <username>testing</username>
   <userpass>letmein</userpass>
-  <vhost>robin</vhost>
+  <vhost>/</vhost>
   <exchange>unit-test-basic</exchange>
   <exchangeType>fanout</exchangeType>
   <queueName>unit-test-basic-q1</queueName>
@@ -21,7 +21,7 @@
   <consumerClass>ForkerConsumer</consumerClass>
   <producerClass>ForkerProducer</producerClass>
   <consumerChannels>2</consumerChannels>
-  <consumerPrefetch>10</consumerPrefetch>
+  <consumerPrefetch>0</consumerPrefetch>
   <consumersPerChannel>4</consumersPerChannel>
 
   <!-- Test producer settings.  Message bounds are in bytes. -->
@@ -31,8 +31,8 @@
   <largeMsgMin>800</largeMsgMin>
   <largeMsgMax>800</largeMsgMax>
   <prodNumLoops>0</prodNumLoops><!-- Set to zero for open-ended run. -->
-  <prodSleepMillis>16</prodSleepMillis>
-  <prodForceRead>1</prodForceRead>
+  <prodSleepMillis>2000</prodSleepMillis>
+  <prodForceRead>0</prodForceRead>
 
 
   <!-- Transport params - these are passed to the socket class 
