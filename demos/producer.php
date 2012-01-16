@@ -53,6 +53,15 @@ function info () {
     vprintf($fmt, $args);
 }
 
+function warn () {
+    $args = func_get_args();
+    if (! $fmt = array_shift($args)) {
+        return;
+    }
+    $fmt = sprintf("[WARN] %s\n", $fmt);
+    vprintf($fmt, $args);
+}
+
 
 
 
@@ -78,6 +87,10 @@ Paramers:
   --message [string]
     Sets  the  body  of  the  message.  If  more  than  one  supplied,
     round-robin the messages
+
+  --message-file [file]
+    Same as  --message, but takes  the message content from  the given
+    file.
 
   --repeat [integer]
     How many times to send the message
@@ -107,7 +120,8 @@ Paramers:
 
 /** Grab run options from the command line. */
 $conf = getopt('', array('help', 'message:', 'repeat:', 'confirms', 'mandatory',
-                         'immediate', 'exchange:', 'routing-key:', 'sleep:', 'ticker:', 'show-events'));
+                         'immediate', 'exchange:', 'routing-key:', 'sleep:', 'ticker:',
+                         'show-events', 'message-file:'));
 
 if (array_key_exists('help', $conf)) {
     echo $USAGE;
@@ -126,10 +140,22 @@ if (array_key_exists('routing-key', $conf)) {
     $routingKey = '';
 }
 
+$content = array();
 if (array_key_exists('message', $conf)) {
     $content = (array) $conf['message'];
-} else {
-    $content = array("Default messages from demo-multi-producer!");
+}
+
+if (array_key_exists('message-file', $conf)) {
+    foreach ((array) $conf['message-file'] as $fn) {
+        if (is_file($fn)) {
+            $content[] = file_get_contents($fn);
+        } else {
+            warn("Invalid message file %s, skip to next", $fn);
+        }
+    }
+}
+if (! $content) {
+    $content = array('A test message from producer.php');
 }
 
 if (array_key_exists('repeat', $conf)) {
@@ -220,27 +246,6 @@ foreach ($N as $repNum => $repeat) {
     }
 }
 
-/*
-$n = $tc = 0;
-$tc = 1;
-for ($i = 0; $i < $N; $i++) {
-    $chan->invoke($basicP);
-    $n++;
-
-    if ($ticks && ! ($n % $ticks)) {
-        if (! ($tc % 80)) {
-            echo ".\n";
-            $tc = 1;
-        } else {
-            echo '.';
-            $tc++;
-        }
-    }
-    if ($sleep) {
-        usleep($sleep);
-    }
-}
-*/
 info("Published %d messages", $n);
 
 /** If  required, enter  a select  loop  in order  to receive  message
