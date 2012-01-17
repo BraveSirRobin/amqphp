@@ -201,9 +201,8 @@ class Channel
         // Do numbering of basic.publish during confirm mode
         if ($this->confirmMode && $m->amqpClass == 'basic.publish') {
             $this->confirmSeq++;
-            $this->confirmSeqs[] = $this->confirmSeq;
+            $this->confirmSeqs[$this->confirmSeq] = $m;
         }
-
 
         return $this->myConn->invoke($m);
     }
@@ -402,16 +401,12 @@ class Channel
         }
         switch ($this->ackFlag) {
         case CONSUMER_ACK:
-            //printf(" (amqp\Channel) - flush acks for messages %s\n", implode(',', $this->pendingAcks));
             $ack = $this->basic('ack', array('delivery-tag' => array_pop($this->pendingAcks),
                                              'multiple' => true));
             $this->invoke($ack);
             break;
         case CONSUMER_REJECT:
         case CONSUMER_DROP:
-//            printf(" (amqp\Channel) - flush %s for messages %s\n",
-//                   (($this->ackFlag == CONSUMER_REJECT) ? 'rejects' : 'drops'),
-//                   implode(',', $this->pendingAcks));
             $rej = $this->basic('nack', array('delivery-tag' => array_pop($this->pendingAcks),
                                               'multiple' => true,
                                               'requeue' => ($this->ackFlag == CONSUMER_REJECT)));
@@ -430,29 +425,23 @@ class Channel
      * basic.{n}ack (RMQ Confirm key)
      */
     private function removeConfirmSeqs (wire\Method $meth, $event) {
-        if ($meth->getField('multiple')) {
+        if (! $this->callbackHandler) {
+            trigger_error("Received publish confirmations with no channel event handler in place", E_USER_WARNING);
+            return;
+        }
 
-            $dtag = $meth->getField('delivery-tag');
-            $evh = $this->callbackHandler;
-            $this->confirmSeqs = 
-                array_filter($this->confirmSeqs,
-                             function ($id) use ($dtag, $evh, $event, $meth) {
-                                 if ($id <= $dtag) {
-                                     if ($evh) {
-                                         $evh->$event($meth);
-                                     }
-                                     return false;
-                                 } else {
-                                     return true;
-                                 }
-                             });
-        } else {
-            $dt = $meth->getField('delivery-tag');
-            if (isset($this->confirmSeqs)) {
-                if ($this->callbackHandler) {
-                    $this->callbackHandler->$event($meth);
+        $dtag = $meth->getField('delivery-tag');
+        if ($meth->getField('multiple')) {
+            foreach (array_keys($this->confirmSeqs) as $sk) {
+                if ($sk <= $dtag) {
+                    $this->callbackHandler->$event($this->confirmSeqs[$sk]);
+                    unset($this->confirmSeqs[$sk]);
                 }
-                unset($this->confirmSeqs[array_search($dt, $this->confirmSeqs)]);
+            }
+        } else {
+            if (array_key_exists($dtag, $this->confirmSeqs)) {
+                $this->callbackHandler->$event($this->confirmSeqs[$dtag]);
+                unset($this->confirmSeqs[$dtag]);
             }
         }
     }

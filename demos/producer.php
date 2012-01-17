@@ -24,23 +24,23 @@ class DemoCEH implements amqp\ChannelEventHandler
 
     function publishConfirm (wire\Method $meth) {
         if ($this->evOutput) {
-            info("Channel event pubConf - dtag=%s", $meth->getField('delivery-tag'));
+            info("Channel event publishConfirm - message:\n%s", substr($meth->getContent(), 0, 5));
         }
-        $this->confirms[] = $meth->getField('delivery-tag');
+        $this->confirms[] = $meth;
     }
 
     function publishReturn (wire\Method $meth) {
         if ($this->evOutput) {
-            info("Channel event pubRet - dtag=%s", $meth->getField('delivery-tag'));
+            info("Channel event publishReturn - message:\n%s", substr($meth->getContent(), 0, 5));
         }
-        $this->returns[] = $meth->getField('delivery-tag');
+        $this->returns[] = $meth;
     }
 
     function publishNack (wire\Method $meth) {
         if ($this->evOutput) {
-            info("Channel event pubNack - dtag=%s", $meth->getField('delivery-tag'));
+            info("Channel event publishNack - message:\n%s", substr($meth->getContent(), 0, 5));
         }
-        $this->nacks[] = $meth->getField('delivery-tag');
+        $this->nacks[] = $meth;
     }
 }
 
@@ -95,6 +95,9 @@ Paramers:
   --repeat [integer]
     How many times to send the message
 
+  --recv-tmo [integer]
+    How many seconds to wait for publish confirms (default 3)
+
   --confirms
     Switch on the streaming confirms feature (default false)
 
@@ -121,7 +124,7 @@ Paramers:
 /** Grab run options from the command line. */
 $conf = getopt('', array('help', 'message:', 'repeat:', 'confirms', 'mandatory',
                          'immediate', 'exchange:', 'routing-key:', 'sleep:', 'ticker:',
-                         'show-events', 'message-file:'));
+                         'show-events', 'message-file:', 'recv-tmo:'));
 
 if (array_key_exists('help', $conf)) {
     echo $USAGE;
@@ -139,6 +142,10 @@ if (array_key_exists('routing-key', $conf)) {
 } else {
     $routingKey = '';
 }
+
+$recvTmo = array_key_exists('recv-tmo', $conf)
+    ? intval($conf['recv-tmo'])
+    : 3;
 
 $content = array();
 if (array_key_exists('message', $conf)) {
@@ -181,9 +188,9 @@ $immediate = array_key_exists('immediate', $conf);
 /** Confirm selected options to the user */
 
 info("Ready to publish:\n Message(s) '%s' \n Send Repeats: %s\n mandatory: %d\n" .
-       " immediate: %d\n confirms: %d\n routing-key: %s\n exchange: %s\n sleep: %d\n ticker: %d",
+       " immediate: %d\n confirms: %d\n routing-key: %s\n exchange: %s\n sleep: %d\n ticker: %d\n receive timeout: %d",
      implode("','", array_map(function ($m) { return substr($m, 0, 8); }, $content)),
-     implode(', ', $N), $mandatory, $immediate, $confirms, $routingKey, $exchange, $sleep, $ticks);
+     implode(', ', $N), $mandatory, $immediate, $confirms, $routingKey, $exchange, $sleep, $ticks, $recvTmo);
 
 
 /** Initialise the broker connection and send the messages. */
@@ -252,7 +259,7 @@ info("Published %d messages", $n);
    responses. */
 if ($confirms || $mandatory || $immediate) {
     /** Never wait more than 3 seconds for responses */
-    $conn->pushExitStrategy(amqp\STRAT_TIMEOUT_REL, 3, 0);
+    $conn->pushExitStrategy(amqp\STRAT_TIMEOUT_REL, $recvTmo, 0);
     if ($confirms) {
         /** In confirm mode,  add an additional rule so  that the loop
            exits as soon as all confirms have returned. */
