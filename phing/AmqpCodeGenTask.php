@@ -45,6 +45,14 @@ class AmqpCodeGenTask extends Task {
         }
 
         $proc = new XsltProcessor;
+        /** For PHP  versions > 5.3.8, ensure that  the XSLT processor
+         * is able to write files, otherwise the build will fail. */
+        if (version_compare(PHP_VERSION,'5.4',"<")) {
+            $oldval = ini_set("xsl.security_prefs",XSL_SECPREFS_NONE);
+        } else {
+            $oldval = $proc->setSecurityPreferences(XSL_SECPREFS_NONE);
+        }
+
         $ssDom = new DomDocument;
         if (! $ssDom->load($this->stylesheet)) {
             throw new \Exception("codegen task failed to load stylesheet dom", 8475);
@@ -58,6 +66,11 @@ class AmqpCodeGenTask extends Task {
         $proc->setParameter('', 'OUTPUT_DIR', $this->outputDir);
         $proc->transformToXml($specDom);
 
+        if (version_compare(PHP_VERSION,'5.4',"<")) {
+            ini_set("xsl.security_prefs",$oldval);
+        } else {
+            $proc = null;
+        }
     }
 
 
