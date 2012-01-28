@@ -1,1 +1,2 @@
-/home/robin/Templates/CMP/src/amqphp/ConditionalExitStrategy.php
+<?php
+ namespace amqphp; use amqphp\protocol; use amqphp\wire; class ConditionalExitStrategy implements ExitStrategy { private $conn; function configure ($sMode) {} function init (Connection $conn) { $this->conn = $conn; } function preSelect ($prev=null) { if ($prev === false) { return false; } $hasConsumers = false; foreach ($this->conn->getChannels() as $chan) { if ($chan->canListen()) { $hasConsumers = true; break; } } if (! $hasConsumers) { return false; } else { return $prev; } } function complete () { $this->conn = null; } } 
