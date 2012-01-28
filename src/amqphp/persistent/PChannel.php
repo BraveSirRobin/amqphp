@@ -45,7 +45,7 @@ class PChannel extends \amqphp\Channel implements \Serializable
     private static $PersProps = array('chanId', 'flow', 'frameMax', 'confirmSeqs',
                                       'confirmSeq', 'confirmMode', 'isOpen',
                                       'callbackHandler', 'suspendOnSerialize',
-                                      'resumeOnHydrate', 'ackBuffer', 'pendingAcks',
+                                      'resumeOnHydrate', 'ackBuffer', 'ackHead',
                                       'numPendAcks', 'ackFlag');
 
     function serialize () {
