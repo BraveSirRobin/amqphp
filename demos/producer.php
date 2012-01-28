@@ -6,6 +6,66 @@ use amqphp\wire;
 
 require __DIR__ . '/class-loader.php';
 
+
+
+
+
+/**
+ * A  Very simple  channel event  handler, simply  saves  all incoming
+ * events to be reported on later.
+ */
+class DemoCEH implements amqp\ChannelEventHandler
+{
+    public $confirms = array();
+    public $returns = array();
+    public $nacks = array();
+
+    public $evOutput = false;
+
+    function publishConfirm (wire\Method $meth) {
+        if ($this->evOutput) {
+            info("Channel event publishConfirm - message:\n%s", substr($meth->getContent(), 0, 5));
+        }
+        $this->confirms[] = $meth;
+    }
+
+    function publishReturn (wire\Method $meth) {
+        if ($this->evOutput) {
+            info("Channel event publishReturn - message:\n%s", substr($meth->getContent(), 0, 5));
+        }
+        $this->returns[] = $meth;
+    }
+
+    function publishNack (wire\Method $meth) {
+        if ($this->evOutput) {
+            info("Channel event publishNack - message:\n%s", substr($meth->getContent(), 0, 5));
+        }
+        $this->nacks[] = $meth;
+    }
+}
+
+function info () {
+    $args = func_get_args();
+    if (! $fmt = array_shift($args)) {
+        return;
+    }
+    $fmt = sprintf("[INFO] %s\n", $fmt);
+    vprintf($fmt, $args);
+}
+
+function warn () {
+    $args = func_get_args();
+    if (! $fmt = array_shift($args)) {
+        return;
+    }
+    $fmt = sprintf("[WARN] %s\n", $fmt);
+    vprintf($fmt, $args);
+}
+
+
+
+
+
 /**
  * Parse command line options
  */
@@ -25,10 +85,18 @@ Paramers:
     (default 0)
 
   --message [string]
-    Sets the body of the message
+    Sets  the  body  of  the  message.  If  more  than  one  supplied,
+    round-robin the messages
+
+  --message-file [file]
+    Same as  --message, but takes  the message content from  the given
+    file.
 
   --repeat [integer]
     How many times to send the message
+
+  --recv-tmo [integer]
+    How many seconds to wait for publish confirms (default 3)
 
   --confirms
     Switch on the streaming confirms feature (default false)
@@ -39,16 +107,24 @@ Paramers:
   --immediate
     Publish messages with immediate=true (default false)
 
-  --exchange (most-basic-ex)
+  --exchange [exchange=most-basic-ex]
     Publish to this exchange
 
-  --routing-key
+  --routing-key [key]
     Use this routing key
+
+  --show-events
+    Display incoming channel events on StdOut
 ", basename(__FILE__));
+
+
+
+
 
 /** Grab run options from the command line. */
 $conf = getopt('', array('help', 'message:', 'repeat:', 'confirms', 'mandatory',
-                         'immediate', 'exchange:', 'routing-key:', 'sleep:', 'ticker:'));
+                         'immediate', 'exchange:', 'routing-key:', 'sleep:', 'ticker:',
+                         'show-events', 'message-file:', 'recv-tmo:'));
 
 if (array_key_exists('help', $conf)) {
     echo $USAGE;
@@ -67,16 +143,32 @@ if (array_key_exists('routing-key', $conf)) {
     $routingKey = '';
 }
 
+$recvTmo = array_key_exists('recv-tmo', $conf)
+    ? intval($conf['recv-tmo'])
+    : 3;
+
+$content = array();
 if (array_key_exists('message', $conf)) {
-    $content = $conf['message'];
-} else {
-    $content = "Default messages from demo-multi-producer!";
+    $content = (array) $conf['message'];
 }
 
-if (array_key_exists('repeat', $conf) && is_numeric($conf['repeat'])) {
-    $N = (int) $conf['repeat'];
+if (array_key_exists('message-file', $conf)) {
+    foreach ((array) $conf['message-file'] as $fn) {
+        if (is_file($fn)) {
+            $content[] = file_get_contents($fn);
+        } else {
+            warn("Invalid message file %s, skip to next", $fn);
+        }
+    }
+}
+if (! $content) {
+    $content = array('A test message from producer.php');
+}
+
+if (array_key_exists('repeat', $conf)) {
+    $N = (array) $conf['repeat'];
 } else {
-    $N = 1;
+    $N = array(1);
 }
 
 $sleep = array_key_exists('sleep', $conf)
@@ -91,46 +183,24 @@ $confirms = array_key_exists('confirms', $conf);
 $mandatory = array_key_exists('mandatory', $conf);
 $immediate = array_key_exists('immediate', $conf);
 
-/**
- * A  Very simple  channel event  handler, simply  saves  all incoming
- * events to be reported on later.
- */
-class DemoCEH implements amqp\ChannelEventHandler
-{
-    public $confirms = array();
-    public $returns = array();
-    public $nacks = array();
-
-    function publishConfirm (wire\Method $meth) {
-        $this->confirms[] = $meth->getField('delivery-tag');
-    }
-
-    function publishReturn (wire\Method $meth) {
-        $this->returns[] = $meth->getField('delivery-tag');
-    }
-
-    function publishNack (wire\Method $meth) {
-        $this->nacks[] = $meth->getField('delivery-tag');
-    }
-}
-
-function info () {
-    $args = func_get_args();
-    if (! $fmt = array_shift($args)) {
-        return;
-    }
-    $fmt = sprintf("[INFO] %s\n", $fmt);
-    vprintf($fmt, $args);
-}
 
 
 /** Confirm selected options to the user */
-info("Ready to publish:\n Message '%s..' \n Send %d times\n mandatory: %d\n" .
-       " immediate: %d\n confirms: %d\n routing-key: %s\n exchange: %s\n sleep: %d\n ticker: %d", substr($content, 0, 24),
-     $N, $mandatory, $immediate, $confirms, $routingKey, $exchange, $sleep, $ticks);
+
+info("Ready to publish:\n Message(s) '%s' \n Send Repeats: %s\n mandatory: %d\n" .
+       " immediate: %d\n confirms: %d\n routing-key: %s\n exchange: %s\n sleep: %d\n ticker: %d\n receive timeout: %d",
+     implode("','", array_map(function ($m) { return substr($m, 0, 8); }, $content)),
+     implode(', ', $N), $mandatory, $immediate, $confirms, $routingKey, $exchange, $sleep, $ticks, $recvTmo);
 
 
 /** Initialise the broker connection and send the messages. */
+$su = new amqp\Factory(__DIR__ . '/configs/basic-connection.xml');
+$conn = $su->getConnections();
+$conn = array_pop($conn);
+$chan = $conn->getChannel(1);
+
+
+
 $publishParams = array(
     'content-type' => 'text/plain',
     'content-encoding' => 'UTF-8',
@@ -140,27 +210,33 @@ $publishParams = array(
     'exchange' => $exchange);
 
 
-$su = new amqp\Factory(__DIR__ . '/configs/basic-connection.xml');
-$conn = $su->getConnections();
-$conn = array_pop($conn);
-$chan = $conn->getChannel(1);
-
 
 $ceh = new DemoCEH;
 $chan->setEventHandler($ceh);
+$ceh->evOutput = array_key_exists('show-events', $conf);
 
 if ($confirms) {
     $chan->setConfirmMode();
 }
 
 
-$basicP = $chan->basic('publish', $publishParams);
-$basicP->setContent($content);
+// Prepare a list of messages
+for ($i = 0, $c = count($content); $i < $c; $i++) {
+    $basicP = $chan->basic('publish', $publishParams);
+    $basicP->setContent($content[$i]);
+    $content[$i] = $basicP;
+}
 
+// Main loop
+$nMessages = count($content);
 $n = $tc = 0;
 $tc = 1;
-for ($i = 0; $i < $N; $i++) {
-    $chan->invoke($basicP);
+foreach ($N as $repNum => $repeat) {
+    $m = $content[$repNum % $nMessages];
+    for ($i = 0; $i < $repeat; $i++) {
+        $chan->invoke($m);
+        info("Sent message %s", $m->getContent());
+    }
     $n++;
 
     if ($ticks && ! ($n % $ticks)) {
@@ -183,7 +259,7 @@ info("Published %d messages", $n);
    responses. */
 if ($confirms || $mandatory || $immediate) {
     /** Never wait more than 3 seconds for responses */
-    $conn->pushExitStrategy(amqp\STRAT_TIMEOUT_REL, 3, 0);
+    $conn->pushExitStrategy(amqp\STRAT_TIMEOUT_REL, $recvTmo, 0);
     if ($confirms) {
         /** In confirm mode,  add an additional rule so  that the loop
            exits as soon as all confirms have returned. */

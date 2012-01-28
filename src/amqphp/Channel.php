@@ -72,10 +72,21 @@ class Channel
      */
     protected $consumers = array();
 
+    /**
+     * Channel Event Handler, set in setEventHandler().
+     */
     protected $callbackHandler;
 
-    /** Store of basic.publish sequence numbers. */
+    /**
+     * Store of basic.publish  sequence numbers, format:
+     *     array(<seq-no> => \amqphp\Wire\Method)
+     */
     protected $confirmSeqs = array();
+
+    /**
+     * Used  to track  outgoing  message sequence  numbers in  confirm
+     * mode.
+     */
     protected $confirmSeq = 0;
 
     /** Flag set during RMQ confirm mode */
@@ -94,23 +105,23 @@ class Channel
     public $ackBuffer = 5;
 
     /** 
-     * Used  at runtime  to buffer  (n)acks, just  a list  of numbers.
-     * Note   from   the   Amqp    spec   that   delivery   tags   are
-     * channel-specific:
-     *
-     *     <doc>The  server-assigned   and  channel-specific  delivery
-     *     tag</doc>
-     *
-     *     <rule> The  delivery  tag  is valid only within the channel
-     *     from which the message was received. I.e. a client MUST NOT
-     *     receive a message on one channel and then acknowledge it on
-     *     another.</rule>
+     * $ackHead  holds the  latest delivery  tag of  received messages
+     * which we're  buffering as a  result of the  $ackBuffer setting.
+     * Once $ackBuffer acks have accumulated, we (n)ack up to $ackHead
      */
-    protected $pendingAcks = array();
-    protected $numPendAcks = 0; // Avoid re-counting lots.
+    protected $ackHead;
 
-    /** Used   to   track   ack   response,   one   of   CONSUMER_ACK,
-     * CONSUMER_REJECT, CONSUMER_DROP */
+    /**
+     * $numPendAcks  tracks how  many outstanding  acks  are currently
+     * buffered  -  once  this  value matches  the  $ackBuffer  value,
+     * (n)acks messages are send to the broker.
+     */
+    protected $numPendAcks = 0;
+
+    /**
+     * Specifies the  kind of  responses that are  queued up  as local
+     * acks, one of the CONSUMER_* consts.
+     */
     protected $ackFlag;
 
 
@@ -201,9 +212,8 @@ class Channel
         // Do numbering of basic.publish during confirm mode
         if ($this->confirmMode && $m->amqpClass == 'basic.publish') {
             $this->confirmSeq++;
-            $this->confirmSeqs[] = $this->confirmSeq;
+            $this->confirmSeqs[$this->confirmSeq] = $m;
         }
-
 
         return $this->myConn->invoke($m);
     }
@@ -324,6 +334,7 @@ class Channel
         $ctag = $meth->getField('consumer-tag');
         $response = false;
         list($cons, $status, $consParams) = $this->getConsumerAndStatus($ctag);
+
         if ($cons && $status == 'READY') {
             $response = $cons->handleDelivery($meth, $this);
         } else if ($cons) {
@@ -337,33 +348,35 @@ class Channel
             trigger_error($m, E_USER_WARNING);
             $response = CONSUMER_REJECT;
         }
-        // Handle callback response signals,  i.e the CONSUMER_XXX API
-        // messages, but  only for API responses  to the basic.deliver
-        // message
+
         if (! $response) {
-            return false;
+            return;
         }
 
         if (! is_array($response)) {
             $response = array($response);
         }
+        $shouldAck = (! array_key_exists('no-ack', $consParams) || ! $consParams['no-ack']);
         foreach ($response as $resp) {
             switch ($resp) {
             case CONSUMER_ACK:
-                if (! array_key_exists('no-ack', $consParams) || ! $consParams['no-ack']) {
+                if ($shouldAck) {
                     $this->ack($meth, CONSUMER_ACK);
                 }
                 break;
             case CONSUMER_DROP:
             case CONSUMER_REJECT:
-                if (! array_key_exists('no-ack', $consParams) || ! $consParams['no-ack']) {
+                if ($shouldAck) {
                     $this->ack($meth, $resp);
                 }
                 break;
             case CONSUMER_CANCEL:
-                // Basic.cancel this consumer, then change the it's status flag
                 $this->removeConsumerByTag($cons, $ctag);
                 break;
+            default:
+                trigger_error("Invalid consumer response $resp - consumers must " .
+                              'respond with either a single consumer flag, multiple ' .
+                              'consumer flags, or an empty response', E_USER_WARNING);
             }
         }
 
@@ -383,7 +396,7 @@ class Channel
             $this->flushAcks();
             $this->ackFlag = $action;
         }
-        $this->pendingAcks[] = $meth->getField('delivery-tag');
+        $this->ackHead = $meth->getField('delivery-tag');
         $this->numPendAcks++;
 
         if ($this->numPendAcks >= $this->ackBuffer) {
@@ -402,27 +415,22 @@ class Channel
         }
         switch ($this->ackFlag) {
         case CONSUMER_ACK:
-            //printf(" (amqp\Channel) - flush acks for messages %s\n", implode(',', $this->pendingAcks));
-            $ack = $this->basic('ack', array('delivery-tag' => array_pop($this->pendingAcks),
-                                             'multiple' => true));
+            $ack = $this->basic('ack', array('delivery-tag' => $this->ackHead,
+                                             'multiple' => ($this->ackBuffer > 1)));
             $this->invoke($ack);
             break;
         case CONSUMER_REJECT:
         case CONSUMER_DROP:
-//            printf(" (amqp\Channel) - flush %s for messages %s\n",
-//                   (($this->ackFlag == CONSUMER_REJECT) ? 'rejects' : 'drops'),
-//                   implode(',', $this->pendingAcks));
-            $rej = $this->basic('nack', array('delivery-tag' => array_pop($this->pendingAcks),
-                                              'multiple' => true,
+            $rej = $this->basic('nack', array('delivery-tag' => $this->ackHead,
+                                              'multiple' => ($this->ackBuffer > 1),
                                               'requeue' => ($this->ackFlag == CONSUMER_REJECT)));
             $this->invoke($rej);
             break;
         default:
             throw new \Exception("Internal (n)ack tracking state error", 2956);
         }
-        $this->ackFlag = null;
+        $this->ackFlag = $this->ackHead = null;
         $this->numPendAcks = 0;
-        $this->pendingAcks = array();
     }
 
     /**
@@ -430,29 +438,23 @@ class Channel
      * basic.{n}ack (RMQ Confirm key)
      */
     private function removeConfirmSeqs (wire\Method $meth, $event) {
-        if ($meth->getField('multiple')) {
+        if (! $this->callbackHandler) {
+            trigger_error("Received publish confirmations with no channel event handler in place", E_USER_WARNING);
+            return;
+        }
 
-            $dtag = $meth->getField('delivery-tag');
-            $evh = $this->callbackHandler;
-            $this->confirmSeqs = 
-                array_filter($this->confirmSeqs,
-                             function ($id) use ($dtag, $evh, $event, $meth) {
-                                 if ($id <= $dtag) {
-                                     if ($evh) {
-                                         $evh->$event($meth);
-                                     }
-                                     return false;
-                                 } else {
-                                     return true;
-                                 }
-                             });
-        } else {
-            $dt = $meth->getField('delivery-tag');
-            if (isset($this->confirmSeqs)) {
-                if ($this->callbackHandler) {
-                    $this->callbackHandler->$event($meth);
+        $dtag = $meth->getField('delivery-tag');
+        if ($meth->getField('multiple')) {
+            foreach (array_keys($this->confirmSeqs) as $sk) {
+                if ($sk <= $dtag) {
+                    $this->callbackHandler->$event($this->confirmSeqs[$sk]);
+                    unset($this->confirmSeqs[$sk]);
                 }
-                unset($this->confirmSeqs[array_search($dt, $this->confirmSeqs)]);
+            }
+        } else {
+            if (array_key_exists($dtag, $this->confirmSeqs)) {
+                $this->callbackHandler->$event($this->confirmSeqs[$dtag]);
+                unset($this->confirmSeqs[$dtag]);
             }
         }
     }
