@@ -102,7 +102,7 @@ class Channel
      *
      * @field   int
      */
-    public $ackBuffer = 5;
+    public $ackBuffer = 1;
 
     /** 
      * $ackHead  holds the  latest delivery  tag of  received messages
