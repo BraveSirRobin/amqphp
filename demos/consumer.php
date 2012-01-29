@@ -139,7 +139,7 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
 
     /** Callback for signal handlers.  */
     function sigHandler ($signo) {
-        info("SIGNAL RECEIVED %d", $signo);
+        info("RECEIVED SIGNAL %d, force event loop exit", $signo);
         $this->evl->forceLoopExit();
     }
 

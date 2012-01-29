@@ -111,6 +111,7 @@ class Socket
         return $ret;
     }
 
+
     /**
      * Call select on the given stream objects
      * @param   array    $incSet       List of Socket Id values of sockets to include in the select

@@ -107,6 +107,9 @@ class StreamSocket
                 }
             }
         }
+        if (! stream_set_blocking($this->sock, 0)) {
+            throw new \Exception("Failed to place stream connection in non-blocking mode", 2795);
+        }
         $this->connected = true;
         self::$All[] = $this;
     }
@@ -232,8 +235,18 @@ class StreamSocket
         return $buff;
     }
 
+    /**
+     * Blocking read, calls select before attempting to read.
+     */
     function read () {
-        return $this->readAll();
+        $buff = '';
+        $select = $this->select(5);
+        if ($select === false) {
+            return false;
+        } else if ($select > 0) {
+            $buff = $this->readAll();
+        }
+        return $buff;
     }
 
 
