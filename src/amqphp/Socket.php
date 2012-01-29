@@ -71,6 +71,8 @@ class Socket
             throw new \Exception("Failed to create inet socket", 7895);
         } else if (! socket_connect($this->sock, $this->host, $this->port)) {
             throw new \Exception("Failed to connect inet socket ({$this->host}, {$this->port})", 7564);
+        } else if (! socket_set_nonblock($this->sock)) {
+            throw new \Exception("Failed to switch connection in to non-blocking mode.", 2357);
         }
         $this->connected = true;
         self::$All[] = $this;

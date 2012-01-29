@@ -64,8 +64,11 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
 
     private $connection;
     private $channel;
+    private $evl;
 
     private $consumeTags = array();
+
+    private $signalsInstalled = false;
 
     function __construct ($config) {
         // Set up connection using a Factory
@@ -110,15 +113,35 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
      */
     function runDemo () {
         info("Start consuming...");
-        $evl = new amqp\EventLoop;
-        $evl->addConnection($this->connection);
-        $evl->select();
+        $this->testEnableSignalHandler();
+        $this->evl = new amqp\EventLoop;
+        $this->evl->addConnection($this->connection);
+        $this->evl->select();
         $this->channel->removeAllConsumers();
         $this->connection->shutdown();
         info("Consumers removed, event loop exits.");
     }
 
 
+    /**
+     * Checks to see  if signal handler funcs are  available (i.e. not
+     * Windows or Apache); if they are, installs handlers.
+     */
+    private function testEnableSignalHandler () {
+        if (! $this->signalsInstalled && extension_loaded('pcntl')) {
+            pcntl_signal(SIGTERM, array($this, 'sigHandler'));
+            pcntl_signal(SIGHUP,  array($this, 'sigHandler'));
+            pcntl_signal(SIGINT, array($this, 'sigHandler'));
+            $this->signalsInstalled = true;
+            info("Signal handler funcs installed OK");
+        }
+    }
+
+    /** Callback for signal handlers.  */
+    function sigHandler ($signo) {
+        info("SIGNAL RECEIVED %d", $signo);
+        $this->evl->forceLoopExit();
+    }
 
     /** @override \amqphp\Consumer */
     function handleCancelOk (wire\Method $m, amqp\Channel $chan) {
