@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <!-- Externalise network connection parameters for this broker -->
-<!-- Socket based config
+<!-- Socket based config -->
 <conn_params>
   <vhost k="string">/</vhost>
   <username k="string">testing</username>
@@ -12,9 +12,9 @@
     <port k="integer">5672</port>
   </socketParams>
 </conn_params>
--->
 
-<!-- Stream based config -->
+
+<!-- Stream based config 
 <conn_params>
   <vhost k="string">/</vhost>
   <username k="string">testing</username>
@@ -24,4 +24,4 @@
   <socketParams>
     <url k="string">tcp://rabbit1:5672</url>
   </socketParams>
-</conn_params>
+</conn_params>-->

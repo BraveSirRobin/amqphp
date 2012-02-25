@@ -23,7 +23,7 @@ namespace amqphp;
 use amqphp\protocol;
 use amqphp\wire;
 
-const DEBUG = false;
+const DEBUG = true;
 
 const PROTOCOL_HEADER = "AMQP\x00\x00\x09\x01";
 
@@ -337,6 +337,10 @@ class Connection
         return $this->sock->getCK();
     }
 
+    function clearSocketErrors () {
+        $this->sock->clearErrors();
+    }
+
 
     protected function initNewChannel ($impl=null) {
         if (! $this->connected) {
@@ -407,6 +411,8 @@ class Connection
      */
     private function handleConnectionMessage (wire\Method $meth) {
         if ($meth->isHeartbeat()) {
+            echo "\n\nMAKE DIE\n\n";
+            return '';
             $resp = "\x08\x00\x00\x00\x00\x00\x00\xce";
             $this->write($resp);
             return;
@@ -414,6 +420,7 @@ class Connection
 
         switch ($meth->amqpClass) {
         case 'connection.close':
+            echo "\n\nHAD CONECTION CLOSE\n\n";
             $pl = $this->getProtocolLoader();
             if ($culprit = $pl('ClassFactory', 'GetMethod', array($meth->getField('class-id'),
                                                                   $meth->getField('method-id')))) {
@@ -576,6 +583,7 @@ class Connection
         } else if ($buff === '') {
             $this->blocking = false;
             throw new \Exception("Empty read in blocking select loop, socket error:\n" . $this->sock->strError(), 9864);
+            //trigger_error("Empty read in blocking select loop, socket error:\n" . $this->sock->strError(), E_USER_WARNING);
         }
     }
 

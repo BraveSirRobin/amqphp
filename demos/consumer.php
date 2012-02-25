@@ -400,4 +400,9 @@ if (array_key_exists('drop-message', $opts)) {
     $exd->dropMessage = $opts['drop-message'];
 }
 
-$exd->runDemo();
+try {
+    $exd->runDemo();
+} catch (\Exception $e) {
+    printf("Exception caught at root level of consumer script:\n%s\n%s",
+           $e->getMessage(), $e->getTraceAsString());
+}

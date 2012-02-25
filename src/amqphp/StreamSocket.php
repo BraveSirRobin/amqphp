@@ -215,22 +215,41 @@ class StreamSocket
         return $this->interrupt;
     }
 
-
+    /**
+     * It's hard to see how to implement this one with the PHP streams
+     * interface, if  you've got  an idea then  let me know  :-).  The
+     * (very) basic implementation here is so set a local flag in case
+     * fread() returns false and return 1 in case that flag is set.
+     */
+    private $readError = false;
     function lastError () {
-        return 0;
+        return $this->readError ? 1: 0;
+    }
+
+    /**
+     * Reset the error flag
+     */
+    function clearErrors () {
+        $this->readError = false;
     }
 
     function strError () {
-        return '(\amqphp\StreamSocket->strError -- not implemented)';
+        return $this->readError
+            ? 'Local error flag indicates an error during read'
+            : '';
     }
 
     function readAll ($readLen = self::READ_LENGTH) {
         $buff = '';
         do {
-            $buff .= fread($this->sock, $readLen);
+            $buff .= $chk = fread($this->sock, $readLen);
             $smd = stream_get_meta_data($this->sock);
             $readLen = min($smd['unread_bytes'], $readLen);
-        } while ($smd['unread_bytes'] > 0);
+        } while ($chk !== false && $smd['unread_bytes'] > 0);
+        if (! $chk) {
+            trigger_error("Stream fread returned false", E_USER_WARNING);
+            $this->readError = true;
+        }
         if (DEBUG) {
             echo "\n<read>\n";
             echo wire\Hexdump::hexdump($buff);

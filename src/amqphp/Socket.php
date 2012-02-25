@@ -147,6 +147,7 @@ class Socket
         }
         foreach ($ex as $k => $sock) {
             if (false !== ($key = array_search($sock, $all, true))) {
+                echo "\n\nGOT AN EXCEPTION!!!\n\n";
                 $_ex[] = self::$All[$key];
             }
         }
@@ -177,8 +178,19 @@ class Socket
     }
 
 
+    /**
+     * Wrapper for the socket_last_error  function - return codes seem
+     * to be system- dependant
+     */
     function lastError () {
-        return socket_last_error();
+        return socket_last_error($this->sock);
+    }
+
+    /**
+     * Clear errors on the local socket
+     */
+    function clearErrors () {
+        socket_clear_error($this->sock);
     }
 
     function strError () {
@@ -187,7 +199,7 @@ class Socket
 
     function readAll ($readLen = self::READ_LENGTH) {
         $buff = '';
-        while (@socket_recv($this->sock, $tmp, $readLen, MSG_DONTWAIT)) {
+        while ($readVal = @socket_recv($this->sock, $tmp, $readLen, MSG_DONTWAIT)) {
             $buff .= $tmp;
         }
         if (DEBUG) {

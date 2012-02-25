@@ -140,8 +140,28 @@ class EventLoop
             } else if ($ret > 0) {
                 foreach ($read as $sock) {
                     $c = $this->cons[$sock->getId()];
-                    $c->doSelectRead();
-                    $c->deliverAll();
+                    try {
+                        $c->doSelectRead();
+                        $c->deliverAll();
+                    } catch (\Exception $e) {
+                        if ($sock->lastError()) {
+                            trigger_error("Exception raised on socket {$sock->getId()} during " .
+                                "event loop read: {$e->getMessage()}.  Socket indicates an error, " .
+                                          "close the connection immediately", E_USER_WARNING);
+                            try {
+                                $c->shutdown();
+                            } catch (\Exception $e) {
+                                trigger_error("Nested exception swallowed during emergency socket " .
+                                              "shutdown: {$e->getMessage()}", E_USER_WARNING);
+                            }
+                            $this->removeConnection($c);
+                        } else {
+                            trigger_error("Exception raised on socket {$sock->getId()} during " .
+                                          "event loop read: {$e->getMessage()}. Socket does NOT " .
+                                          "indicate an error, try again", E_USER_WARNING);
+
+                        }
+                    }
                 }
             }
         } // End - the loop
