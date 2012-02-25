@@ -3,27 +3,54 @@
 
 class ConfigException extends \Exception {}
 
-// i.e. existing class
-class Factory
+/**
+ * Base class for config parsers.
+ */
+abstract class ConfigParser
 {
-    const XML_FILE = 1;
-    const XML_STRING = 2;
+    /** Available configuration sources */
+    const RESOURCE_TYPE_FILE = 1;
+    const RESOURCE_TYPE_STRING = 2;
+    const RESOURCE_TYPE_NETWORK = 3;
+
+    /** Configuration types */
     const CONF_SETUP = 1;
     const CONF_METHODS = 2;
-}
 
-class XmlConfigParser
-{
-    private $file;
-    private $agents;
-    public $xmlType = Factory::XML_FILE;
+    /** Agents receive configuration discovery events */
+    protected $agents = array();
 
-    function setFile ($file) {
-        $this->file = $file;
+    /** Storage for the raw resource, either a string, file name or url */
+    protected $resource;
+
+    /** Storage for resource type */
+    protected $retType;
+
+    /** Method to instruct parser on how it will receive it's input */
+    final function setConfigResource ($resource, $resType=self::RESOURCE_TYPE_FILE) {
+        $this->resource = $resource;
+        $this->resType = self::RESOURCE_TYPE_FILE;
     }
 
-    /* Depth  first  traversal  of  config  generates  a  sequence  of
-       events */
+    /** Method to trigger the parser to run */
+    abstract function run ();
+
+    /** Setter for adding agents to the stack */
+    final function addAgent (ConfigAgent $agt) {
+        if (! $agt) {
+            throw new \Exception("Cannot add empty agent", 2640);
+        }
+        $this->agents[] = $agt;
+    }
+}
+
+
+/**
+ * Xml based configuration parser
+ */
+class XmlConfigParser extends ConfigParser
+{
+
     function run () {
         $simp = $this->getSimpleXml();
 
@@ -40,14 +67,15 @@ class XmlConfigParser
     /** Helper method returns a simplexml */
     private function getSimpleXml () {
         $d = new \DOMDocument;
-        switch ($this->xmlType) {
-        case Factory::XML_FILE:
-            if (! $d->load($this->file)) {
+        switch ($this->resType) {
+        case self::RESOURCE_TYPE_FILE:
+        case self::RESOURCE_TYPE_NETWORK:
+            if (! $d->load($this->resource)) {
                 throw new \Exception("Failed to load factory XML", 92656);
             }
             break;
-        case Factory::XML_STRING:
-            if (! $d->loadXML($this->file)) {
+        case self::RESOURCE_TYPE_STRING:
+            if (! $d->loadXML($this->resource)) {
                 throw new \Exception("Failed to load factory XML", 9262);
             }
             if ($documentURI) {
@@ -67,173 +95,102 @@ class XmlConfigParser
     }
 
     private function runMethodsSequence ($meths) {
-        try {
-            foreach ($meths as $m) {
-                $raw = $this->xmlToArray($m);
-                $c = array_key_exists('a_class', $raw)
-                    ? $raw['a_class']
-                    : null;
-                $m = array_key_exists('a_method', $raw)
-                    ? $raw['a_method']
-                    : null;
-                $a = array_key_exists('a_args', $raw)
-                    ? $raw['a_args']
-                    : null;
-                array_map(function ($agent) use ($c, $m, $a) {
-                        $agent->handleMethod($c, $m, $a);
-                    }, $this->agents);
-            }
+        foreach ($meths as $m) {
+            $raw = $this->xmlToArray($m);
+            $c = array_key_exists('a_class', $raw)
+                ? $raw['a_class']
+                : null;
+            $m = array_key_exists('a_method', $raw)
+                ? $raw['a_method']
+                : null;
+            $a = array_key_exists('a_args', $raw)
+                ? $raw['a_args']
+                : null;
+            array_walk($this->agents, function ($agent) use ($c, $m, $a) {
+                    $agent->handleMethod($c, $m, $a);
+                });
+        }
+    }
 
-        } catch (ConfigException $cfe) {
-        } catch (\Exception $e) {
+    private function runPropertiesSequence ($conf) {
+        foreach ($conf->xpath('./set_properties/*') as $prop) {
+            $pname = (string) $prop->getName();
+            $pval = $this->kast($prop, $prop['k']);
+            array_walk($this->agents, function ($agent) use ($pname, $pval) {
+                    $agent->setProperty($pname, $pval); 
+                });
         }
     }
 
     private function runSetupSequence ($simp) {
-        printf("**Runs setup seq**\n");
-        try {
-            foreach ($simp as $conn) {
-                /*
-                $_chans = array();
-                // Create connection and connect
-                $refl = $this->getRc((string) $conn->impl);
-                $_conn = $refl->newInstanceArgs($this->xmlToArray($conn->constr_args->children()));
-                $this->callProperties($_conn, $conn);
-                $_conn->connect();
-                $ret[] = $_conn;
+        foreach ($simp as $conn) {
+            // Start the connection
+            $impl = (string) $conn->impl;
+            $constArgs = $this->xmlToArray($conn->constr_args->children());
+            array_walk($this->agents, function ($agent) use ($impl, $constArgs) {
+                    $agent->startConnection($impl, $constArgs);
+                });
 
-                // Add exit strategies, if required.
-                if (count($conn->exit_strats) > 0) {
-                    foreach ($conn->exit_strats->strat as $strat) {
-                        call_user_func_array(array($_conn, 'pushExitStrategy'), $this->xmlToArray($strat->children()));
-                    }
-                }
-                if ($_conn instanceof pers\PConnection && $_conn->getPersistenceStatus() == pers\PConnection::SOCK_REUSED) {
-                    // Assume that the setup is complete for existing PConnection
-                    // ??TODO??  Run method sequence here too?
-                    continue;
-                }
+            // Set all properties on the connection
+            $this->runPropertiesSequence($conn);
 
-                */
-                // Start the connection
-                $impl = (string) $conn->impl;
-                $constArgs = $this->xmlToArray($conn->constr_args->children());
-                array_map(function ($agent) use ($impl, $constArgs) {
-                        $agent->startConnection($impl, $constArgs);
-                    }, $this->agents);
-
-                // Add connection exit strategies
-                if (count($conn->exit_strats) > 0) {
-                    foreach ($conn->exit_strats->strat as $strat) {
-                        $strat = $this->xmlToArray($strat->children());
-                        array_map(function ($agent) use ($strat) {
-                                $agent->addExitStrategy($strat);
-                            }, $this->agents);
-                    }
-                }
-
-//                continue;
-
-                // Create channels and channel event handlers.
-                foreach ($conn->channel as $chan) {
-                    /*
-                    $_chan = $_conn->openChannel();
-                    $this->callProperties($_chan, $chan);
-                    if (isset($chan->event_handler)) {
-                        $impl = (string) $chan->event_handler->impl;
-                        if (count($chan->event_handler->constr_args)) {
-                            $refl = $this->getRc($impl);
-                            $_evh = $refl->newInstanceArgs($this->xmlToArray($chan->event_handler->constr_args->children()));
-                        } else {
-                            $_evh = new $impl;
-                        }
-                        $_chan->setEventHandler($_evh);
-                    }
-                    $_chans[] = $_chan;
-                    $rMeths = $chan->xpath('.//method');
-
-                    if (count($rMeths) > 0) {
-                        $ret[] = $this->runMethodSequence($_chan, $rMeths);
-                    }
-                    if (count($chan->confirm_mode) > 0 && $this->kast($chan->confirm_mode, 'boolean')) {
-                        $_chan->setConfirmMode();
-                    }
-                    */
-                    $impl = (string) $chan->impl;
-                    if ($chan->constr_args) {
-                        $constArgs = $this->xmlToArray($chan->constr_args->children());
-                    } else {
-                        $constArgs = array();
-                    }
-                    array_map(function ($agent) use ($impl, $constArgs) {
-                            $agent->startChannel($impl, $constArgs);
-                        }, $this->agents);
-
-
-                    if (isset($chan->event_handler)) {
-                        $impl = (string) $chan->event_handler->impl;
-                        if ($chan->event_handler->constr_args) {
-                            $constArgs = $this->xmlToArray($chan->event_handler->constr_args->children());
-                        } else {
-                            $constArgs = array();
-                        }
-                        array_map(function ($agent) use ($impl, $constArgs) {
-                                $agent->addEventHandler($impl, $constArgs);
-                            }, $this->agents);
-                    }
-
-                    array_map(function ($agent) {
-                            $agent->endChannel();
-                        }, $this->agents);
-
-                }
-
-                array_map(function ($agent) {
-                        $agent->endConnection();
-                    }, $this->agents);
-
-                continue;
-
-                /* Finally, set  up consumers.  This is done  last in case
-                   queues /  exchanges etc. need  to be set up  before the
-                   consumers. */
-                $i = 0;
-                foreach ($conn->channel as $chan) {
-                    $_chan = $_chans[$i++];
-                    foreach ($chan->consumer as $cons) {
-                        $impl = (string) $cons->impl;
-                        if (count($cons->constr_args)) {
-                            $refl = $this->getRc($impl);
-                            $_cons = $refl->newInstanceArgs($this->xmlToArray($cons->constr_args->children()));
-                        } else {
-                            $_cons = new $impl;
-                        }
-                        $this->callProperties($_cons, $cons);
-                        $_chan->addConsumer($_cons);
-                        if (isset($cons->autostart) && $this->kast($cons->autostart, 'boolean')) {
-                            $_chan->startConsumer($_cons);
-                        }
-                    }
+            // Add connection exit strategies
+            if (count($conn->exit_strats) > 0) {
+                foreach ($conn->exit_strats->strat as $strat) {
+                    $strat = $this->xmlToArray($strat->children());
+                    array_walk($this->agents, function ($agent) use ($strat) {
+                            $agent->addExitStrategy($strat);
+                        });
                 }
             }
 
+            foreach ($conn->channel as $chan) {
+                // Start the Channel
+                array_walk($this->agents, function ($agent) use ($impl, $constArgs) {
+                        $agent->startChannel();
+                    });
 
+                // Set all properties on the connection
+                $this->runPropertiesSequence($chan);
 
-            
+                // Add the event handler
+                if (isset($chan->event_handler)) {
+                    $impl = (string) $chan->event_handler->impl;
+                    $constArgs = $chan->event_handler->constr_args
+                        ? $this->xmlToArray($chan->event_handler->constr_args->children())
+                        : array();
 
+                    array_walk($this->agents, function ($agent) use ($impl, $constArgs) {
+                            $agent->addEventHandler($impl, $constArgs);
+                        });
+                }
 
+                // Add consumers to the channel
+                foreach ($chan->consumer as $cons) {
+                    $impl = (string) $cons->impl;
+                    $constArgs = count($cons->constr_args)
+                        ? $this->xmlToArray($cons->constr_args->children())
+                        : $constArgs = array();
 
-            
-        } catch (ConfigException $cfe) {
-        } catch (\Exception $e) {
+                    $auStart = isset($cons->autostart) && $this->kast($cons->autostart, 'boolean');
+                    array_walk($this->agents, function ($agent) use ($impl, $constArgs, $auStart) {
+                            $agent->startConsumer($impl, $constArgs, $auStart);
+                        });
+                    $this->runPropertiesSequence($cons);
+
+                }
+
+                // End the channel
+                array_walk($this->agents, function ($agent) {
+                        $agent->endChannel();
+                    });
+            }
+
+            // End the connection
+            array_walk($this->agents, function ($agent) {
+                    $agent->endConnection();
+                });
         }
-    }
-
-    function addAgent (ConfigAgent $agt) {
-        if (! $agt) {
-            throw new \Exception("Cannot add empty agent", 2640);
-        }
-        $this->agents[] = $agt;
     }
 
 
@@ -283,7 +240,6 @@ class XmlConfigParser
         }
         return $ret;
     }
-
 }
 
 /* Defines an object which receives all possible config events */
@@ -291,7 +247,7 @@ interface ConfigAgent
 {
     function startConnection ($impl, $constArgs);
     function endConnection ();
-    function startChannel ($impl, $constArgs);
+    function startChannel ();
     function endChannel ();
     function addEventHandler ($impl, $constArgs);
     function addExitStrategy ($stratArgs);
@@ -301,7 +257,9 @@ interface ConfigAgent
     function handleMethod ($class, $meth, $args);
 }
 
-/**  */
+/** An   agent  which   simply   collects  all   data  from   received
+ * configuration events  and makes the data available  as nested array
+ * structures. */
 class ConfigLogger implements ConfigAgent
 {
     private $conns = array(); // Collect nested metadata
@@ -352,14 +310,11 @@ class ConfigLogger implements ConfigAgent
     }
 
     /** @implements ConfigAgent */
-    function startChannel ($impl, $constArgs) {
+    function startChannel () {
         if ($this->state !== 'connection') {
-            echo "I NOT HAPPEH - {$this->state}!!!\n\n";
             throw new ConfigException("Unexpected Channel");
         }
         $this->conns[$this->i]['channels'][] = array(
-            'implementation' => $impl,
-            'construction-args' => $constArgs,
             'properties' => array(),
             'consumers' => array(),
             'methods' => array(),
@@ -417,7 +372,7 @@ class ConfigLogger implements ConfigAgent
         default:
             throw new ConfigException("Unexpected Property");
         }
-        $stack[] = array($pname, $pval);
+        $stack[$pname] = $pval;
     }
 
     /** @implements ConfigAgent */
@@ -430,15 +385,15 @@ class ConfigLogger implements ConfigAgent
             throw new ConfigException("Unexpected method");
         }
         $stack[] = array($class, $meth, $args);
-        //        var_dump($stack);
     }
 }
 
 // test code
 $cfp = new XmlConfigParser;
-$cfp->setFile(__DIR__ . '/demos/configs/web-multi.xml');
-//$cfp->setFile(__DIR__ . '/demos/configs/broker-common-setup.xml');
+$cfp->setConfigResource(__DIR__ . '/demos/configs/web-multi.xml');
+//$cfp->setConfigResource(__DIR__ . '/demos/configs/broker-common-setup.xml');
 $cfp->addAgent($log = new ConfigLogger);
+$cfp->addAgent($log2 = new ConfigLogger);
 $cfp->run();
 //var_dump($log->getMethods());
 var_dump($log->getConnctions());

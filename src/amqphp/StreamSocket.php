@@ -36,6 +36,9 @@ class StreamSocket
     const WRITE_SELECT = 2;
     const READ_LENGTH = 4096;
 
+    /** For blocking IO operations, the timeout buffer in seconds. */
+    const BLOCK_TIMEOUT = 5;
+
     /** A store of all connected instances */
     private static $All = array();
 
@@ -240,7 +243,7 @@ class StreamSocket
      */
     function read () {
         $buff = '';
-        $select = $this->select(5);
+        $select = $this->select(self::BLOCK_TIMEOUT);
         if ($select === false) {
             return false;
         } else if ($select > 0) {
@@ -267,6 +270,12 @@ class StreamSocket
 
 
     function write ($buff) {
+        if (! $this->select(self::BLOCK_TIMEOUT, 0, self::WRITE_SELECT)) {
+            trigger_error('StreamSocket select failed for write (stream socket err: "' . $this->strError() . ')',
+                          E_USER_WARNING);
+            return 0;
+        }
+
         $bw = 0;
         $contentLength = strlen($buff);
         if ($contentLength == 0) {

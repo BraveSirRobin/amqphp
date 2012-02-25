@@ -102,8 +102,6 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
                                'no-ack' => $noAck,
                                'exclusive' => $exclusive,
                                'no-wait' => false);
-//        $meth = $this->channel->basic('consume', $consumeParams);
-//        printf("Consume params:\n%s\n", wire\Hexdump::hexdump(implode('', $meth->toBin($this->connection->getProtocolLoader()))));
         $this->channel->addConsumer($this, $consumeParams);
     }
 
@@ -171,6 +169,7 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
             warn("Received message for unknown consume tag %s, reject", $cTag);
             return amqp\CONSUMER_REJECT;
         }
+
         $content = $m->getContent();
 
         if (! $content) {
@@ -249,7 +248,7 @@ line.  The consume parameters, exit  strategies and other items can be
 configured with the following switches:
 
   --config [file-path] Load connection configs from this file, default
-    configs/basic-connection.xml
+    %s
 
   --strat ["name args"]  - Adds a strategy to  the connection strategy
     chain, you can specify multiple strategies
@@ -296,7 +295,9 @@ Example:
 php consumer.php --strat "cond" \
                  --strat "trel 5 0" \
                  --consumer "most-basic-q"
-', implode(', ', array_keys(MultiConsumer::$StratMap)));
+',
+DEFAULT_CONF,
+implode(', ', array_keys(MultiConsumer::$StratMap)));
 
 
 

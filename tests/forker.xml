@@ -52,11 +52,18 @@
 
   </socketParams>-->
 
-  <!-- Sample config for plain sockets connection, comment out the stream socket and uncomment this to use. -->
+
+  <!-- Sample configs for non-ssl stream based connection -->
+  <socketImpl>\amqphp\StreamSocket</socketImpl>
+  <socketParams>
+    <url>tcp://rabbit1:5672</url>
+  </socketParams>
+
+  <!-- Sample config for plain sockets connection, comment out the stream socket and uncomment this to use.
   <socketImpl>\amqphp\Socket</socketImpl>
   <socketParams>
     <host>rabbit1</host>
     <port>5672</port>
-  </socketParams>
+  </socketParams>-->
 
 </runConfig>
