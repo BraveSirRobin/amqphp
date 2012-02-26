@@ -147,7 +147,6 @@ class Socket
         }
         foreach ($ex as $k => $sock) {
             if (false !== ($key = array_search($sock, $all, true))) {
-                echo "\n\nGOT AN EXCEPTION!!!\n\n";
                 $_ex[] = self::$All[$key];
             }
         }
@@ -164,7 +163,7 @@ class Socket
     }
 
     /**
-     * Call select to wait for content then read and return it all
+     * Blocking version of readAll()
      */
     function read () {
         $buff = '';
@@ -193,13 +192,20 @@ class Socket
         socket_clear_error($this->sock);
     }
 
+    /**
+     * Simple wrapper for socket_strerror
+     */
     function strError () {
         return socket_strerror($this->lastError());
     }
 
+    /**
+     * Performs  a non-blocking read  and consumes  all data  from the
+     * local socket, returning the contents as a string
+     */
     function readAll ($readLen = self::READ_LENGTH) {
         $buff = '';
-        while ($readVal = @socket_recv($this->sock, $tmp, $readLen, MSG_DONTWAIT)) {
+        while (@socket_recv($this->sock, $tmp, $readLen, MSG_DONTWAIT)) {
             $buff .= $tmp;
         }
         if (DEBUG) {
@@ -209,6 +215,9 @@ class Socket
         return $buff;
     }
 
+    /**
+     * Performs a blocking write
+     */
     function write ($buff) {
         if (! $this->select(self::BLOCK_TIMEOUT, 0, self::WRITE_SELECT)) {
             trigger_error('Socket select failed for write (socket err: "' . $this->strError() . ')',

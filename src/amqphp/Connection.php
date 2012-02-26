@@ -23,7 +23,7 @@ namespace amqphp;
 use amqphp\protocol;
 use amqphp\wire;
 
-const DEBUG = true;
+const DEBUG = false;
 
 const PROTOCOL_HEADER = "AMQP\x00\x00\x09\x01";
 
@@ -411,8 +411,6 @@ class Connection
      */
     private function handleConnectionMessage (wire\Method $meth) {
         if ($meth->isHeartbeat()) {
-            echo "\n\nMAKE DIE\n\n";
-            return '';
             $resp = "\x08\x00\x00\x00\x00\x00\x00\xce";
             $this->write($resp);
             return;
@@ -420,7 +418,6 @@ class Connection
 
         switch ($meth->amqpClass) {
         case 'connection.close':
-            echo "\n\nHAD CONECTION CLOSE\n\n";
             $pl = $this->getProtocolLoader();
             if ($culprit = $pl('ClassFactory', 'GetMethod', array($meth->getField('class-id'),
                                                                   $meth->getField('method-id')))) {
@@ -582,8 +579,7 @@ class Connection
             $this->unDelivered = array_merge($this->unDelivered, $meths);
         } else if ($buff === '') {
             $this->blocking = false;
-            throw new \Exception("Empty read in blocking select loop, socket error:\n" . $this->sock->strError(), 9864);
-            //trigger_error("Empty read in blocking select loop, socket error:\n" . $this->sock->strError(), E_USER_WARNING);
+            throw new \Exception("Empty read in blocking select loop, socket error: '{$this->sock->strError()}'", 9864);
         }
     }
 
@@ -610,7 +606,7 @@ class Connection
             }
             while (true) {
                 if (! ($buff = $this->read())) {
-                    throw new \Exception(sprintf("(2) Send message failed for %s:\n", $inMeth->amqpClass), 5624);
+                    throw new \Exception(sprintf("(2) Send message failed for %s", $inMeth->amqpClass), 5624);
                 }
                 $meths = $this->readMessages($buff);
                 foreach (array_keys($meths) as $k) {

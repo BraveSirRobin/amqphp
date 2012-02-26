@@ -146,19 +146,20 @@ class EventLoop
                     } catch (\Exception $e) {
                         if ($sock->lastError()) {
                             trigger_error("Exception raised on socket {$sock->getId()} during " .
-                                "event loop read: {$e->getMessage()}.  Socket indicates an error, " .
-                                          "close the connection immediately", E_USER_WARNING);
+                                          "event loop read (nested exception follows). Socket indicates an error, " .
+                                          "close the connection immediately.  Nested exception: '{$e->getMessage()}'",
+                                          E_USER_WARNING);
                             try {
                                 $c->shutdown();
                             } catch (\Exception $e) {
                                 trigger_error("Nested exception swallowed during emergency socket " .
-                                              "shutdown: {$e->getMessage()}", E_USER_WARNING);
+                                              "shutdown: '{$e->getMessage()}'", E_USER_WARNING);
                             }
                             $this->removeConnection($c);
                         } else {
                             trigger_error("Exception raised on socket {$sock->getId()} during " .
-                                          "event loop read: {$e->getMessage()}. Socket does NOT " .
-                                          "indicate an error, try again", E_USER_WARNING);
+                                          "event loop read (nested exception follows). Socket does NOT " .
+                                          "indicate an error, try again.  Nested exception: '{$e->getMessage()}'", E_USER_WARNING);
 
                         }
                     }

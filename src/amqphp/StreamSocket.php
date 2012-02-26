@@ -25,10 +25,8 @@ use amqphp\wire;
 
 
 /**
- * TODO:  Investigate persistent  streams  in different  environments.
- * Note  that   connecting  to  the   same  broker  twice   fails  for
- * PConnections - you  end up trying to reconnect  the same connection
- * and triggering errors.
+ * TODO: Why are socket flags  stored as strings?  Factory impl should
+ * make it possible to use the actual values at this level
  */
 class StreamSocket
 {
@@ -44,14 +42,23 @@ class StreamSocket
 
     private static $Counter = 0;
 
-    private $host;
-    private $id;
-    private $port;
-    private $connected;
-    private $interrupt = false;
+    /** Target broker address details */
+    private $host, $port, $vhost;
+
+    /** Internal state tracking variables */
+    private $id, $connected, $interrupt = false;
+
+    /** Flags  that are  passed to  stream_socket_client(),  stored as
+     * strings. not the actual constant! */
     private $flags;
-    private $vhost;
+
+    /** Connection  startup  file pointer  -  set  during the  connect
+     * routine, will be > 0 for re-used persistent connections */
     private $stfp;
+
+    /** Bitmask of 1=read error, 2=write  error - set in case fread or
+     * fwrite calls return false */
+    private $errFlag = 0;
 
     function __construct ($params, $flags, $vhost) {
         $this->url = $params['url'];
@@ -216,29 +223,42 @@ class StreamSocket
     }
 
     /**
-     * It's hard to see how to implement this one with the PHP streams
-     * interface, if  you've got  an idea then  let me know  :-).  The
-     * (very) basic implementation here is so set a local flag in case
-     * fread() returns false and return 1 in case that flag is set.
+     * Emulate  the socket_last_error() function  by keeping  track of
+     * FALSE  values returned from  fread and  fwrite; here  we simply
+     * return the local tracking bitmask
      */
-    private $readError = false;
     function lastError () {
-        return $this->readError ? 1: 0;
+        return $this->errFlag;
     }
 
     /**
      * Reset the error flag
      */
     function clearErrors () {
-        $this->readError = false;
+        $this->errFlag = 0;
     }
 
+    /**
+     * Emulate  the socket_strerror() function  by returning  a string
+     * describing the current error state of the socket
+     */
     function strError () {
-        return $this->readError
-            ? 'Local error flag indicates an error during read'
-            : '';
+        switch ($this->errFlag) {
+        case 1:
+            return "Read error detected";
+        case 2:
+            return "Write error detected";
+        case 3:
+            return "Read and write errors detected";
+        default:
+            return "No error detected";
+        }
     }
 
+    /**
+     * Performs  a non-blocking read  and consumes  all data  from the
+     * local socket, returning the contents as a string
+     */
     function readAll ($readLen = self::READ_LENGTH) {
         $buff = '';
         do {
@@ -248,7 +268,7 @@ class StreamSocket
         } while ($chk !== false && $smd['unread_bytes'] > 0);
         if (! $chk) {
             trigger_error("Stream fread returned false", E_USER_WARNING);
-            $this->readError = true;
+            $this->errFlag |= 1;
         }
         if (DEBUG) {
             echo "\n<read>\n";
@@ -258,7 +278,7 @@ class StreamSocket
     }
 
     /**
-     * Blocking read, calls select before attempting to read.
+     * Blocking version of readAll()
      */
     function read () {
         $buff = '';
@@ -306,6 +326,7 @@ class StreamSocket
                 echo wire\Hexdump::hexdump($buff);
             }
             if (($tmp = fwrite($this->sock, $buff)) === false) {
+                $this->errFlag |= 2;
                 throw new \Exception(sprintf("\nStream write failed (error): %s\n",
                                              $this->strError()), 7854);
             } else if ($tmp === 0) {
