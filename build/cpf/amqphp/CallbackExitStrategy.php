@@ -1,1 +1,2 @@
-/home/robin/Templates/CMP/src/amqphp/CallbackExitStrategy.php
+<?php
+ namespace amqphp; use amqphp\protocol; use amqphp\wire; class CallbackExitStrategy implements ExitStrategy { private $cb; private $args; function configure ($sMode, $cb=null, $args=null) { if (! is_callable($cb)) { trigger_error("Select mode - invalid callback params", E_USER_WARNING); return false; } else { $this->cb = $cb; $this->args = $args; return true; } } function init (Connection $conn) {} function preSelect ($prev=null) { if ($prev === false) { return false; } if (true !== call_user_func_array($this->cb, $this->args)) { return false; } else { return $prev; } } function complete () {} } 

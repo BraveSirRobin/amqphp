@@ -1,1 +1,2 @@
-/home/robin/Templates/CMP/src/amqphp/ExitStrategy.php
+<?php
+ namespace amqphp; use amqphp\protocol; use amqphp\wire; interface ExitStrategy { function configure ($sMode); function init (Connection $conn); function preSelect ($prev=null); function complete (); } 

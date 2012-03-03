@@ -1,1 +1,2 @@
-/home/robin/Templates/CMP/src/amqphp/Consumer.php
+<?php
+ namespace amqphp; use amqphp\wire; interface Consumer { function handleCancelOk (wire\Method $meth, Channel $chan); function handleCancel (wire\Method $meth, Channel $chan); function handleConsumeOk (wire\Method $meth, Channel $chan); function handleDelivery (wire\Method $meth, Channel $chan); function handleRecoveryOk (wire\Method $meth, Channel $chan); function getConsumeMethod (Channel $chan); } 
