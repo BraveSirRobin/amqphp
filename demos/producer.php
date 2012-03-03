@@ -7,6 +7,7 @@ use amqphp\wire;
 require __DIR__ . '/class-loader.php';
 
 
+define("DEFAULT_CONF", realpath(__DIR__ . '/configs/basic-connection.xml'));
 
 
 
@@ -77,6 +78,9 @@ Amqphp demo consumers.
 
 Paramers:
 
+  --config [file-path] Load connection configs from this file, default
+    %s
+
   --sleep [integer]
     Sets a publish loop sleep, value in milliseconds. (default 0)
 
@@ -115,7 +119,7 @@ Paramers:
 
   --show-events
     Display incoming channel events on StdOut
-", basename(__FILE__));
+", basename(__FILE__), DEFAULT_CONF);
 
 
 
@@ -124,11 +128,15 @@ Paramers:
 /** Grab run options from the command line. */
 $conf = getopt('', array('help', 'message:', 'repeat:', 'confirms', 'mandatory',
                          'immediate', 'exchange:', 'routing-key:', 'sleep:', 'ticker:',
-                         'show-events', 'message-file:', 'recv-tmo:'));
+                         'show-events', 'message-file:', 'recv-tmo:', 'config:'));
 
 if (array_key_exists('help', $conf)) {
     echo $USAGE;
     die;
+}
+
+if (! array_key_exists('config', $conf)) {
+    $conf['config'] = DEFAULT_CONF;
 }
 
 if (array_key_exists('exchange', $conf)) {
@@ -194,7 +202,7 @@ info("Ready to publish:\n Message(s) '%s' \n Send Repeats: %s\n mandatory: %d\n"
 
 
 /** Initialise the broker connection and send the messages. */
-$su = new amqp\Factory(__DIR__ . '/configs/basic-connection.xml');
+$su = new amqp\Factory($conf['config']);
 $conn = $su->getConnections();
 $conn = array_pop($conn);
 $chan = $conn->getChannel(1);

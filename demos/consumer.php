@@ -64,8 +64,11 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
 
     private $connection;
     private $channel;
+    private $evl;
 
     private $consumeTags = array();
+
+    private $signalsInstalled = false;
 
     function __construct ($config) {
         // Set up connection using a Factory
@@ -99,8 +102,6 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
                                'no-ack' => $noAck,
                                'exclusive' => $exclusive,
                                'no-wait' => false);
-//        $meth = $this->channel->basic('consume', $consumeParams);
-//        printf("Consume params:\n%s\n", wire\Hexdump::hexdump(implode('', $meth->toBin($this->connection->getProtocolLoader()))));
         $this->channel->addConsumer($this, $consumeParams);
     }
 
@@ -110,15 +111,35 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
      */
     function runDemo () {
         info("Start consuming...");
-        $evl = new amqp\EventLoop;
-        $evl->addConnection($this->connection);
-        $evl->select();
+        $this->testEnableSignalHandler();
+        $this->evl = new amqp\EventLoop;
+        $this->evl->addConnection($this->connection);
+        $this->evl->select();
         $this->channel->removeAllConsumers();
         $this->connection->shutdown();
         info("Consumers removed, event loop exits.");
     }
 
 
+    /**
+     * Checks to see  if signal handler funcs are  available (i.e. not
+     * Windows or Apache); if they are, installs handlers.
+     */
+    private function testEnableSignalHandler () {
+        if (! $this->signalsInstalled && extension_loaded('pcntl')) {
+            pcntl_signal(SIGTERM, array($this, 'sigHandler'));
+            pcntl_signal(SIGHUP,  array($this, 'sigHandler'));
+            pcntl_signal(SIGINT, array($this, 'sigHandler'));
+            $this->signalsInstalled = true;
+            info("Signal handler funcs installed OK");
+        }
+    }
+
+    /** Callback for signal handlers.  */
+    function sigHandler ($signo) {
+        info("RECEIVED SIGNAL %d, force event loop exit", $signo);
+        $this->evl->forceLoopExit();
+    }
 
     /** @override \amqphp\Consumer */
     function handleCancelOk (wire\Method $m, amqp\Channel $chan) {
@@ -148,6 +169,7 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
             warn("Received message for unknown consume tag %s, reject", $cTag);
             return amqp\CONSUMER_REJECT;
         }
+
         $content = $m->getContent();
 
         if (! $content) {
@@ -226,7 +248,7 @@ line.  The consume parameters, exit  strategies and other items can be
 configured with the following switches:
 
   --config [file-path] Load connection configs from this file, default
-    configs/basic-connection.xml
+    %s
 
   --strat ["name args"]  - Adds a strategy to  the connection strategy
     chain, you can specify multiple strategies
@@ -273,7 +295,9 @@ Example:
 php consumer.php --strat "cond" \
                  --strat "trel 5 0" \
                  --consumer "most-basic-q"
-', implode(', ', array_keys(MultiConsumer::$StratMap)));
+',
+DEFAULT_CONF,
+implode(', ', array_keys(MultiConsumer::$StratMap)));
 
 
 
@@ -376,4 +400,9 @@ if (array_key_exists('drop-message', $opts)) {
     $exd->dropMessage = $opts['drop-message'];
 }
 
-$exd->runDemo();
+try {
+    $exd->runDemo();
+} catch (\Exception $e) {
+    printf("Exception caught at root level of consumer script:\n%s\n%s",
+           $e->getMessage(), $e->getTraceAsString());
+}

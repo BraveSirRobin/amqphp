@@ -33,6 +33,8 @@ class EventLoop
     private $cons = array();
     private static $In = false;
 
+    private $forceExit = false;
+
     function addConnection (Connection $conn) {
         $this->cons[$conn->getSocketId()] = $conn;
     }
@@ -43,6 +45,11 @@ class EventLoop
         }
     }
 
+    /** Flips  an   internal  flag  that  forces  the   loop  to  exit
+     * immediately the next time round. */
+    function forceLoopExit () {
+        $this->forceExit = true;
+    }
 
     /**
      * Go in  to a listen  loop until no  more of the  currently added
@@ -74,12 +81,15 @@ class EventLoop
         // The loop
         $started = false;
         while (true) {
+            // Deliver all buffered messages and collect pre-select signals.
             $tv = array();
             foreach ($this->cons as $cid => $c) {
                 $c->deliverAll();
                 $tv[] = array($cid, $c->notifyPreSelect());
             }
+
             $psr = $this->processPreSelects($tv); // Connections could be removed here.
+
             if (is_array($psr)) {
                 list($tvSecs, $tvUsecs) = $psr;
             } else if ($psr === true) {
@@ -96,6 +106,13 @@ class EventLoop
             }
 
             $this->signal();
+
+            // If the force exit flag is set, exit now - place this after the call to signal
+            if ($this->forceExit) {
+                trigger_error("Select loop forced exit over-rides connection looping state", E_USER_WARNING);
+                $this->forceExit = false;
+                break;
+            }
 
             $started = true;
             if (is_null($tvSecs)) {
@@ -123,8 +140,29 @@ class EventLoop
             } else if ($ret > 0) {
                 foreach ($read as $sock) {
                     $c = $this->cons[$sock->getId()];
-                    $c->doSelectRead();
-                    $c->deliverAll();
+                    try {
+                        $c->doSelectRead();
+                        $c->deliverAll();
+                    } catch (\Exception $e) {
+                        if ($sock->lastError()) {
+                            trigger_error("Exception raised on socket {$sock->getId()} during " .
+                                          "event loop read (nested exception follows). Socket indicates an error, " .
+                                          "close the connection immediately.  Nested exception: '{$e->getMessage()}'",
+                                          E_USER_WARNING);
+                            try {
+                                $c->shutdown();
+                            } catch (\Exception $e) {
+                                trigger_error("Nested exception swallowed during emergency socket " .
+                                              "shutdown: '{$e->getMessage()}'", E_USER_WARNING);
+                            }
+                            $this->removeConnection($c);
+                        } else {
+                            trigger_error("Exception raised on socket {$sock->getId()} during " .
+                                          "event loop read (nested exception follows). Socket does NOT " .
+                                          "indicate an error, try again.  Nested exception: '{$e->getMessage()}'", E_USER_WARNING);
+
+                        }
+                    }
                 }
             }
         } // End - the loop

@@ -34,3 +34,11 @@ You should have 4 left - read these back using consume:
 The  `--strat`  switch adds  an  *exit  strategy*  to the  connection,
 without this the script will never end (until you kill it with Ctrl-C,
 of course).
+
+
+
+Here's an  interesting one  - set  up a consumer  that listens  to and
+prints out all "system messages" from the RabbitMQ broker:
+
+php demos/consumer.php --consumer rmq-mon-q \
+    --config demos/configs/log-and-trace-connection.xml

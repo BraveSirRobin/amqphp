@@ -33,6 +33,9 @@ class Socket
     const WRITE_SELECT = 2;
     const READ_LENGTH = 4096;
 
+    /** For blocking IO operations, the timeout buffer in seconds. */
+    const BLOCK_TIMEOUT = 5;
+
 
     /** A store of all connected instances */
     private static $All = array();
@@ -71,6 +74,8 @@ class Socket
             throw new \Exception("Failed to create inet socket", 7895);
         } else if (! socket_connect($this->sock, $this->host, $this->port)) {
             throw new \Exception("Failed to connect inet socket ({$this->host}, {$this->port})", 7564);
+        } else if (! socket_set_nonblock($this->sock)) {
+            throw new \Exception("Failed to switch connection in to non-blocking mode.", 2357);
         }
         $this->connected = true;
         self::$All[] = $this;
@@ -108,6 +113,7 @@ class Socket
         }
         return $ret;
     }
+
 
     /**
      * Call select on the given stream objects
@@ -157,11 +163,11 @@ class Socket
     }
 
     /**
-     * Call select to wait for content then read and return it all
+     * Blocking version of readAll()
      */
     function read () {
         $buff = '';
-        $select = $this->select(5);
+        $select = $this->select(self::BLOCK_TIMEOUT);
         if ($select === false) {
             return false;
         } else if ($select > 0) {
@@ -171,14 +177,32 @@ class Socket
     }
 
 
+    /**
+     * Wrapper for the socket_last_error  function - return codes seem
+     * to be system- dependant
+     */
     function lastError () {
-        return socket_last_error();
+        return socket_last_error($this->sock);
     }
 
+    /**
+     * Clear errors on the local socket
+     */
+    function clearErrors () {
+        socket_clear_error($this->sock);
+    }
+
+    /**
+     * Simple wrapper for socket_strerror
+     */
     function strError () {
         return socket_strerror($this->lastError());
     }
 
+    /**
+     * Performs  a non-blocking read  and consumes  all data  from the
+     * local socket, returning the contents as a string
+     */
     function readAll ($readLen = self::READ_LENGTH) {
         $buff = '';
         while (@socket_recv($this->sock, $tmp, $readLen, MSG_DONTWAIT)) {
@@ -191,7 +215,15 @@ class Socket
         return $buff;
     }
 
+    /**
+     * Performs a blocking write
+     */
     function write ($buff) {
+        if (! $this->select(self::BLOCK_TIMEOUT, 0, self::WRITE_SELECT)) {
+            trigger_error('Socket select failed for write (socket err: "' . $this->strError() . ')',
+                          E_USER_WARNING);
+            return 0;
+        }
         $bw = 0;
         $contentLength = strlen($buff);
         while (true) {

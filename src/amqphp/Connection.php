@@ -337,6 +337,10 @@ class Connection
         return $this->sock->getCK();
     }
 
+    function clearSocketErrors () {
+        $this->sock->clearErrors();
+    }
+
 
     protected function initNewChannel ($impl=null) {
         if (! $this->connected) {
@@ -575,7 +579,7 @@ class Connection
             $this->unDelivered = array_merge($this->unDelivered, $meths);
         } else if ($buff === '') {
             $this->blocking = false;
-            throw new \Exception("Empty read in blocking select loop, socket error:\n" . $this->sock->strError(), 9864);
+            throw new \Exception("Empty read in blocking select loop, socket error: '{$this->sock->strError()}'", 9864);
         }
     }
 
@@ -602,7 +606,7 @@ class Connection
             }
             while (true) {
                 if (! ($buff = $this->read())) {
-                    throw new \Exception(sprintf("(2) Send message failed for %s:\n", $inMeth->amqpClass), 5624);
+                    throw new \Exception(sprintf("(2) Send message failed for %s", $inMeth->amqpClass), 5624);
                 }
                 $meths = $this->readMessages($buff);
                 foreach (array_keys($meths) as $k) {
