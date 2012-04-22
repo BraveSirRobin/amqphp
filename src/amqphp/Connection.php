@@ -320,6 +320,10 @@ class Connection
         return $this->signalDispatch;
     }
 
+    function getHeartbeat () {
+        return $this->heartbeat;
+    }
+
     function removeChannel (Channel $chan) {
         if (false !== ($k = array_search($chan, $this->chans))) {
             unset($this->chans[$k]);

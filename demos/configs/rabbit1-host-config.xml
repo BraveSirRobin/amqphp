@@ -5,21 +5,21 @@
   <vhost k="string">/</vhost>
   <username k="string">testing</username>
   <userpass k="string">letmein</userpass>
-  <heartbeat k="int">5</heartbeat>
+  <heartbeat k="int">2</heartbeat>
   <socketImpl k="string">\amqphp\Socket</socketImpl>
   <socketParams>
     <host k="string">rabbit1</host>
     <port k="integer">5672</port>
   </socketParams>
-</conn_params>
--->
+</conn_params>-->
+
 
 <!-- Stream based config -->
 <conn_params>
   <vhost k="string">/</vhost>
   <username k="string">testing</username>
   <userpass k="string">letmein</userpass>
-  <heartbeat k="int">5</heartbeat>
+  <heartbeat k="int">2</heartbeat>
   <socketImpl k="string">\amqphp\StreamSocket</socketImpl>
   <socketParams>
     <url k="string">tcp://rabbit1:5672</url>
