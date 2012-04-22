@@ -232,7 +232,7 @@ class Socket
                 echo wire\Hexdump::hexdump($buff);
             }
             if (($tmp = socket_write($this->sock, $buff)) === false) {
-                throw new \Exception(sprintf("\nSocket write failed: %s\n",
+                throw new \Exception(sprintf("Socket write failed: %s",
                                              $this->strError()), 7854);
             }
             $bw += $tmp;
