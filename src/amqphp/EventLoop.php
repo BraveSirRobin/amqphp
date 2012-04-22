@@ -1,7 +1,7 @@
 <?php
 /**
  *
- * Copyright (C) 2010, 2011  Robin Harvey (harvey.robin@gmail.com)
+ * Copyright (C) 2010, 2011, 2012  Robin Harvey (harvey.robin@gmail.com)
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -30,19 +30,42 @@ use amqphp\wire;
  */
 class EventLoop
 {
+    /**
+     * When the  forced heatbeat loop exit monitoring  is active, this
+     * number  is used  as a  milliseconds buffer  such that  the loop
+     * timeout is set to <hearbeat>  + HB_TMOBUFF.  If the loop breaks
+     * on this timeout, we consider the heartbeat to be missed
+     */
+    const HB_TMOBUFF = 50000;
+
     private $cons = array();
     private static $In = false;
 
     private $forceExit = false;
+    private $minHb = -1;
 
     function addConnection (Connection $conn) {
         $this->cons[$conn->getSocketId()] = $conn;
+        $this->setMinHb();
+    }
+
+    private function setMinHb () {
+        if ($this->cons) {
+            foreach ($this->cons as $c) {
+                if ((($n = $c->getHeartbeat()) > 0) && $n > $this->minHb) {
+                    $this->minHb = $n;
+                }
+            }
+        } else {
+            $this->minHb = -1;
+        }
     }
 
     function removeConnection (Connection $conn) {
         if (array_key_exists($conn->getSocketId(), $this->cons)) {
             unset($this->cons[$conn->getSocketId()]);
         }
+        $this->setMinHb();
     }
 
     /** Flips  an   internal  flag  that  forces  the   loop  to  exit
@@ -80,6 +103,7 @@ class EventLoop
 
         // The loop
         $started = false;
+        $missedHb = 0;
         while (true) {
             // Deliver all buffered messages and collect pre-select signals.
             $tv = array();
@@ -115,6 +139,7 @@ class EventLoop
             }
 
             $started = true;
+            $selectCalledAt = microtime();
             if (is_null($tvSecs)) {
                 list($ret, $read, $ex) = call_user_func(array($sockImpl, 'Zelekt'),
                                                         array_keys($this->cons), null, 0);
@@ -138,6 +163,7 @@ class EventLoop
                 throw new \Exception ($eMsg, 9963);
 
             } else if ($ret > 0) {
+                $missedHb = 0;
                 foreach ($read as $sock) {
                     $c = $this->cons[$sock->getId()];
                     try {
@@ -164,6 +190,19 @@ class EventLoop
                         }
                     }
                 }
+            } else {
+                if ($this->minHb > 0) {
+                    // Check to see if the empty read is due to a missed heartbeat.
+                    list($stUsecs, $stSecs) = explode(' ', $selectCalledAt);
+                    list($usecs, $secs) = explode(' ', microtime());
+                    if (($secs + $usecs) - ($stSecs + $stUsecs) > $this->minHb) {
+                        if (++$missedHb >= 2) {
+                            throw new \Exception("Broker missed too many heartbeats", 2957);
+                        } else {
+                            trigger_error("Broker heartbeat missed from client side, one more triggers loop exit", E_USER_WARNING);
+                        }
+                    }
+                }
             }
         } // End - the loop
 
@@ -180,7 +219,9 @@ class EventLoop
      * complete  and  filter  out  the "soonest"  timeout.   Call  the
      * 'complete' callback for connections that get removed
      *
-     * @return  mixed   True=Loop without timeout, False=exit loop, array(int, int)=specific timeout
+     * @return  mixed   True=Loop without timeout,
+     *                  False=exit loop,
+     *                  array(int, int)=specific timeout
      */
     private function processPreSelects (array $tvs) {
         $wins = null;
@@ -214,6 +255,14 @@ class EventLoop
                     }
                 }
             }
+        }
+        // Check to see if we need to alter the timeout to match a heartbeat
+        if ($wins &&
+            ($this->minHb > 0) &&
+            ($wins === true || $wins[0] > $this->minHb ||
+             ($wins[0] == $this->minHb && $wins[1] < self::HB_TMOBUFF))
+            ) {
+            $wins = array($this->minHb, self::HB_TMOBUFF);
         }
         return $wins;
     }

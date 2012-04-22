@@ -1,7 +1,7 @@
 <?php
 /**
  *
- * Copyright (C) 2010, 2011  Robin Harvey (harvey.robin@gmail.com)
+ * Copyright (C) 2010, 2011, 2012  Robin Harvey (harvey.robin@gmail.com)
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -232,7 +232,7 @@ class Socket
                 echo wire\Hexdump::hexdump($buff);
             }
             if (($tmp = socket_write($this->sock, $buff)) === false) {
-                throw new \Exception(sprintf("\nSocket write failed: %s\n",
+                throw new \Exception(sprintf("Socket write failed: %s",
                                              $this->strError()), 7854);
             }
             $bw += $tmp;
