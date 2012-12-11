@@ -256,6 +256,17 @@ class StreamSocket
     }
 
     /**
+     * Peek  at  the underlying  stream  to  see if  there's  anything
+     * available.
+     */
+    function peek () {
+        $r = stream_socket_recvfrom($this->sock, 1, STREAM_PEEK);
+        return is_string($r)
+            ? (strlen($r) > 0)
+            : false;
+    }
+
+    /**
      * Performs  a non-blocking read  and consumes  all data  from the
      * local socket, returning the contents as a string
      */

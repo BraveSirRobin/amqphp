@@ -33,7 +33,7 @@ const STRAT_TIMEOUT_REL = 2;
 const STRAT_MAXLOOPS = 3;
 const STRAT_CALLBACK = 4;
 const STRAT_COND = 5;
-
+const STRAT_PEEK = 6;
 
 
 /**
@@ -345,6 +345,9 @@ class Connection
         $this->sock->clearErrors();
     }
 
+    function socketPeek () {
+        return $this->sock->peek();
+    }
 
     protected function initNewChannel ($impl=null) {
         if (! $this->connected) {
@@ -518,6 +521,9 @@ class Connection
         case STRAT_COND:
             $this->exStrats[] = $tmp = new ConditionalExitStrategy;
             return $tmp->configure(STRAT_COND, $this);
+        case STRAT_PEEK:
+            $this->exStrats[] = $tmp = new PeekExitStrategy;
+            return $tmp->configure(STRAT_PEEK);
         default:
             trigger_error("Select mode - mode not found", E_USER_WARNING);
             return false;

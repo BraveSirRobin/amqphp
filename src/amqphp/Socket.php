@@ -200,6 +200,14 @@ class Socket
     }
 
     /**
+     * Peek at the socket to see if there's any content available
+     */
+    function peek () {
+        $r = socket_recv($this->sock, $tmp, 1, MSG_DONTWAIT|MSG_PEEK);
+        return !is_bool($r) && ($r === 1);
+    }
+
+    /**
      * Performs  a non-blocking read  and consumes  all data  from the
      * local socket, returning the contents as a string
      */

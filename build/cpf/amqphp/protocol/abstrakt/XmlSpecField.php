@@ -1,2 +1,1 @@
-<?php
- namespace amqphp\protocol\abstrakt; interface XmlSpecField { function getSpecFieldName (); function getSpecFieldDomain (); } 
+/home/robin/Templates/CMP/src/amqphp/protocol/abstrakt/XmlSpecField.php

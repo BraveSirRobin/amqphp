@@ -49,8 +49,10 @@ class AmqpCodeGenTask extends Task {
          * is able to write files, otherwise the build will fail. */
         if (version_compare(PHP_VERSION,'5.4',"<")) {
             $oldval = ini_set("xsl.security_prefs",XSL_SECPREFS_NONE);
-        } else {
+        } else if (method_exists($proc, 'setSecurityPreferences')) {
             $oldval = $proc->setSecurityPreferences(XSL_SECPREFS_NONE);
+        } else if (method_exists($proc, 'setSecurityPrefs')) {
+            $oldval = ini_set("xsl.security_prefs",XSL_SECPREFS_NONE);
         }
 
         $ssDom = new DomDocument;

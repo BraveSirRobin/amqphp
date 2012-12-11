@@ -17,7 +17,7 @@
 <!-- Stream based config -->
 <conn_params>
   <vhost k="string">/</vhost>
-  <username k="string">testing</username>
+  <username k="string">robin</username>
   <userpass k="string">letmein</userpass>
   <heartbeat k="int">2</heartbeat>
   <socketImpl k="string">\amqphp\StreamSocket</socketImpl>
