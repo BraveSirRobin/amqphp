@@ -47,7 +47,7 @@ class AmqpCodeGenTask extends Task {
         $proc = new XsltProcessor;
         /** For PHP  versions > 5.3.8, ensure that  the XSLT processor
          * is able to write files, otherwise the build will fail. */
-        if (version_compare(PHP_VERSION,'5.4',"<")) {
+        if (version_compare(PHP_VERSION,'5.4',"<") || ! method_exists('XSLTProcessor', 'setSecurityPreferences')) {
             $oldval = ini_set("xsl.security_prefs",XSL_SECPREFS_NONE);
         } else {
             $oldval = $proc->setSecurityPreferences(XSL_SECPREFS_NONE);

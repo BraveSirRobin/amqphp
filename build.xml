@@ -26,8 +26,8 @@ Amqphp build  system, can  build to either  "class per file"  (CPF) or
   </fileset>
 
   <target name="clean">
-    <delete dir="${builddir}" includeemptydirs="true" verbose="true" failonerror="true" />
-    <delete dir="${build.tempdir}" includeemptydirs="true" verbose="true" failonerror="true" />
+    <delete dir="${builddir}" includeemptydirs="true" verbose="true" />
+    <delete dir="${build.tempdir}" includeemptydirs="true" verbose="true"  />
   </target>
 
 
