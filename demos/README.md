@@ -21,7 +21,7 @@ environment.
 
 First, publish some messages:
 
-    php php producer.php --message="Hello, world" --repeat=5
+    php producer.php --message="Hello, world" --repeat=5
 
 Now, read one of these back from the broker using get:
 
@@ -40,5 +40,5 @@ of course).
 Here's an  interesting one  - set  up a consumer  that listens  to and
 prints out all "system messages" from the RabbitMQ broker:
 
-php demos/consumer.php --consumer rmq-mon-q \
-    --config demos/configs/log-and-trace-connection.xml
+    php consumer.php --consumer rmq-mon-q \
+        --config configs/log-and-trace-connection.xml
