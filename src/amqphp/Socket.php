@@ -208,7 +208,7 @@ class Socket
         while (@socket_recv($this->sock, $tmp, $readLen, MSG_DONTWAIT)) {
             $buff .= $tmp;
         }
-        if (DEBUG) {
+        if (Connection::DEBUG) {
             echo "\n<read>\n";
             echo wire\Hexdump::hexdump($buff);
         }
@@ -227,7 +227,7 @@ class Socket
         $bw = 0;
         $contentLength = strlen($buff);
         while (true) {
-            if (DEBUG) {
+            if (Connection::DEBUG) {
                 echo "\n<write>\n";
                 echo wire\Hexdump::hexdump($buff);
             }

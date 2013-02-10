@@ -81,7 +81,7 @@ class DemoPConsumer extends DemoConsumer implements \Serializable
         } else {
             error_log("!!No handler for message delivery:\n%s", $meth->getContent());
         }
-        return amqp\CONSUMER_ACK;
+        return amqp\Connection::CONSUMER_ACK;
     }
 }
 

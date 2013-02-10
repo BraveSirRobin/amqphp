@@ -45,7 +45,7 @@ class Consumer implements amqp\Consumer
     function consume ($n) {
         $this->n = $n;
 
-        $this->connection->pushExitStrategy(amqp\STRAT_CALLBACK, array($this, 'loopCallbackHandler'));
+        $this->connection->pushExitStrategy(amqp\Connection::STRAT_CALLBACK, array($this, 'loopCallbackHandler'));
         $this->connection->select();
     }
 

@@ -47,9 +47,10 @@ interface Consumer
     function handleConsumeOk (wire\Method $meth, Channel $chan);
 
     /**
-     * Must handle message deliveries 
-     * @return array    A list of \amqphp\CONSUMER_* consts, these are
-     *                  sent to the broker by $chan
+     * Must handle message deliveries
+     *
+     * @return array  A list of \amqphp\Connection::CONSUMER_* consts,
+     *                  these are sent to the broker by $chan
      */
     function handleDelivery (wire\Method $meth, Channel $chan);
 

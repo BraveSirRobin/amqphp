@@ -18,6 +18,20 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
+/**
+ * A note on the use of consts.
+ *
+ * I originally wrote  Amqphp to use namespace-level  consts, i.e. the
+ * ones defined below, but have since come to realise this is a bit of
+ * a  cock-up because  namespace  level consts  cannot be  autoloaded.
+ * Therefore, I  have duplicated  all of these  consts as  class level
+ * consts inside the  Connection class, this should make  it easier to
+ * use  Amqphp  with  standard  PSR-0  autoloaders.   I'll  leave  all
+ * namespace level  consts in place  for the foreseeable future  so as
+ * not to  break existing code, however  please DO NOT use  these, use
+ * the class level ones instead.
+ */
+
 namespace amqphp;
 
 use amqphp\protocol;
@@ -59,6 +73,24 @@ const CONSUMER_CANCEL = 4; // basic.cancel (no-wait=false)
  */
 class Connection
 {
+
+    /**
+     * Duplicate  all  namespace  level   consts  in  an  autoloadable
+     * location.  See the notes on this at the top of this file.
+     */
+    const DEBUG = DEBUG;
+    const PROTOCOL_HEADER = PROTOCOL_HEADER;
+    const STRAT_TIMEOUT_ABS = STRAT_TIMEOUT_ABS;
+    const STRAT_TIMEOUT_REL = STRAT_TIMEOUT_REL;
+    const STRAT_MAXLOOPS = STRAT_MAXLOOPS;
+    const STRAT_CALLBACK = STRAT_CALLBACK;
+    const STRAT_COND = STRAT_COND;
+    const CONSUMER_ACK = CONSUMER_ACK;
+    const CONSUMER_REJECT = CONSUMER_REJECT;
+    const CONSUMER_DROP = CONSUMER_DROP;
+    const CONSUMER_CANCEL = CONSUMER_CANCEL;
+
+
     /** Default client-properties field used during connection setup */
     public static $ClientProperties = array(
         'product' => ' BraveSirRobin/amqphp',
@@ -212,13 +244,13 @@ class Connection
      * @throws \Exception
      */
     protected function doConnectionStartup () {
-        if (! $this->write(PROTOCOL_HEADER)) {
+        if (! $this->write(self::PROTOCOL_HEADER)) {
             throw new \Exception("Connection initialisation failed (1)", 9873);
         }
         if (! ($raw = $this->read())) {
             throw new \Exception("Connection initialisation failed (2)", 9874);
         }
-        if (substr($raw, 0, 4) == 'AMQP' && $raw !== PROTOCOL_HEADER) {
+        if (substr($raw, 0, 4) == 'AMQP' && $raw !== self::PROTOCOL_HEADER) {
             // Unexpected AMQP version
             throw new \Exception("Connection initialisation failed (3)", 9875);
         }
@@ -488,7 +520,7 @@ class Connection
      *  5) Conditional exit (automatic) (current impl)
      *  6) Infinite
 
-     * @param   integer    $mode      One of the STRAT_XXX consts.
+     * @param   integer    $mode      One of the self::STRAT_XXX consts.
      * @param   ...                   Following 0 or more params are $mode dependant
      * @return  boolean               True if the mode was set OK
      */
@@ -503,21 +535,21 @@ class Connection
             return false;
         }
         switch ($mode = array_shift($_args)) {
-        case STRAT_TIMEOUT_ABS:
-        case STRAT_TIMEOUT_REL:
+        case self::STRAT_TIMEOUT_ABS:
+        case self::STRAT_TIMEOUT_REL:
             @list($epoch, $usecs) = $_args;
             $this->exStrats[] = $tmp = new TimeoutExitStrategy;
             return $tmp->configure($mode, $epoch, $usecs);
-        case STRAT_MAXLOOPS:
+        case self::STRAT_MAXLOOPS:
             $this->exStrats[] = $tmp = new MaxloopExitStrategy;
-            return $tmp->configure(STRAT_MAXLOOPS, array_shift($_args));
-        case STRAT_CALLBACK:
+            return $tmp->configure(self::STRAT_MAXLOOPS, array_shift($_args));
+        case self::STRAT_CALLBACK:
             $cb = array_shift($_args);
             $this->exStrats[] = $tmp = new CallbackExitStrategy;
-            return $tmp->configure(STRAT_CALLBACK, $cb, $_args);
-        case STRAT_COND:
+            return $tmp->configure(self::STRAT_CALLBACK, $cb, $_args);
+        case self::STRAT_COND:
             $this->exStrats[] = $tmp = new ConditionalExitStrategy;
-            return $tmp->configure(STRAT_COND, $this);
+            return $tmp->configure(self::STRAT_COND, $this);
         default:
             trigger_error("Select mode - mode not found", E_USER_WARNING);
             return false;

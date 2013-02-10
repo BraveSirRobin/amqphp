@@ -64,7 +64,7 @@ class RpcClient implements amqp\Consumer, amqp\ChannelEventHandler
      * to wait for RPC replies. */
     public function getReplies() {
         $evh = new amqp\EventLoop;
-        $this->connection->pushExitStrategy(amqp\STRAT_CALLBACK, array($this, 'loopCallbackHandler'));
+        $this->connection->pushExitStrategy(amqp\Connection::STRAT_CALLBACK, array($this, 'loopCallbackHandler'));
         $evh->addConnection($this->connection);
         $evh->select();
         $this->channel->removeAllConsumers();

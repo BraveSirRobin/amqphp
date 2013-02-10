@@ -120,7 +120,7 @@ class Channel
 
     /**
      * Specifies the  kind of  responses that are  queued up  as local
-     * acks, one of the CONSUMER_* consts.
+     * acks, one of the Connection::CONSUMER_* consts.
      */
     protected $ackFlag;
 
@@ -341,12 +341,12 @@ class Channel
             $m = sprintf("Message delivered to closed consumer %s in non-ready state %s -- reject %s",
                          $ctag, $status, $meth->getField('delivery-tag'));
             trigger_error($m, E_USER_WARNING);
-            $response = CONSUMER_REJECT;
+            $response = Connection::CONSUMER_REJECT;
         } else {
             $m = sprintf("Unable to load consumer for delivery %s -- reject %s",
                          $ctag, $meth->getField('delivery-tag'));
             trigger_error($m, E_USER_WARNING);
-            $response = CONSUMER_REJECT;
+            $response = Connection::CONSUMER_REJECT;
         }
 
         if (! $response) {
@@ -359,18 +359,18 @@ class Channel
         $shouldAck = (! array_key_exists('no-ack', $consParams) || ! $consParams['no-ack']);
         foreach ($response as $resp) {
             switch ($resp) {
-            case CONSUMER_ACK:
+            case Connection::CONSUMER_ACK:
                 if ($shouldAck) {
-                    $this->ack($meth, CONSUMER_ACK);
+                    $this->ack($meth, Connection::CONSUMER_ACK);
                 }
                 break;
-            case CONSUMER_DROP:
-            case CONSUMER_REJECT:
+            case Connection::CONSUMER_DROP:
+            case Connection::CONSUMER_REJECT:
                 if ($shouldAck) {
                     $this->ack($meth, $resp);
                 }
                 break;
-            case CONSUMER_CANCEL:
+            case Connection::CONSUMER_CANCEL:
                 $this->removeConsumerByTag($cons, $ctag);
                 break;
             default:
@@ -414,16 +414,16 @@ class Channel
             return;
         }
         switch ($this->ackFlag) {
-        case CONSUMER_ACK:
+        case Connection::CONSUMER_ACK:
             $ack = $this->basic('ack', array('delivery-tag' => $this->ackHead,
                                              'multiple' => ($this->ackBuffer > 1)));
             $this->invoke($ack);
             break;
-        case CONSUMER_REJECT:
-        case CONSUMER_DROP:
+        case Connection::CONSUMER_REJECT:
+        case Connection::CONSUMER_DROP:
             $rej = $this->basic('nack', array('delivery-tag' => $this->ackHead,
                                               'multiple' => ($this->ackBuffer > 1),
-                                              'requeue' => ($this->ackFlag == CONSUMER_REJECT)));
+                                              'requeue' => ($this->ackFlag == Connection::CONSUMER_REJECT)));
             $this->invoke($rej);
             break;
         default:

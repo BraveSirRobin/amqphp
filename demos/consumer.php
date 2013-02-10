@@ -29,9 +29,6 @@ use amqphp as amqp;
 use amqphp\protocol;
 use amqphp\wire;
 
-// HACK : Manually pre-load the connection class so that Amqphp consts
-// are available - these cannot be loaded by the class loader.
-require __DIR__ . '/../src/amqphp/Connection.php';
 require __DIR__ . '/class-loader.php';
 
 
@@ -50,11 +47,11 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
 {
     /** CLI Exit strategy identifier map */
     public static $StratMap = array(
-        'cond' => amqp\STRAT_COND,
-        'trel' => amqp\STRAT_TIMEOUT_REL,
-        'tabs' => amqp\STRAT_TIMEOUT_ABS,
-        'maxl' => amqp\STRAT_MAXLOOPS,
-        'callb' => amqp\STRAT_CALLBACK
+        'cond' => amqp\Connection::STRAT_COND,
+        'trel' => amqp\Connection::STRAT_TIMEOUT_REL,
+        'tabs' => amqp\Connection::STRAT_TIMEOUT_ABS,
+        'maxl' => amqp\Connection::STRAT_MAXLOOPS,
+        'callb' => amqp\Connection::STRAT_CALLBACK
         );
 
     /* Specify default 'action messages' (these are defined in CLI args) */
@@ -167,30 +164,30 @@ class MultiConsumer implements amqp\Consumer, amqp\ChannelEventHandler
         if ($cNum === false) {
             // This should never happen!
             warn("Received message for unknown consume tag %s, reject", $cTag);
-            return amqp\CONSUMER_REJECT;
+            return amqp\Connection::CONSUMER_REJECT;
         }
 
         $content = $m->getContent();
 
         if (! $content) {
             info("Empty Message received on consumer %d [%s]", $cNum, $cTag);
-            return amqp\CONSUMER_ACK;
+            return amqp\Connection::CONSUMER_ACK;
         }
 
         if ($content === $this->exitMessage) {
             info("Received exit message, cancel consumer %d", $cNum);
-            return array(amqp\CONSUMER_ACK, amqp\CONSUMER_CANCEL);
+            return array(amqp\Connection::CONSUMER_ACK, amqp\Connection::CONSUMER_CANCEL);
         } else if ($content === $this->rejectMessage) {
             info("Received reject message, reject consumer %d", $cNum);
-            return amqp\CONSUMER_REJECT;
+            return amqp\Connection::CONSUMER_REJECT;
         } else if ($content === $this->dropMessage) {
             info("Received drop message, drop consumer %d", $cNum);
-            return amqp\CONSUMER_DROP;
+            return amqp\Connection::CONSUMER_DROP;
         } else {
             printf("[MSG] consumer-tag=%s [%d]\ndelivery-tag=%s redelivered=%s\nexchange=%s\nrouting-key=%s\n%s\n",
                    $cTag, $cNum, $m->getField('delivery-tag'), $m->getField('redelivered') ? 't' : 'f', $m->getField('exchange'),
                    $m->getField('routing-key'), $content);
-            return amqp\CONSUMER_ACK;
+            return amqp\Connection::CONSUMER_ACK;
         }
     }
 
@@ -272,17 +269,18 @@ configured with the following switches:
              http://www.rabbitmq.com/interoperability.html)
 
   --exit-message  [string]  - when  the  following  message string  is
-    received,  exit  the   receiving  consumer  with  CONSUMER_CANCEL.
-    Default Value: "Cancel."
+    received,      exit      the     receiving      consumer      with
+    Connection::CONSUMER_CANCEL.  Default Value: "Cancel."
 
   --reject-message  [string] -  when the  following message  string is
-    received,  reject  the   incoming  message  with  CONSUMER_REJECT.
-    Default  Value: "Reject."  (Note:  RabbitMQ does  not support  the
-    no-local flag: http://www.rabbitmq.com/interoperability.html)
+    received,      reject      the     incoming      message      with
+    Connection::CONSUMER_REJECT.   Default  Value:  "Reject."   (Note:
+    RabbitMQ     does    not     support     the    no-local     flag:
+    http://www.rabbitmq.com/interoperability.html)
 
   --drop-message  [string]  - when  the  following  message string  is
-    received, reject the incoming message with CONSUMER_DROP.  Default
-    Value: "Drop."
+    received,      reject      the     incoming      message      with
+    Connection::CONSUMER_DROP.  Default Value: "Drop."
 
 
     You  can  add  more than  one  consumer  by  using more  than  one

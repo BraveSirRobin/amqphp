@@ -270,7 +270,7 @@ class StreamSocket
             trigger_error("Stream fread returned false", E_USER_WARNING);
             $this->errFlag |= 1;
         }
-        if (DEBUG) {
+        if (Connection::DEBUG) {
             echo "\n<read>\n";
             echo wire\Hexdump::hexdump($buff);
         }
@@ -321,7 +321,7 @@ class StreamSocket
             return 0;
         }
         while (true) {
-            if (DEBUG) {
+            if (Connection::DEBUG) {
                 echo "\n<write>\n";
                 echo wire\Hexdump::hexdump($buff);
             }

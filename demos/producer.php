@@ -267,18 +267,18 @@ info("Published %d messages", $n);
    responses. */
 if ($confirms || $mandatory || $immediate) {
     /** Never wait more than 3 seconds for responses */
-    $conn->pushExitStrategy(amqp\STRAT_TIMEOUT_REL, $recvTmo, 0);
+    $conn->pushExitStrategy(amqp\Connection::STRAT_TIMEOUT_REL, $recvTmo, 0);
     if ($confirms) {
         /** In confirm mode,  add an additional rule so  that the loop
            exits as soon as all confirms have returned. */
-        $conn->pushExitStrategy(amqp\STRAT_COND);
+        $conn->pushExitStrategy(amqp\Connection::STRAT_COND);
     } else {
         /** Add a callback exit strategy  so that we can exit early if
            all messages are returned */
         $callback = function () use ($n, $ceh) {
             return (count($ceh->returns) < $n);
         };
-        $conn->pushExitStrategy(amqp\STRAT_CALLBACK, $callback);
+        $conn->pushExitStrategy(amqp\Connection::STRAT_CALLBACK, $callback);
     }
     $evl = new amqp\EventLoop;
     $evl->addConnection($conn);

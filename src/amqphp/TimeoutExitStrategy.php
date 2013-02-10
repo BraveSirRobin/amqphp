@@ -31,7 +31,7 @@ use amqphp\wire;
  */
 class TimeoutExitStrategy implements ExitStrategy
 {
-    /** Config param, one of STRAT_TIMEOUT_ABS or STRAT_TIMEOUT_REL */
+    /** Config param, one of Connection::STRAT_TIMEOUT_ABS or Connection::STRAT_TIMEOUT_REL */
     private $toStyle;
 
     /** Config param */
@@ -56,7 +56,7 @@ class TimeoutExitStrategy implements ExitStrategy
     }
 
     function init (Connection $conn) {
-        if ($this->toStyle == STRAT_TIMEOUT_REL) {
+        if ($this->toStyle == Connection::STRAT_TIMEOUT_REL) {
             list($uSecs, $epoch) = explode(' ', microtime());
             $uSecs = bcmul($uSecs, '1000000');
             $this->usecs = bcadd($this->usecs, $uSecs);
