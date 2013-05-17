@@ -256,7 +256,12 @@ class Connection
         }
         $meth = new wire\Method();
         $pl = $this->getProtocolLoader();
-        $meth->readConstruct(new wire\Reader($raw), $pl);
+        $rc = $meth->readConstruct(new wire\Reader($raw), $pl);
+        if ($rc === false) {
+            throw new \Exception("Failed to load start frame", 5727);
+        } else if ($rc === Method::PARTIAL_FRAME) {
+            throw new \Exception("Split start frames are not supported", 5723);
+        }
         if (($startF = $meth->getField('server-properties'))
             && isset($startF['capabilities'])
             && ($startF['capabilities']->getType() == 'F')) {
